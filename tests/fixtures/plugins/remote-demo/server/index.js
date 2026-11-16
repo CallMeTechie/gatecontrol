@@ -13,7 +13,7 @@ const CALLS = {
   'vault.info': (gc, a) => gc.remote.vault.info(a.handle),
   'vault.list': (gc) => gc.remote.vault.list(),
   probe: (gc, a) => gc.remote.probe(a),
-  wake: (gc, a) => gc.remote.wake(a),
+  wake: (gc, a) => (a.user != null ? gc.remote.wake(a.target, { user: a.user }) : gc.remote.wake(a)),
   listener: (gc, a) => gc.remote.listener(a),
   'listener.remove': (gc, a) => gc.remote.listener.remove(a.key),
   listeners: (gc) => gc.remote.listeners(),
@@ -33,6 +33,9 @@ const CALLS = {
   'recordings.remove': (gc, a) => gc.remote.recordings.remove(a.id),
   // version 4 (stage 5)
   screen: (gc, a) => gc.remote.screen(a),
+  // version 7 (Gerät hinzufügen)
+  candidates: (gc, a) => gc.remote.candidates(a),
+  scan: (gc, a) => gc.remote.scan(a.target, a.ports),
 };
 
 let chain = Promise.resolve();

@@ -1957,14 +1957,15 @@ async function camerasCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
-// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 6) ───
+// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 7) ───
 //
 // gc.remote.session() / end() / sessions() / vault.put|remove|info|list() /
 // probe() / wake() / listener() / listener.remove() / listeners() / gateways() /
 // hubAddress() / peerAddress() (version 2) /
 // recordings.available|list|stream|remove() /
 // vault.generate() / tmux.list() / hostKeys.pin|list|remove() (version 3) /
-// screen() (version 4; mode control version 5; a PC as sender version 6) — docs/plugins.md "Remote access".
+// screen() (version 4; mode control version 5; a PC as sender version 6) /
+// candidates() / scan(), listener listenPort 'auto', wake by target.watch (version 7) — docs/plugins.md "Remote access".
 // The plugin names person and target; the core owns guacd, the session page,
 // the tunnel and the secrets (a plugin only ever holds vault handles). Who may
 // connect where is the plugin's to check before each call — the host checks
@@ -2669,6 +2670,7 @@ async function handle(plugin, api, args, ctx) {
     case 'remote.vault.generate': case 'remote.tmux.list': case 'remote.hostKeys.pin': case 'remote.hostKeys.list': case 'remote.hostKeys.remove':
     // version 4 (stage 5: the screen relay of the phones)
     case 'remote.screen':
+    case 'remote.candidates': case 'remote.scan':
       return remoteCall(plugin, api.slice('remote.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);

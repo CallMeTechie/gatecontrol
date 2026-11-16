@@ -662,10 +662,11 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
-// gc.remote (permissions.remote, version 6, docs/plugins.md "Remote access"): sessions to devices on a page of
+// gc.remote (permissions.remote, version 7, docs/plugins.md "Remote access"): sessions to devices on a page of
 // the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
 // L4 listeners through the gateways, the SSH terminal of the core with tmux and pinned host keys, recordings,
-// the screen relay of phones (version 4; mode control version 5) and PCs (mouse and keyboard, version 6) and the hook remoteSession
+// the screen relay of phones (version 4; mode control version 5) and PCs (mouse and keyboard, version 6), the targets of
+// „Gerät hinzufügen“ (candidates, scan, listenPort 'auto', wake by the network watch — version 7) and the hook remoteSession
 const remoteHandlers = [];
 
 function makeRemote() {
@@ -674,7 +675,7 @@ function makeRemote() {
   /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
   listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
   return Object.freeze({
-    version: 6,
+    version: 7,
     /** session({ user, target, protocol: rdp|vnc|ssh|telnet, engine?: guac|term, mode?: view|control, record?, credential?, options?: { …, tmux? }, ttlS? }) → { ref, url, expiresAt, mode, protocol, engine, record, from } */
     session: (opts) => hostCall('remote.session', o(opts), 30000),
     /** screen({ viewer, sender: { user, device }, target: { id, name? }, mode?: 'view'|'control' (control: version 5), ttlS? }) → { ref, url, expiresAt, senderRef, senderExpiresAt, mode, protocol: 'screen', engine: 'screen', record } (version 4) */
@@ -709,9 +710,13 @@ function makeRemote() {
     }),
     /** probe(target) → { online, responseTime, via: direct|gateway } */
     probe: (target) => hostCall('remote.probe', { target: o(target) }, 30000),
-    /** wake(target with mac) → { sent, via: gateway|server } */
-    wake: (target) => hostCall('remote.wake', { target: o(target) }, 30000),
-    /** listener({ key, gateway: { peerId } | { poolId }, host, port, listenPort? }) → { key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared } */
+    /** wake(target with mac | watch: 'nw-<id>' (version 7, with { user }: an administrator in a request)) → { sent, via: gateway|server } */
+    wake: (target, opts) => hostCall('remote.wake', { target: o(target), ...(opts && opts.user != null ? { user: opts.user } : {}) }, 30000),
+    /** candidates({ user }) → { vpn, peers, gateways, routes } — only for an administrator in a request, never a MAC (version 7) */
+    candidates: (opts) => hostCall('remote.candidates', o(opts), 30000),
+    /** scan(target, ports[1…8]) → { via: direct|gateway, address, results: [{ port, open, responseTime, service }] } (version 7) */
+    scan: (target, ports) => hostCall('remote.scan', { target: o(target), ports: Array.isArray(ports) ? ports : [] }, 30000),
+    /** listener({ key, gateway: { peerId } | { poolId }, host, port, listenPort?: port | 'auto' (version 7) }) → { key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared, auto? } */
     listener: Object.freeze(listener),
     /** listeners() → [listener] */
     listeners: () => hostCall('remote.listeners', {}),

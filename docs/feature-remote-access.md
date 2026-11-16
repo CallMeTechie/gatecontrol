@@ -173,6 +173,28 @@ code (`POST /api/v1/client/enroll`, `platform: 'linux'`) and registers with the 
   that would take a system service, which GateControl does not install. The person at the PC sees a bar at the top
   („… sieht zu / steuert · Beenden“) for the whole session.
 
+## „Gerät hinzufügen“, neu (gc.remote version 7, the plugin „Fernzugriff“ 1.7)
+
+The dialog of the plugin starts with the target instead of an address: the core knows the VPN devices, the home
+gateways with their networks and the routes. Nothing new on the gateway and in the apps (the data of a device keep
+`access_mode`, the facade answers as before).
+
+* **`gc.remote.candidates({ user })`** — only for an enabled administrator whose request to the plugin is in flight
+  (`plugins/personContext.js`): the peers with VPN address and name in the VPN (`app`: the PC or Linux computer
+  registers itself through the GateControl app or the agent), per gateway its online state, pool, LAN subnets and the
+  devices of the network watch (name, address, vendor, the open ports 22, 23, 3389, 5900–5909, `wake` instead of the
+  MAC), the L4 routes that look like SSH, RDP, VNC or Telnet, and `twin` for a device known in the VPN and in a home
+  network (the same name on both sides, only when unambiguous). Never a MAC, an owner or presence; the core keeps
+  nothing of it and the plugin must not store it.
+* **`gc.remote.scan(target, ports)`** — 1…8 ports of one target at once: directly from the server (the greeting
+  tells SSH, VNC and Telnet) or through the gateway's `/api/probe`, one port each (no broad scan, no gateway change).
+  At most two scans of a plugin at a time.
+* **`listener({ listenPort: 'auto' })`** — the core picks the L4 port on the server from `GC_REMOTE_AUTO_PORT_MIN` …
+  `GC_REMOTE_AUTO_PORT_MAX` (40000 … 40999); the route stays internal only. A listener keeps its port; an L4 gateway
+  route to exactly this target is shared, whatever its port.
+* **`wake({ watch: 'nw-<id>' }, { user })`** — wakes a device of the network watch without the plugin ever seeing its
+  MAC (only for an administrator in a request).
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime
@@ -202,6 +224,8 @@ is not affected.
   person; no key or password ever reaches a log, a recording's metadata or an app.
 * Recordings only with the hint; playback only through a ticket for the person
   the plugin names (administrators and the owner), every viewing logged.
+* Candidates (version 7): only for an administrator in a request, never a MAC, an owner or presence of the
+  network watch; a scan is a handful of ports of one target, never a sweep.
 * Screen (stage 5): the sending side of a ticket only for the phone's own app
   token, the watching side bound to the first browser session or app token;
   tokens single-use and 60 s, only in `Sec-WebSocket-Protocol`; frames are

@@ -181,7 +181,7 @@ describe('cleanInput: only the fields of the contract', () => {
 
 describe('gc.remote.screen (version 5): mode control', () => {
   it('a ticket of mode control; the page says so', async () => {
-    assert.equal((await pget('/has')).version, 6);
+    assert.equal((await pget('/has')).version, 7);
     const r = (await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: { id: 'phone-1', name: 'Ilses Handy' }, mode: 'control' })).result;
     assert.equal(r.mode, 'control');
     const page = await agent.get('/remote/session/' + r.ref).expect(200);
