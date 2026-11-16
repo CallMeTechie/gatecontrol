@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.286.0] — 2026-11-16
+
+### Features
+- Fernzugriff Stufe 5 – Relais gc-screen.v1 für die Bildschirmfreigabe vom Handy (gc.remote Version 4) (#502)
+
+---
+
 ## [1.285.0] — 2026-11-16
 
 ### Features
