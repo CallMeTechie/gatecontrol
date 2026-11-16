@@ -225,7 +225,8 @@ function screenMaxMs() {
  * gc.remote.screen({ viewer, sender: { user, device }, target: { id, name? }, mode?, record?, ttlS? }) (version 4)
  * → { ref, url, expiresAt, senderRef, senderExpiresAt, mode, protocol: 'screen', engine: 'screen', record: false }
  * A phone shares its screen with one person: `viewer` watches (the session page or an app), the app device
- * `sender.device` of `sender.user` sends. Only watching in stage 5 (mode view); no recording yet.
+ * `sender.device` of `sender.user` sends. Mode view (default) or, since version 5, control: the viewer's input
+ * reaches the phone only while the relay's mode in force is control (screen.js). No recording yet.
  */
 function createScreen(plugin, a) {
   const o = a && typeof a === 'object' ? a : {};
@@ -237,8 +238,9 @@ function createScreen(plugin, a) {
   const deviceId = D.idOf(s.device);
   if (deviceId === null) throw new SessionError('invalid', 'sender.device: an app device id');
   if (!D.ownedBy([owner.id], [deviceId]).has(deviceId)) throw new SessionError('not_allowed', 'sender.device is no app device of sender.user');
+  // version 5 (stage 6): control — the phone's relay still lets input through only while the phone says so
   const mode = o.mode == null ? 'view' : String(o.mode);
-  if (mode !== 'view') throw new SessionError('invalid', 'mode: view (control comes later)');
+  if (!MODES.includes(mode)) throw new SessionError('invalid', 'mode: view or control');
   if (o.record === true) throw new SessionError('recording_unavailable', 'a screen session is not recorded');
   if (o.record != null && typeof o.record !== 'boolean') throw new SessionError('invalid', 'record: true or false');
   const tg = o.target && typeof o.target === 'object' ? o.target : {};
@@ -285,6 +287,31 @@ function dropScreenTicket(ref) {
   if (!t || t.engine !== 'screen') return;
   tickets.delete(ref);
   senderRefs.delete(t.senderRef);
+}
+
+/**
+ * The mode of a screen session went down (screen.js: the phone's "Nur ansehen", it cannot control, one app shared):
+ * the row (once started), the activity log and the plugin's hook remoteSession with phase 'mode'.
+ */
+function screenMode(t, sid, mode, reason) {
+  let row = null;
+  if (sid) {
+    try {
+      db().prepare("UPDATE remote_sessions SET mode = ? WHERE id = ? AND status = 'active'").run(mode, sid);
+      row = db().prepare('SELECT * FROM remote_sessions WHERE id = ?').get(sid);
+    } catch { row = null; }
+  }
+  try {
+    require('../activity').log('remote_session_mode', `Remote session mode: "${t.target.name || t.target.id}" → ${mode} (${reason}) via plugin "${t.pluginId}"`, {
+      source: 'plugin', severity: 'info',
+      details: { plugin: t.pluginId, sessionId: sid || null, targetId: t.target.id, userId: t.userId, protocol: 'screen', mode, reason },
+    });
+  } catch { /* best-effort */ }
+  const base = row ? eventOf({ ...row, ref: t.ref }, 'mode') : {
+    phase: 'mode', sessionId: null, ref: t.ref, targetId: t.target.id, userId: t.userId, protocol: 'screen', mode, engine: 'screen', via: null,
+    record: false, recordingId: null, startedAt: null,
+  };
+  emit(t.pluginId, { ...base, mode, reason: String(reason || 'sender') });
 }
 
 /** A screen session ended before both sides were there (no row): the plugin hears it as an abort. */
@@ -647,6 +674,6 @@ function _resetForTest() {
 function _ticketForTest(ref) { return process.env.NODE_ENV === 'test' ? tickets.get(ref) || null : null; }
 
 module.exports = {
-  SessionError, create, createScreen, claimSender, dropScreenTicket, screenAborted, admitScreen, createPlayback, claim, claimApp, playbackOf, mint, admitTunnel, admitTerm, pluginOfTicket, opened, started, heartbeat, end, endFor, endAllFor, list,
+  SessionError, create, createScreen, claimSender, dropScreenTicket, screenAborted, screenMode, admitScreen, createPlayback, claim, claimApp, playbackOf, mint, admitTunnel, admitTerm, pluginOfTicket, opened, started, heartbeat, end, endFor, endAllFor, list,
   activeCount, closeLeftovers, PROTOCOLS, MODES, ENGINES, WS_PATH, REF_RE, OPTION_RULES, _resetForTest, _ticketForTest, _hookMs: null,
 };

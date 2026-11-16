@@ -2621,6 +2621,13 @@ body.rdp-session-body {
 .rscreen-canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
 .rscreen-wait { background: rgba(5, 8, 12, .55); }
 .rscreen-relay { cursor: help; }
+.rscreen-canvas:focus { outline: none; }
+.rscreen-canvas--control { cursor: crosshair; touch-action: none; }
+.rscreen-control { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: var(--accent, #0f766e); cursor: help; white-space: nowrap; }
+.rscreen-keys { display: inline-flex; gap: 4px; }
+.rscreen-toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); padding: 8px 14px; border-radius: 10px; background: rgba(15, 20, 28, .92); color: #fff; font-size: 13px; z-index: 5; text-align: center; }
+.rscreen-textbar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); gap: 8px; padding: 8px; border-radius: 12px; background: var(--surface, #111827); border: 1px solid var(--border, #1f2937); z-index: 6; align-items: center; }
+.rscreen-textbar .input { flex: 1; min-width: 0; }
 @media (max-width: 640px) {
   .rdp-session-toolbar .rdp-tbtn-label { display: none; }
   .rterm-note { display: none; }

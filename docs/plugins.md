@@ -2958,7 +2958,7 @@ check `gc.remote && gc.remote.version >= 1` (`>= 2` for what stage 2, the Window
 needs: `hubAddress`, `peerAddress`, `from`, the asking device's `vpnIp`, the admin part of
 the facade and signal topics; `>= 3` for stage 3: the SSH terminal of the core, tmux, pinned
 host keys, `vault.generate` and recordings; `>= 4` for stage 5: `gc.remote.screen`, the screen relay of
-the phones).
+the phones; `>= 5` for stage 6: `mode: 'control'` of a screen ticket and the hook phase `mode`).
 
 **Targets.** Every call names a target `{ id, name?, host, port }` (direct: the VPN address
 of a device, the server's LAN, a public host) or `{ id, name?, listener: '<key>' }` (through
@@ -2971,9 +2971,9 @@ resolved by the core, every address is checked and guacd gets the checked addres
 
 | Call | Answer / rule |
 |---|---|
-| `gc.remote.version` | `4` (`3`: without `screen`; `2`: without `engine`, `tmux`, `hostKeys`, `vault.generate` and recordings; `1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
+| `gc.remote.version` | `5` (`4`: a screen ticket only `mode: 'view'`, no hook phase `mode`; `3`: without `screen`; `2`: without `engine`, `tmux`, `hostKeys`, `vault.generate` and recordings; `1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
 | `gc.remote.session({ user, target, protocol, engine?, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol, engine, record, from }` — a **ticket**; `from` (version 2): the address guacd connects from to a direct target, the hub address (`null` for a listener target) — a Windows PC opens 3389 for exactly it. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. Version 3: `engine`: `guac` (default, guacd) \| `term` (the SSH terminal of the core, `protocol: 'ssh'` only — see "The SSH terminal" below; needs a `credential` with username and a password or key, else `ERR_REMOTE_CREDENTIAL_REQUIRED`), `options.tmux`: `{ attach: name }` \| `{ create: name }` (engine `term` only; name `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`), `record: true`: the session is recorded (only when `recordings.available()` allows it for the engine, else `ERR_REMOTE_RECORDING_UNAVAILABLE`; the page shows the hint first). Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
-| `gc.remote.screen({ viewer, sender: { user, device }, target: { id, name? }, mode?, record?, ttlS? })` | version 4: `{ ref, url: '/remote/session/<ref>', expiresAt, senderRef, senderExpiresAt, mode: 'view', protocol: 'screen', engine: 'screen', record: false }` — a **screen ticket** with two sides: a phone (`sender.device`, an app device of `sender.user` — else `ERR_REMOTE_NOT_ALLOWED`) shares its screen, `viewer` (an enabled person) watches. `ref` opens like a session (`GC.openSession(ref)`) or in an app; `senderRef` only on the phone's own app token. `target.id` / `name` name the device for history and the hook. Only `mode: 'view'` (`ERR_INVALID` for `control` — later), no recording (`ERR_REMOTE_RECORDING_UNAVAILABLE`); `ttlS` 30…600 (default 120) for both sides to come. See "The screen relay" below |
+| `gc.remote.screen({ viewer, sender: { user, device }, target: { id, name? }, mode?, record?, ttlS? })` | version 4: `{ ref, url: '/remote/session/<ref>', expiresAt, senderRef, senderExpiresAt, mode: 'view', protocol: 'screen', engine: 'screen', record: false }` — a **screen ticket** with two sides: a phone (`sender.device`, an app device of `sender.user` — else `ERR_REMOTE_NOT_ALLOWED`) shares its screen, `viewer` (an enabled person) watches. `ref` opens like a session (`GC.openSession(ref)`) or in an app; `senderRef` only on the phone's own app token. `target.id` / `name` name the device for history and the hook. `mode`: `view` (default) \| `control` (version 5; anything else `ERR_INVALID`) — control is only a *permission*: the relay lets input through only while the phone says so (see "Control" below). The plugin asks for `control` only after the person at the phone chose it for this very request. No recording (`ERR_REMOTE_RECORDING_UNAVAILABLE`); `ttlS` 30…600 (default 120) for both sides to come. See "The screen relay" below |
 | `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel. A screen ticket ends by either of its refs (both sides get `{t:'end', reason:'ended_by_plugin'}`) |
 | `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, engine, via, recordingId, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions`; `via`: `browser` \| `app` (version 3: a native terminal) |
 | `gc.remote.vault.put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? })` | `{ handle: 'rv_<32 hex>', kind: password \| ssh_key \| username, label, has: { username, password, domain, privateKey, passphrase }, readable, createdAt, updatedAt }` — **never a value**. With `handle` a change of that entry: fields not given stay, `null` / `''` clears. Encrypted with the server key (AES-256-GCM, table `remote_vault`, in backups as ciphertext); `readable: false` after a restore onto another server key — ask for it again. ≤ 5000 per plugin |
@@ -3064,6 +3064,25 @@ not count towards guacd's limits. The hook `remoteSession` gets `start` once bot
 `abort` otherwise (`sender_lost`, `viewer_lost`, `max_duration`, `peer_timeout` — the latter also
 without a `sessionId` when the sides never met). End reasons and error codes: see
 docs/feature-remote-access.md. Nothing of a picture, no ref and no token is logged.
+
+**Control** (version 5, stage 6). With `mode: 'control'` the viewer may operate the phone. The mode **in force**
+is `control` only when the ticket says so, the phone's hello says `control: true` (its accessibility service runs —
+the GitHub build of the Android app; the Play build always says `false`) and `scope` is `display`; else `view`
+with `modeReason` (`viewer_only`, `sender_no_control`, `app_scope`) in `ready` and `{t:'mode', mode:'view',
+reason}`. The phone goes down to view at any time with `{t:'mode', mode:'view', reason: sender|service_off|locked}`
+— **for good**: no frame brings control back, a reconnect neither (that takes a new request and a new answer at the
+phone). Both sides hear `{t:'mode'}`; the row of `remote_sessions` gets `mode = 'view'`, the activity log
+`remote_session_mode`, the hook `remoteSession` an event `phase: 'mode'` with `mode: 'view'` and `reason`
+(a plugin that does not know the phase ignores it). Viewer → phone, only in control: `{t:'input', k, …}` with
+coordinates 0…1 of the picture — `tap {x, y}`, `long {x, y, ms? 400…3000}`, `swipe {pts: [[x, y], …] 2…32, ms
+50…5000}`, `scroll {x, y, dx, dy}` (−1…1 of the picture), `key {key: back|home|recents|enter|backspace}`, `text
+{text}` (1…500 characters, no control characters). The core passes on only the cleaned object (`cleanInput`),
+at most 30 a second, text 5 a second and 4000 characters in 10 s (over it dropped, `{t:'notice', code:
+'input_rate'}`); in view it drops every input (`{t:'notice', code: 'view_only'}`, at most once a second). Phone →
+viewer `{t:'input_fail', k, reason: no_field|blocked|locked|secure}` (≤ 5 a second). No input is logged. The
+session page shows „Du steuerst“ and a bar with Zurück / Start / Übersicht / Text while the mode in force is
+control: click = tap, hold = long press, drag = swipe, wheel = scroll, right button = back, typing = text into
+the field selected on the phone.
 
 **Recordings** (version 3, `src/services/remote/recordings.js`). Optional — only with
 `record: true`, and only after the hint on the session page ("Diese Sitzung wird

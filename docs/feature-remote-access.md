@@ -109,8 +109,8 @@ The core adds:
 * **Codec** — H.264 (Annex B) from the phone's MediaCodec, SPS/PPS in front of every key frame; the browser decodes
   with `VideoDecoder` without a `description`. The server reads one flag byte per frame and passes the bytes on —
   no decoding, no transcoding, nothing on the disk.
-* **Only watching** in stage 5 (`mode: 'view'`); control (Android accessibility service) is stage 6 — the relay drops
-  every input of a viewer. No recording yet (later fMP4 from the same frames, without transcoding).
+* **Only watching** in stage 5 (`mode: 'view'`); control (Android accessibility service) is stage 6 — in mode view the
+  relay drops every input of a viewer. No recording yet (later fMP4 from the same frames, without transcoding).
 * **Limits for a small VPS (4 cores, 8 GB)** — `GC_REMOTE_SCREEN_MAX` (8) sessions at once, one per phone, two per
   watching person, one viewer per session; frames ≤ 1 MiB, ≤ 1920×1080, ≤ 30 fps; 6 Mbit/s per session (4 MiB
   burst; over it frames are dropped and the phone is asked for a lower bitrate, 30 s over it ends the session);
@@ -123,6 +123,27 @@ The core adds:
 * **Honest about the network**: the server sees the stream because it passes it on — it is not end-to-end
   encrypted (the viewer page says so). Windows with FLAG_SECURE content (banking, the app's vault pages) stays black
   on the phone's side.
+
+## Stage 6 (controlling the phone, gc.remote version 5, the plugin „Fernzugriff“ 1.4)
+
+* **Asking is not allowing** — a helper may *ask* for „Ansehen und steuern“; `gc.remote.screen({ mode: 'control' })`
+  is only called after the person at the phone chose it for this very request (the plugin, contract stage 6). Even
+  then the relay lets input through only while the **mode in force** is control: the ticket says control, the phone's
+  hello says `control: true` (Android: the accessibility service of the GitHub build runs; the Play build never
+  controls) and the whole display is shared (one app shared → `app_scope`).
+* **Going down at any time, for good** — the phone sends `{t:'mode', mode:'view', reason}` („Nur ansehen“ in the red
+  bar, the notification or the frame on the screen; the service went off; the phone locked). Both sides hear it, the
+  row gets `mode = 'view'`, the activity log `remote_session_mode`, the plugin the hook phase `mode`. Nothing brings
+  control back within the session, not a reconnect either.
+* **Input** (`{t:'input', k}`: `tap`, `long`, `swipe` with a path, `scroll`, `key` back/home/recents/enter/backspace,
+  `text`) — coordinates 0…1 of the picture; the core passes on only the cleaned object, 30 a second, text 5 a second
+  and 4000 characters in 10 s, and logs none of it. `{t:'notice', code}`: `view_only`, `input_rate`;
+  `{t:'input_fail', reason}` from the phone: `no_field`, `blocked`, `locked`, `secure`.
+* **Viewer page** — „Du steuerst“ in the toolbar, a bar Zurück / Start / Übersicht / Text, mouse, touch and keyboard on
+  the picture; a change to view shows why at once and stops all input.
+* **What the phone never does** — no input on the lock screen, the PIN entry or Android's own questions; no reading
+  of content beyond the focused field (to insert text at the cursor); nothing outside a session. The server sees the
+  input as it sees the picture (no end-to-end encryption).
 
 ## Licence
 

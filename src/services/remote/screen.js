@@ -18,6 +18,17 @@
 //   server → viewer text {t:'waiting', reason?}                 no sender (yet / lost)
 //   server → sender text {t:'viewer', state: 'joined'|'left', name}   {t:'keyframe'}   {t:'rate', bitrate}
 //
+// Stage 6 (version 5): a ticket of mode control lets the viewer operate the phone. The mode in force is
+// control only when the ticket says control, the phone's hello says control: true (its accessibility service
+// runs, the GitHub build) and the whole display is shared; anything else is view. The phone may go down to
+// view at any time ({t:'mode', mode:'view', reason}) — for good: no frame brings control back (that takes a new
+// request and a new answer at the phone). Only in control:
+//   viewer → sender text {t:'input', k: 'tap'|'long'|'swipe'|'scroll'|'key'|'text', …}   coordinates 0…1 of the picture
+//   sender → viewer text {t:'input_fail', k, reason}        server → both {t:'mode', mode, reason}
+//   server → viewer text {t:'notice', code: 'view_only'|'input_rate'}
+// The server passes on only the cleaned object (cleanInput), limits it (30 a second, text 5 a second and
+// 4000 characters in 10 s) and logs none of it.
+//
 // The core never decodes or transcodes anything: it reads the flag byte of a frame (a viewer gets frames
 // from the next key frame on, and a slow one loses delta frames until the next key frame) and counts bytes
 // (a bucket per session). Key frames carry SPS/PPS in front (the phone sets KEY_PREPEND_HEADER_TO_SYNC_FRAMES),
@@ -55,6 +66,18 @@ const MAX_BITRATE = 4000000;
 const MIN_BITRATE = 300000;
 const PER_VIEWER = 2;
 const CODEC_RE = /^avc1\.[0-9A-Fa-f]{6}$/;
+// the input of stage 6
+const INPUT_PER_S = 30;
+const TEXT_INPUTS_PER_S = 5;
+const TEXT_CHARS_WINDOW_MS = 10000;
+const TEXT_CHARS_PER_WINDOW = 4000;
+const MAX_INPUT_TEXT = 500;
+const MAX_PATH = 32;
+const INPUT_FAILS_PER_S = 5;
+const NOTICE_EVERY_MS = 1000;
+const KEYS = Object.freeze(['back', 'home', 'recents', 'enter', 'backspace']);
+const MODE_REASONS = Object.freeze(['sender', 'service_off', 'locked']);
+const FAIL_REASONS = Object.freeze(['no_field', 'blocked', 'locked', 'secure']);
 const LIMITS = Object.freeze({ maxBitrate: MAX_BITRATE, maxFps: MAX_FPS, maxEdge: MAX_EDGE, maxFrame: MAX_FRAME });
 
 class ScreenError extends Error {
@@ -134,6 +157,55 @@ function cleanSenderHello(m) {
   };
 }
 
+const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+const delta = (v) => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 1;
+const round4 = (v) => Math.round(v * 10000) / 10000;
+const msIn = (v, min, max, dflt) => {
+  if (v == null) return dflt;
+  return Number.isInteger(v) && v >= min && v <= max ? v : null;
+};
+
+/**
+ * An input frame of the viewer → the cleaned object that goes to the phone, or null (dropped). Only the
+ * fields of the contract, coordinates 0…1 of the picture, rounded; text without control characters.
+ */
+function cleanInput(m) {
+  if (!m || typeof m !== 'object') return null;
+  switch (m.k) {
+    case 'tap':
+      return unit(m.x) && unit(m.y) ? { t: 'input', k: 'tap', x: round4(m.x), y: round4(m.y) } : null;
+    case 'long': {
+      const ms = msIn(m.ms, 400, 3000, 650);
+      return unit(m.x) && unit(m.y) && ms != null ? { t: 'input', k: 'long', x: round4(m.x), y: round4(m.y), ms } : null;
+    }
+    case 'swipe': {
+      const ms = msIn(m.ms, 50, 5000, null);
+      if (ms == null || !Array.isArray(m.pts) || m.pts.length < 2 || m.pts.length > MAX_PATH) return null;
+      const pts = [];
+      for (const p of m.pts) {
+        if (!Array.isArray(p) || p.length !== 2 || !unit(p[0]) || !unit(p[1])) return null;
+        pts.push([round4(p[0]), round4(p[1])]);
+      }
+      return { t: 'input', k: 'swipe', pts, ms };
+    }
+    case 'scroll':
+      if (!unit(m.x) || !unit(m.y) || !delta(m.dx) || !delta(m.dy) || (m.dx === 0 && m.dy === 0)) return null;
+      return { t: 'input', k: 'scroll', x: round4(m.x), y: round4(m.y), dx: round4(m.dx), dy: round4(m.dy) };
+    case 'key':
+      return KEYS.includes(m.key) ? { t: 'input', k: 'key', key: m.key } : null;
+    case 'text': {
+      if (typeof m.text !== 'string') return null;
+      // no control characters (also no line breaks: enter is a key of its own)
+      // eslint-disable-next-line no-control-regex
+      if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(m.text)) return null;
+      const n = [...m.text].length;
+      return n >= 1 && n <= MAX_INPUT_TEXT ? { t: 'input', k: 'text', text: m.text } : null;
+    }
+    default:
+      return null;
+  }
+}
+
 function send(ws, obj) {
   try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch { /* gone */ }
 }
@@ -173,6 +245,9 @@ function relayOf(t) {
     ticket: t, sender: null, viewer: null, config: null, sid: null, ended: false, createdAt: Date.now(),
     bucket: BUCKET_BYTES, bucketAt: Date.now(), overSince: null, lastKeyAsk: 0, lastRate: 0, bitrate: null,
     senderLostTimer: null, viewerLostTimer: null, waitTimer: null, maxTimer: null, viewerVia: 'browser', viewerIp: null, senderSeen: false,
+    // stage 6: the mode in force (control only with the phone's control: true), the input limits
+    mode: t.mode === 'control' ? 'control' : 'view', modeReason: t.mode === 'control' ? null : 'viewer_only',
+    inputs: INPUT_PER_S, inputsAt: Date.now(), textInputs: 0, textInputsAt: Date.now(), textChars: [], lastNotice: 0, fails: 0, failsAt: Date.now(),
   };
   relays.set(t.ref, r);
   // the longest session (GC_REMOTE_SCREEN_MAX_MIN)
@@ -197,6 +272,58 @@ function askKeyframe(r, force = false) {
   if (!r.sender || (!force && now - r.lastKeyAsk < KEYFRAME_EVERY_MS)) return;
   r.lastKeyAsk = now;
   send(r.sender.ws, { t: 'keyframe' });
+}
+
+/**
+ * The mode in force goes down to view — for good (the ticket too: a reconnect cannot bring control back).
+ * Both sides hear it; the row, the activity log and the plugin's hook (phase mode) follow.
+ */
+function downgrade(r, reason) {
+  if (r.mode !== 'control') return;
+  r.mode = 'view';
+  r.modeReason = reason;
+  r.ticket.mode = 'view';
+  const m = { t: 'mode', mode: 'view', reason };
+  if (r.sender) send(r.sender.ws, m);
+  if (r.viewer && r.viewer.hello) send(r.viewer.ws, m);
+  try { require('./sessions').screenMode(r.ticket, r.sid, 'view', reason); } catch (e) { logger.debug({ err: e.message }, 'remote screen: mode not recorded'); }
+}
+
+/** A refill bucket: true = one more may pass. */
+function inputAllowed(r, now) {
+  r.inputs = Math.min(INPUT_PER_S, r.inputs + ((now - r.inputsAt) / 1000) * INPUT_PER_S);
+  r.inputsAt = now;
+  if (r.inputs < 1) return false;
+  r.inputs -= 1;
+  return true;
+}
+
+function textAllowed(r, chars, now) {
+  if (now - r.textInputsAt >= 1000) { r.textInputsAt = now; r.textInputs = 0; }
+  if (r.textInputs >= TEXT_INPUTS_PER_S) return false;
+  r.textChars = r.textChars.filter((e) => now - e.at < TEXT_CHARS_WINDOW_MS);
+  const used = r.textChars.reduce((a, e) => a + e.n, 0);
+  if (used + chars > TEXT_CHARS_PER_WINDOW) return false;
+  r.textInputs++;
+  r.textChars.push({ at: now, n: chars });
+  return true;
+}
+
+function notice(r, code, now = Date.now()) {
+  if (!r.viewer || now - r.lastNotice < NOTICE_EVERY_MS) return;
+  r.lastNotice = now;
+  send(r.viewer.ws, { t: 'notice', code });
+}
+
+/** The viewer's input (stage 6): only in control, cleaned and limited, then to the phone. Nothing of it is logged. */
+function onInput(r, m) {
+  const now = Date.now();
+  if (r.mode !== 'control') { notice(r, 'view_only', now); return; }
+  if (!r.sender || !r.sender.hello) return;
+  const c = cleanInput(m);
+  if (!c) return;
+  if (!inputAllowed(r, now) || (c.k === 'text' && !textAllowed(r, [...c.text].length, now))) { notice(r, 'input_rate', now); return; }
+  send(r.sender.ws, c);
 }
 
 /** Both sides are there for the first time: the row of remote_sessions and the hook start. */
@@ -288,7 +415,7 @@ function suggestRate(r, now = Date.now()) {
 }
 
 function onFrame(r, side, data) {
-  if (side.role !== 'sender' || !side.hello) return; // a viewer sends no pictures (input is stage 6)
+  if (side.role !== 'sender' || !side.hello) return; // a viewer sends no pictures (its input is text)
   const h = parseHeader(data);
   if (!h) return;
   const now = Date.now();
@@ -327,11 +454,26 @@ function onText(r, side, m) {
     if (m.t === 'state' && typeof m.paused === 'boolean') {
       const reason = ['locked', 'secure', 'rotating'].includes(m.reason) ? m.reason : null;
       if (r.viewer) send(r.viewer.ws, { t: 'state', paused: m.paused, ...(reason ? { reason } : {}) });
+      return;
+    }
+    // the phone goes down to view (its "Nur ansehen", the service went off, …) — never up
+    if (m.t === 'mode') {
+      if (m.mode === 'view') downgrade(r, MODE_REASONS.includes(m.reason) ? m.reason : 'sender');
+      return;
+    }
+    // an input could not be carried out (no field, locked, …): the viewer hears it, at most 5 a second
+    if (m.t === 'input_fail' && r.viewer && r.viewer.hello) {
+      const now = Date.now();
+      if (now - r.failsAt >= 1000) { r.failsAt = now; r.fails = 0; }
+      if (++r.fails > INPUT_FAILS_PER_S) return;
+      const k = ['tap', 'long', 'swipe', 'scroll', 'key', 'text'].includes(m.k) ? m.k : null;
+      send(r.viewer.ws, { t: 'input_fail', ...(k ? { k } : {}), reason: FAIL_REASONS.includes(m.reason) ? m.reason : 'blocked' });
     }
     return;
   }
-  // the viewer: only a key frame (input is reserved for stage 6 and dropped in view mode)
-  if (m.t === 'keyframe') { if (r.viewer) r.viewer.needKey = true; askKeyframe(r); }
+  // the viewer: a key frame, and (stage 6) its input — only in control mode
+  if (m.t === 'keyframe') { if (r.viewer) r.viewer.needKey = true; askKeyframe(r); return; }
+  if (m.t === 'input') onInput(r, m);
 }
 
 function onHello(r, side, m) {
@@ -349,7 +491,9 @@ function onHello(r, side, m) {
     r.sender = side;
     if (old && old !== side) { send(old.ws, { t: 'error', code: 'replaced' }); closeSide(old, 4000); }
     clearTimeout(r.senderLostTimer);
-    send(side.ws, { t: 'ready', role: 'sender', mode: t.mode, peer: { name: personName(t.userId) }, limits: LIMITS });
+    // the mode in force: control only when the phone can carry input out and shares the whole display
+    if (r.mode === 'control' && (m.control !== true || h.scope !== 'display')) downgrade(r, m.control !== true ? 'sender_no_control' : 'app_scope');
+    send(side.ws, { t: 'ready', role: 'sender', mode: r.mode, ...(r.modeReason ? { modeReason: r.modeReason } : {}), peer: { name: personName(t.userId) }, limits: LIMITS });
     if (r.viewer) {
       send(side.ws, { t: 'viewer', state: 'joined', name: personName(t.userId) });
       // the phone is back after a lost connection: the viewer's "waiting" goes
@@ -366,7 +510,7 @@ function onHello(r, side, m) {
     r.viewer = side;
     if (old && old !== side) { send(old.ws, { t: 'error', code: 'replaced' }); closeSide(old, 4000); }
     clearTimeout(r.viewerLostTimer);
-    send(side.ws, { t: 'ready', role: 'viewer', mode: t.mode, peer: { name: t.target.name || null }, limits: LIMITS });
+    send(side.ws, { t: 'ready', role: 'viewer', mode: r.mode, ...(r.modeReason ? { modeReason: r.modeReason } : {}), peer: { name: t.target.name || null }, limits: LIMITS });
     if (r.config) send(side.ws, r.config);
     if (r.sender) {
       send(r.sender.ws, { t: 'viewer', state: 'joined', name: personName(t.userId) });
@@ -439,6 +583,6 @@ function _resetForTest() {
 }
 
 module.exports = {
-  PROTOCOL, WS_PATH, HEADER, MAX_FRAME, LIMITS, ScreenError, mintToken, takeToken, tokenOfProtocols, parseHeader, header, admit, run, endRef, count,
+  PROTOCOL, WS_PATH, HEADER, MAX_FRAME, LIMITS, ScreenError, mintToken, takeToken, tokenOfProtocols, parseHeader, header, admit, run, endRef, count, cleanInput,
   _resetForTest,
 };
