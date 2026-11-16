@@ -437,6 +437,19 @@ exit 0
     assert.match(calls, /^compose --profile bruecken config --services$/m);
   });
 
+  it('stage 7a: the pins of Signal and its relay are taken only from their own repositories, Telegram not before the file has it', { skip: process.platform !== 'linux' }, () => {
+    fs.mkdirSync(data('bridges/signal/config'), { recursive: true });
+    fs.writeFileSync(data('bridges/signal/config/config.yaml'), 'x\n');
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\nbruecken-signal\nbruecken-signal-relay\nbruecken-core-relay\n');
+    const images = ['signal=' + pin('dock.mau.dev/mautrix/signal'), 'signal-relay=' + pin('alpine/socat'), 'telegram=' + pin('dock.mau.dev/mautrix/telegram'), 'whatsapp=' + pin('dock.mau.dev/mautrix/signal')].join(',');
+    run({ bridges: 'signal,whatsapp', bridges_images: images });
+    const o = fs.readFileSync(path.join(box, '.bruecken-images.yml'), 'utf8');
+    assert.match(o, /bruecken-signal:\n {4}image: "dock\.mau\.dev\/mautrix\/signal:v9@sha256:a{64}"/);
+    assert.match(o, /bruecken-signal-relay:\n {4}image: "alpine\/socat:v9@sha256:a{64}"/);
+    assert.doesNotMatch(o, /bruecken-whatsapp:\n/, 'Signal\'s repository is not WhatsApp\'s');
+    assert.doesNotMatch(o, /telegram/, 'a service the compose file lacks is not written');
+  });
+
   it('a snapshot: stops bridge and homeserver, packs their data folders, starts them again — once per request', { skip: process.platform !== 'linux' || !spawnSync('sh', ['-c', 'command -v tar']).status === 0 }, () => {
     run({});
     run({}); // running now
@@ -450,7 +463,7 @@ exit 0
     assert.ok(list.includes('hs/data/000001.sst') && list.includes('whatsapp/data/whatsapp.db'));
     assert.ok(!list.some((x) => /config|secrets/.test(x)), 'only the data folders');
     const rep = JSON.parse(fs.readFileSync(data('.bridges-backup.json'), 'utf8'));
-    assert.deepEqual([rep.id, rep.result, rep.update_sh], ['abcdefabcdef', 'ok', 9]);
+    assert.deepEqual([rep.id, rep.result, rep.update_sh], ['abcdefabcdef', 'ok', 10]);
     fs.writeFileSync(st('calls'), '');
     assert.doesNotMatch(run({ bridges_backup: 'abcdefabcdef' }), / stop /, 'once');
   });

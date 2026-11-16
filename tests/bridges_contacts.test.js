@@ -132,7 +132,7 @@ describe('contacts', () => {
     await assert.rejects(call('bridges.contacts', { userId: annaId, network: 'whatsapp' }), (e) => e.code === 'ERR_NOT_PERSON');
     await assert.rejects(asPerson(benId, false, () => call('bridges.contacts', { userId: annaId, network: 'whatsapp' })), (e) => e.code === 'ERR_NOT_PERSON');
     await assert.rejects(list(benId), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'refused' && !SECRET.test(e.message));
-    await assert.rejects(asPerson(annaId, false, () => call('bridges.contacts', { userId: annaId, network: 'signal' })), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(asPerson(annaId, false, () => call('bridges.contacts', { userId: annaId, network: 'telegram' })), (e) => e.code === 'ERR_INVALID');
   });
 });
 
@@ -196,6 +196,6 @@ describe('createDmByRef', () => {
 
 describe('gc.bridges version 6', () => {
   it('status() names version 9 (6 and newer: contacts; 8: matchAccounts of the user profile; 9: recognition)', () => {
-    assert.equal(bridges.status().version, 9);
+    assert.equal(bridges.status().version, 10);
   });
 });

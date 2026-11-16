@@ -114,6 +114,10 @@ compose files (a test keeps them in step):
 | `bruecken-hs` | `ghcr.io/matrix-construct/tuwunel` | v1.9.4 | `sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec` |
 | `bruecken-whatsapp` | `dock.mau.dev/mautrix/whatsapp` | v0.2610.0 (mautrix-go v0.32.0) | `sha256:c807054cb015d0f5c90d20d85aac216d062b4a6f4ae834b931fd5e7f03e27391` |
 | `bruecken-whatsapp-relay` | `alpine/socat` | 1.8.1.3 | `sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba` |
+| `bruecken-signal` | `dock.mau.dev/mautrix/signal` | v0.2610.0 (mautrix-go v0.32.0, libsignal 0.105.0) | `sha256:39afa721aa69472b2e91c75bd7d81a739e47f7e480fc0ff5ac8247af28eb2d0a` |
+| `bruecken-signal-relay` | `alpine/socat` | 1.8.1.3 | (as above) |
+| `bruecken-telegram` | `dock.mau.dev/mautrix/telegram` | v0.2610.0 (the Go version; stage 7b, not started before) | `sha256:ed3f3b39289fae425a875311d8875729271c24f88ba03209bd1bfbaf31e6c78f` |
+| `bruecken-telegram-relay` | `alpine/socat` | 1.8.1.3 | (as above) |
 
 The digests are the `Docker-Content-Digest` of the tag's manifest list at the
 registry (amd64 and arm64 in each). The fallback homeserver, should Tuwunel
@@ -627,6 +631,72 @@ readOnly differ — a group that was `direct` becomes `group` in the plugin with
 a reaction on a channel post is open. A refusal comes back as a `status` event (`failed`) with the reaction's id as
 `target`. The bridge passes on no reaction counts of a channel.
 
+## Signal (stage 7a, gc.bridges version 10)
+
+A second bridge next to WhatsApp, read from the sources of mautrix-signal v0.2610.0 (and mautrix-go v0.32.0) and tested
+against the stand-ins (`tests/bridges_signal.test.js`, `tests/helpers/fake-bridge.js` with `network: 'signal'`); not
+yet run with a real Signal account.
+
+**Containers.** `bruecken-signal` and `bruecken-signal-relay` (socat, port 29320) in the profile `bruecken`, the same
+rules as WhatsApp's (`read_only`, one capability, no port, its own socket `run/signal.sock`, `mem_limit` 384 MB — an
+upper bound, not measured). The release `docker-compose.yml` carries `bruecken-telegram` and its relay (29321) already,
+so that the file is replaced once for both; the server never asks for Telegram before stage 7b (it needs the
+administrator's Telegram application id). The pin is the `Docker-Content-Digest` of the manifest list at
+`dock.mau.dev` (checked against the registry, amd64 and arm64).
+
+**update.sh marker 10.** `bridge_repo` takes a pin for `signal` / `telegram` only from `dock.mau.dev/mautrix/signal` /
+`…/telegram` (their relays from `alpine/socat`). A wanted bridge whose service the host's `docker-compose.yml` lacks is
+left out — the others run — and reported as `"<name>":{"present":false}`; `status().networks[].needs` is then
+`compose` (the messenger's settings ask to replace the file once). The server asks for Signal only from marker 10 on
+(`needs: 'script'` before; update.sh updates itself after a GateControl update). `probe_redact` drops lines with
+`sgnl:`, `linkdevice`, the transfer archive, `tg:`, `t.me/`, login tokens and passwords, and blanks UUIDs (Signal's
+account ids, also `PNI:…`), Base64 runs of 20 characters and more (with `/`: Signal's group ids), more id fields
+(`aci`, `pni`, `service_id`, `group_id`, `e164`, `number`, `username`, `peer_id`, …) and long runs of digits.
+
+**Configuration** (`config.js`, every key in `tests/fixtures/bridges/keys-mautrix-signal-0.2610.0.json`):
+`network.displayname_template: '{{or .ProfileName ""}}'` (only the name the contact shows in their Signal profile —
+the default falls back to the number; `ContactName` and `Nickname` are the linking person's and "not safe on
+multi-user instances"), `number_in_topic: false`, `use_contact_avatars: false`, `device_name: GateControl` (as Signal
+shows it in "Linked devices"), `note_to_self_avatar: ''` (the default lies on another server);
+`bridge.view_limited_media: true`; `logging.min_level: warn`; spaces off as for WhatsApp.
+
+**Login.** QR code only (`login.go`: the one flow `qr`; `NET.signal.flows`): `login.flows` filters, `login.start`
+refuses any other flow before the bridge is asked. The code is `sgnl://linkdevice?…`; Signal renews it every 45 s — the
+waiting step answers with a new `display_and_wait` step (same step id, new data). The login is named by the account's
+ACI (a UUID), with the number as its name; `logins()` passes a name only when it is a number (an account without a
+visible number has no name, never its id). The bridge's own texts never leave the server — its last one is
+"Successfully logged in as <number> / <ACI>": every step gets our own `instructions`, field names and descriptions
+are emptied (all networks).
+
+**History.** With `backfill.enabled` (history allowed) the bridge asks the phone for the transfer archive at the link
+(`PerformProvisioning(…, Backfill.Enabled)`), the phone asks the person, and the bridge makes a room for every chat of
+it (`chatsync.go`), filled by the forward backfill from the archive. Once: later there is nothing (`FetchMessages` reads
+only the archive's tables). `historyOf(userId, 'signal')` caps the person's choice at **30 days**
+(`NET.signal.historyDays`, also for "everything"); the rest is never written. The plugin files it at night as before.
+
+**Events.** Kind from the chat's id (`m.bridge` → `channel.id`): 44 characters of Base64 a group, a UUID /
+`PNI:<uuid>` a person (`pkg/signalid` `ParsePortalID`). Disappearing messages: the state
+`com.beeper.disappearing_timer { type, timer }` → `chat.timer: { type: 'after_read' | 'after_send', seconds } | null`
+(in every `chat` event that knows the room's state; a change sends one); the bridge's notice about it
+(`com.beeper.action_message` type `disappearing_timer`) is a `notice` with `action: { type: 'timer', seconds }`; the
+bridge deletes the messages itself (redactions). A sticker is `media.kind: 'sticker'` (the emoji as its name). A
+view-once picture or video (`com.beeper.view_limited`, because of `view_limited_media`) is a message of kind
+`unsupported` with `viewOnce: true` — no file, and the file at the homeserver is marked unwanted at once. Signal has no
+channels.
+
+**Erkennen.** `recognition.get / set(userId, …, network)` for `whatsapp`, `signal` and `telegram` (the profile keeps
+one consent per network: `users.recognize_by_signal` / `_telegram`, migration 155). Signal accounts carry a fixed id
+(the ACI): every whoami notes the keyed hash of the person's own (`profile.noteOwnAccounts`, `user_bridge_accounts`),
+and `matchAccounts` compares a contact's ACI with it — `via: 'own_signal'`, strong, only with that person's consent;
+numbers count where the bridge knows them (`tel:` identifiers) as for WhatsApp. User names never count. A profile
+number the own Signal has becomes `state: 'signal'` ("Bestätigt über dein Signal"). Not solved by the bridge: it trusts
+a contact's new safety number by itself (`IsTrustedIdentity`, TRUSTED_UNVERIFIED) and reports nothing — the apps say so
+once per Signal chat.
+
+**Animated stickers.** One switch for every bridge that converts them: `configure({ animatedStickers })`,
+`status().stickers.animated`, off by default (a still picture). Signal sends its stickers as pictures and converts
+nothing; Telegram (stage 7b) is the first bridge that uses the switch.
+
 ## Stages
 
 | # | Content |
@@ -637,7 +707,7 @@ a reaction on a channel post is open. A refusal comes back as a `status` event (
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
-| 7 | Signal, Telegram |
+| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram |
 
 ## Files
 

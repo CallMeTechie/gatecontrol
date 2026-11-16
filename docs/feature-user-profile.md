@@ -62,6 +62,14 @@ The server compares the numbers of the contact list the bridge keeps (no questio
 | the account's own linked WhatsApp has the number | strong (`own_whatsapp`) | consent "WhatsApp" |
 | a confirmed number in the profile | strong (`profile_phone`) | consent "Telefonnummern", "Zum Erkennen nutzen" |
 | an unconfirmed number in the profile | medium (`profile_phone`) | the same, and the administrator did not switch on "nur bestätigte" |
+| (stage 7a) the account's own linked Signal: the contact's fixed account id (ACI) or its number | strong (`own_signal`) | consent "Signal" |
+
+**Per network (stage 7a, migration 155).** One consent per service: `recognition.bySignal` / `byTelegram` next to
+`byWhatsapp` (`PATCH … { recognition: { bySignal: true } }`), and in the own view `recognition.networks: { whatsapp,
+signal, telegram: { allowed, answered, linked } }`. The portal shows a line per linked service. Signal accounts have a
+fixed id: every `whoami` keeps the keyed hash of the person's own (`user_bridge_accounts`, never the id); a phone number
+the own Signal has gets the state `signal` ("Bestätigt über dein Signal"; `telegram` follows with stage 7b). User names
+at Signal or Telegram never count — they are chosen freely and change.
 
 Never: the asking person herself, a disabled account, a number that stands in two accounts (profile or own login), a
 contact whose numbers would name two accounts. The plugin gets `{ contactId, userId, strength, via }` only; merging a

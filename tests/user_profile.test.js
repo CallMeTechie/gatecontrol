@@ -411,7 +411,7 @@ describe('gc.bridges.recognition (version 9)', () => {
 
   it('only for whatsapp, only booleans, set only inside a changing request of that person', async () => {
     const u = H.makeUser('pf-rec2');
-    await assert.rejects(asPerson(u, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'signal' })), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(asPerson(u, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'matrix' })), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(set(u, 'ja'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(asPerson(u, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.set', { userId: u, network: 'whatsapp', allowed: true })), (e) => e.code === 'ERR_NOT_PERSON');
     await assert.rejects(hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'whatsapp' }), (e) => e.code === 'ERR_NOT_PERSON');

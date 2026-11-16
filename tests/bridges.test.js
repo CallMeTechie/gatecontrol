@@ -71,7 +71,7 @@ describe('the service', () => {
     assert.equal(st.locations.length, 1);
     assert.equal(st.locations[0].kind, 'server');
     assert.ok(st.locations[0].cores >= 1 && st.locations[0].memMb > 0);
-    assert.deepEqual(st.networks.map((n) => [n.id, n.enabled, n.state]), [['whatsapp', false, 'off']]);
+    assert.deepEqual(st.networks.map((n) => [n.id, n.enabled, n.state]), [['whatsapp', false, 'off'], ['signal', false, 'off']]);
     // stage 5: older messages are allowed by default (each person chooses; 30 days unless they change it)
     assert.equal(st.history.enabled, true);
     assert.equal(st.history.default, 30);
@@ -108,7 +108,7 @@ describe('the service', () => {
 
   it('refuses anything but its two switches', () => {
     process.env.GC_BRIDGES_PREVIEW = '1';
-    for (const bad of [null, [], { enabled: 'yes' }, { networks: { signal: true } }, { networks: { whatsapp: 1 } }, { location: 'gateway' }, { networks: [] }]) {
+    for (const bad of [null, [], { enabled: 'yes' }, { networks: { telegram: true } }, { networks: { whatsapp: 1 } }, { animatedStickers: 'yes' }, { location: 'gateway' }, { networks: [] }]) {
       assert.throws(() => bridges.configure(bad, {}), (e) => e.code === 'ERR_INVALID', JSON.stringify(bad));
     }
     assert.equal(bridges.status().enabled, false);
@@ -124,7 +124,8 @@ describe('the service', () => {
     let st = bridges.status();
     assert.equal(st.host.state, 'running');
     assert.deepEqual(st.host.homeserver, { running: true, memMb: 61, limitMb: 384, version: '1.2.0', outdated: false, wantVersion: '1.9.4' });
-    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0', clientOutdated: false });
+    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0', clientOutdated: false,
+      flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, needs: null, scriptNeeded: 8 });
     assert.equal(st.host.limitsProvisional, true, 'no measured memory need yet');
     assert.equal(st.host.probe, null);
     assert.equal(st.host.script.needed, 8);
@@ -162,7 +163,8 @@ describe('a person links their own account (stand-in bridge)', () => {
     assert.deepEqual(flows.map((f) => f.id), ['qr', 'phone']);
     const first = await bridges.login.start(annaId, 'whatsapp', 'phone');
     assert.equal(first.step.type, 'user_input');
-    assert.deepEqual(first.step.fields, [{ id: 'phone_number', type: 'phone_number', name: 'Phone number', description: 'Include the country code with a +', optional: false }]);
+    // stage 7a: the bridge's own words (names, descriptions, instructions) are not passed on
+    assert.deepEqual(first.step.fields, [{ id: 'phone_number', type: 'phone_number', name: '', description: '', optional: false }]);
     const code = await bridges.login.step(annaId, 'whatsapp', first.processId, first.step.id, 'user_input', { phone_number: '+4915120000000' });
     assert.deepEqual(code.step.display, { type: 'code', data: 'K7P2-M4X9' });
 
@@ -234,7 +236,7 @@ describe('a person links their own account (stand-in bridge)', () => {
   });
 
   it('checks what goes to the bridge and what comes back', async () => {
-    await assert.rejects(async () => bridges.login.start(annaId, 'signal', 'qr'), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(async () => bridges.login.start(annaId, 'telegram', 'qr'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(async () => bridges.login.start(0, 'whatsapp', 'qr'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(bridges.login.start(annaId, 'whatsapp', '../whoami'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(bridges.login.step(annaId, 'whatsapp', 'p/../x', 's', 'user_input', { a: 'b' }), (e) => e.code === 'ERR_INVALID');
@@ -404,7 +406,7 @@ exit 0
     const r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'failed');
     assert.equal(r.state.error, 'compose_missing');
-    assert.equal(r.state.update_sh, 9); // the marker of update.sh (9 since the recordings drive)
+    assert.equal(r.state.update_sh, 10); // the marker of update.sh (10 since Signal, stage 7a)
     assert.doesNotMatch(r.calls, / up -d /);
   });
 
@@ -505,7 +507,7 @@ exit 0
     r = run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
     const p = probe();
     assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
-    assert.equal(p.update_sh, 9);
+    assert.equal(p.update_sh, 10);
     assert.equal(p.window_s, 10);
     assert.deepEqual(Object.keys(p.services), ['hs', 'whatsapp', 'whatsapp-relay']);
     assert.equal(p.services.hs.running, true);
@@ -561,6 +563,66 @@ exit 0
     assert.match(log, /2026-11-14T20:11:02Z INF Bridge started/);
     assert.match(log, /2026-11-14T20:13:02Z INF Login completed successfully/);
     assert.match(log, /Created portal/);
+  });
+
+  it('stage 7a: Signal runs next to WhatsApp; a compose file without it leaves it out and says so — WhatsApp keeps running', { skip }, () => {
+    fs.mkdirSync(path.join(box, 'data', 'bridges', 'signal', 'config'), { recursive: true });
+    fs.writeFileSync(path.join(box, 'data', 'bridges', 'signal', 'config', 'config.yaml'), 'x\n');
+    // an older docker-compose.yml: no service for Signal
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\nbruecken-core-relay\n');
+    let r = run({ mode: 'manual', bridges: 'signal,whatsapp' });
+    assert.match(r.calls, /up -d bruecken-hs bruecken-core-relay bruecken-whatsapp bruecken-whatsapp-relay\n/);
+    assert.doesNotMatch(r.calls, /bruecken-signal/);
+    assert.notEqual(r.state.state, 'failed');
+    assert.deepEqual(r.state.services.signal, { present: false, running: false });
+    assert.match(fs.readFileSync(path.join(box, 'update.log'), 'utf8'), /no service for: signal/);
+    // only Signal wanted and the file does not know it: nothing starts, the state says why
+    fs.writeFileSync(st('calls'), '');
+    r = run({ mode: 'manual', bridges: 'signal' });
+    assert.equal(r.state.state, 'failed');
+    assert.equal(r.state.error, 'compose_missing');
+    assert.deepEqual(r.state.services.signal, { present: false, running: false });
+    // the release file: both bridges, each with its relay
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\nbruecken-signal\nbruecken-signal-relay\nbruecken-telegram\nbruecken-telegram-relay\nbruecken-core-relay\n');
+    fs.writeFileSync(st('calls'), '');
+    fs.rmSync(path.join(box, 'data', '.bridges-state.json'), { force: true });
+    r = run({ mode: 'manual', bridges: 'signal,whatsapp' });
+    assert.match(r.calls, /up -d bruecken-hs bruecken-core-relay bruecken-signal bruecken-signal-relay bruecken-whatsapp bruecken-whatsapp-relay\n/);
+    assert.doesNotMatch(r.calls, /up -d .*bruecken-telegram/, 'Telegram is not asked for');
+    assert.equal(r.state.services.signal.running, true);
+  });
+
+  it('stage 7a: the probe keeps nothing of a Signal or Telegram link, account or group', { skip }, () => {
+    fs.mkdirSync(path.join(box, 'data', 'bridges', 'signal', 'config'), { recursive: true });
+    fs.writeFileSync(path.join(box, 'data', 'bridges', 'signal', 'config', 'config.yaml'), 'x\n');
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-signal\nbruecken-signal-relay\nbruecken-core-relay\n');
+    for (const f of ['hs/run/hs.sock', 'run/signal.sock']) {
+      const file = path.join(box, 'data', 'bridges', f);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      assert.equal(spawnSync(process.execPath, ['-e', `const s=require('net').createServer();s.listen(${JSON.stringify(file)},()=>process.exit(0));`]).status, 0);
+    }
+    // made up: ids, keys and numbers are patterns, nobody's
+    fs.writeFileSync(st('logs'), [
+      '2026-11-16T09:00:00Z INF Bridge started',
+      '2026-11-16T09:00:01Z DBG Got provisioning URL sgnl://linkdevice?uuid=QWxhZGRpbjpvcGVuIHNlc2FtZQ&pub_key=BXk2Y3h0eXBlYmFzZTY0',
+      '2026-11-16T09:00:20Z INF Fetching transfer archive before syncing chats',
+      '2026-11-16T09:00:21Z INF Logged in aci=0f2c4b1e-7d3a-4c5b-9e8f-1a2b3c4d5e6f pni=PNI:9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d number=+4915100000000',
+      '2026-11-16T09:00:22Z WRN Failed to get group info group_id=dGhpcyBpcyBub3QgYSByZWFsIGdyb3VwIGlkIGF0IGFsbA== for 0f2c4b1e-7d3a-4c5b-9e8f-1a2b3c4d5e6f',
+      '2026-11-16T09:00:23Z INF Open tg://login?token=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0e to log in',
+      '2026-11-16T09:00:24Z INF Joined https://t.me/+AbCdEfGhIjKlMnOp',
+      '2026-11-16T09:00:25Z WRN Flood wait for peer 1234567890 chat 9876543210',
+      '2026-11-16T09:00:26Z INF Portal created',
+    ].join('\n') + '\n');
+    run({ mode: 'manual', bridges: 'signal' }, ['bridges-probe', '10']);
+    const p = JSON.parse(fs.readFileSync(path.join(box, 'data', '.bridges-probe.json'), 'utf8'));
+    assert.deepEqual(Object.keys(p.services), ['hs', 'core-relay', 'signal', 'signal-relay']);
+    assert.deepEqual(p.sockets, { hs: true, signal: true });
+    const log = p.logs.signal;
+    for (const gone of ['sgnl:', 'linkdevice', 'transfer archive', 'tg://', 'token=', 't.me']) assert.ok(!log.includes(gone), `"${gone}" must not be in the probe file`);
+    assert.doesNotMatch(log, /0f2c4b1e|9a8b7c6d|4915100000000|dGhpcyBpcyBub3Qg|1234567890|9876543210/);
+    assert.match(log, /Bridge started/);
+    assert.match(log, /Portal created/);
+    assert.match(log, /Logged in/);
   });
 
   it('starts the server’s own relay with the bridges when the compose file has it, and says when it is missing', { skip }, () => {

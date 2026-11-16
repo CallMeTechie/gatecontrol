@@ -36,6 +36,39 @@ const IMAGES = Object.freeze({
     version: '1.8.1.3',
     digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
   }),
+  // stage 7a: mautrix-signal v0.2610.0 (16 Oct 2026; mautrix-go v0.32.0, libsignal 0.105.0) — the digest checked against
+  // the registry (HEAD dock.mau.dev/v2/mautrix/signal/manifests/v0.2610.0, Docker-Content-Digest of the manifest list)
+  signal: Object.freeze({
+    service: 'bruecken-signal',
+    repo: 'dock.mau.dev/mautrix/signal',
+    tag: 'v0.2610.0',
+    version: '0.2610.0',
+    digest: 'sha256:39afa721aa69472b2e91c75bd7d81a739e47f7e480fc0ff5ac8247af28eb2d0a',
+  }),
+  'signal-relay': Object.freeze({
+    service: 'bruecken-signal-relay',
+    repo: 'alpine/socat',
+    tag: '1.8.1.3',
+    version: '1.8.1.3',
+    digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
+  }),
+  // stage 7b (not offered yet — it needs the administrator's Telegram application id): mautrix-telegram v0.2610.0
+  // (16 Oct 2026, the Go version; mautrix-go v0.32.0). In the compose file already, so that it is replaced only once;
+  // the server never asks update.sh for it before 7b.
+  telegram: Object.freeze({
+    service: 'bruecken-telegram',
+    repo: 'dock.mau.dev/mautrix/telegram',
+    tag: 'v0.2610.0',
+    version: '0.2610.0',
+    digest: 'sha256:ed3f3b39289fae425a875311d8875729271c24f88ba03209bd1bfbaf31e6c78f',
+  }),
+  'telegram-relay': Object.freeze({
+    service: 'bruecken-telegram-relay',
+    repo: 'alpine/socat',
+    tag: '1.8.1.3',
+    version: '1.8.1.3',
+    digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
+  }),
   // the same relay for the server itself: the homeserver's events reach the server's Unix socket through it
   'core-relay': Object.freeze({
     service: 'bruecken-core-relay',

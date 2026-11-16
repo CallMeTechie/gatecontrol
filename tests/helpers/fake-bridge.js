@@ -18,6 +18,12 @@
 //                    GET contacts, POST search_users; create_dm with a ghost's Matrix id). `room`: the room a chat
 //                    with it gets; `chatRoom`: the room it has already (dm_room_mxid in the list)
 //   await bridge.close()
+//
+// Stage 7a: startFakeBridge({ socket, secret, network: 'signal' }) answers as mautrix-signal v0.2610.0 does
+// (pkg/connector/login.go): one flow "qr", a code sgnl://linkdevice?…, a new code every 45 s (bridge.refresh(processId)
+// — the waiting step answers with a new display_and_wait step), a login named by its ACI (a UUID) with the number as
+// name and profile phone (bridge.nextAci, bridge.nextNumber — null: an account without a visible number), the last
+// step's text naming both; contacts with `aci` are ghosts @signal_<aci>, their id the ACI.
 
 const fs = require('node:fs');
 const http = require('node:http');
@@ -26,13 +32,24 @@ const FLOWS = [
   { id: 'qr', name: 'QR', description: 'Scan a QR code from the app' },
   { id: 'phone', name: 'Pairing code', description: 'Enter a pairing code in the app' },
 ];
+const SIGNAL_FLOWS = [{ id: 'qr', name: 'QR', description: 'Scan a QR code to pair the bridge to your Signal app' }];
 
-function startFakeBridge({ socket, secret }) {
-  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map(), contacts: [] };
+function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
+  const signal = network === 'signal';
+  const flows = signal ? SIGNAL_FLOWS : FLOWS;
+  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map(), contacts: [], nextAci: null, nextNumber: '+4915100000000' };
   const send = (res, status, json) => { const b = JSON.stringify(json); res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); };
   const notFound = (res) => send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Login process not found (internal detail)' });
 
   function complete(p) {
+    if (signal) {
+      const aci = state.nextAci || `0f2c4b1e-7d3a-4c5b-9e8f-${String(++state.seq).padStart(12, '0')}`;
+      const list = state.logins.get(p.userId) || [];
+      list.push({ id: aci, name: state.nextNumber || aci, phone: state.nextNumber || '', state_event: 'CONNECTED', timestamp: Date.now() });
+      state.logins.set(p.userId, list);
+      state.processes.delete(p.id);
+      return { login_id: p.id, type: 'complete', step_id: 'fi.mau.signal.login.complete', instructions: `Successfully logged in as ${state.nextNumber || ''} / ${aci}`, complete: { user_login_id: aci } };
+    }
     const id = `login-${++state.seq}`;
     const list = state.logins.get(p.userId) || [];
     list.push({ id, name: p.phone || '+490000000', state_event: 'CONNECTED', timestamp: Date.now() });
@@ -58,15 +75,19 @@ function startFakeBridge({ socket, secret }) {
 
       if (m === 'GET' && seg.join('/') === 'whoami') {
         return send(res, 200, {
-          network: { displayname: 'WhatsApp', network_id: 'whatsapp' }, login_flows: FLOWS, homeserver: 'gc.internal', bridge_bot: '@whatsappbot:gc.internal',
+          network: { displayname: signal ? 'Signal' : 'WhatsApp', network_id: network }, login_flows: flows, homeserver: 'gc.internal', bridge_bot: `@${network}bot:gc.internal`,
           management_room: '!secret:gc.internal',
-          logins: (state.logins.get(userId) || []).map((l) => ({ id: l.id, name: l.name, profile: { phone: l.name }, space_room: '!space:gc.internal', state: { state_event: l.state_event, timestamp: l.timestamp, ...(l.error ? { error: l.error } : {}) } })),
+          logins: (state.logins.get(userId) || []).map((l) => ({ id: l.id, name: l.name, profile: { phone: l.phone !== undefined ? l.phone : l.name }, space_room: '!space:gc.internal', state: { state_event: l.state_event, timestamp: l.timestamp, ...(l.error ? { error: l.error } : {}) } })),
         });
       }
-      if (m === 'GET' && seg.join('/') === 'login/flows') return send(res, 200, { flows: FLOWS });
+      if (m === 'GET' && seg.join('/') === 'login/flows') return send(res, 200, { flows });
       // stage 4c: the contact store (startchat.go getContactList, provisionutil listcontacts.go) — as the real bridge
       // answers: the WhatsApp id, the number in identifiers, the ghost, the room of a chat that exists
       const contactOut = (c) => {
+        // Signal (pkg/connector/chatinfo.go): the ACI as id, tel: only when the number is known
+        if (signal) {
+          return { id: c.aci, name: c.name, ...(c.avatar ? { avatar_url: c.avatar } : {}), identifiers: c.number ? [`tel:${c.number}`] : [], mxid: `@signal_${c.aci}:gc.internal`, ...(c.chatRoom ? { dm_room_mxid: c.chatRoom } : {}) };
+        }
         const id = c.lid ? `lid-${c.lid}` : c.number.slice(1);
         return { id, name: c.name, ...(c.avatar ? { avatar_url: c.avatar } : {}), identifiers: [`tel:${c.number}`], mxid: `@whatsapp_${id}:gc.internal`, ...(c.chatRoom ? { dm_room_mxid: c.chatRoom } : {}) };
       };
@@ -77,7 +98,7 @@ function startFakeBridge({ socket, secret }) {
       if (m === 'POST' && seg.join('/') === 'search_users') {
         if (!(state.logins.get(userId) || []).length) return send(res, 403, { errcode: 'M_FORBIDDEN', error: 'You must be logged in to list contacts' });
         const q = String((body && body.query) || '').toLowerCase();
-        return send(res, 200, { results: state.contacts.filter((c) => c.name.toLowerCase().includes(q) || c.number.includes(q)).map(contactOut) });
+        return send(res, 200, { results: state.contacts.filter((c) => c.name.toLowerCase().includes(q) || String(c.number || '').includes(q)).map(contactOut) });
       }
       if (m === 'POST' && seg[0] === 'create_dm' && seg[1] && seg[1].startsWith('@whatsapp_')) {
         if (!(state.logins.get(userId) || []).length) return send(res, 400, { errcode: 'FI.MAU.NOT_LOGGED_IN', error: "You're not logged in" });
@@ -96,7 +117,7 @@ function startFakeBridge({ socket, secret }) {
           ...(m === 'POST' ? { dm_room_mxid: who.room } : {}) });
       }
       if (m === 'POST' && seg[0] === 'login' && seg[1] === 'start' && seg.length === 3) {
-        if (!FLOWS.some((f) => f.id === seg[2])) return send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Unknown login flow' });
+        if (!flows.some((f) => f.id === seg[2])) return send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Unknown login flow' });
         const p = { id: `proc-${++state.seq}`, userId, flow: seg[2], phone: null, waiter: null };
         state.processes.set(p.id, p);
         if (state.oddStep) { const type = state.oddStep; state.oddStep = null; return send(res, 200, { login_id: p.id, type, step_id: 'fi.mau.whatsapp.login.' + type, [type]: {} }); }
@@ -104,6 +125,7 @@ function startFakeBridge({ socket, secret }) {
           return send(res, 200, { login_id: p.id, type: 'user_input', step_id: 'fi.mau.whatsapp.login.phone', instructions: 'Enter your phone number',
             user_input: { fields: [{ type: 'phone_number', id: 'phone_number', name: 'Phone number', description: 'Include the country code with a +', pattern: '^\\+[0-9]+$' }] } });
         }
+        if (signal) return send(res, 200, qrSignal(p));
         return send(res, 200, { login_id: p.id, type: 'display_and_wait', step_id: 'fi.mau.whatsapp.login.qr', instructions: 'Scan the QR code',
           display_and_wait: { type: 'qr', data: '2@fake-qr-payload,one,two,three', image_url: 'mxc://gc.internal/qr' } });
       }
@@ -121,6 +143,8 @@ function startFakeBridge({ socket, secret }) {
           p.waiter = (how) => {
             p.waiter = null;
             if (how === 'expire') { state.processes.delete(p.id); return send(res, 500, { errcode: 'FI.MAU.WHATSAPP.LOGIN_TIMEOUT', error: 'Entering code or scanning QR timed out' }); }
+            // Signal: after 45 s a new code — the same login, a new step
+            if (how === 'refresh') return send(res, 200, qrSignal(p));
             return send(res, 200, complete(p));
           };
           if (p.early) { const how = p.early; p.early = null; p.waiter(how); }
@@ -144,6 +168,12 @@ function startFakeBridge({ socket, secret }) {
     });
   });
 
+  function qrSignal(p) {
+    p.codes = (p.codes || 0) + 1;
+    return { login_id: p.id, type: 'display_and_wait', step_id: 'fi.mau.signal.login.qr', instructions: 'Scan the QR code on your Signal app to log in',
+      display_and_wait: { type: 'qr', data: `sgnl://linkdevice?uuid=fakeCode${p.codes}&pub_key=fakeKey${p.codes}` } };
+  }
+
   const settle = (processId, how) => {
     const p = state.processes.get(processId);
     if (!p) throw new Error('fake bridge: unknown process ' + processId);
@@ -161,6 +191,9 @@ function startFakeBridge({ socket, secret }) {
       get contacts() { return state.contacts; },
       set contacts(v) { state.contacts = v; },
       set oddStep(v) { state.oddStep = v; },
+      set nextAci(v) { state.nextAci = v; },
+      set nextNumber(v) { state.nextNumber = v; },
+      refresh: (processId) => settle(processId, 'refresh'),
       confirm: (processId) => settle(processId, 'confirm'),
       expire: (processId) => settle(processId, 'expire'),
       logOut(userId, loginId) { const l = (state.logins.get(userId) || []).find((x) => x.id === loginId); if (l) { l.state_event = 'BAD_CREDENTIALS'; l.error = 'wa-logged-out'; l.timestamp = Date.now(); } },

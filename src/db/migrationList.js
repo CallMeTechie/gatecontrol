@@ -4272,6 +4272,30 @@ const migrations = [
             OR json_extract(profile_visibility, '$.avatar') NOT IN ('all', 'contacts', 'family', 'self'));`,
     detect: () => false,
   },
+  {
+    version: 155,
+    name: 'bridges_signal',
+    // Messenger bridges, stage 7a (Signal; Telegram follows with 7b) — "Erkennen" per network (services/profile.js):
+    //   users.recognize_by_signal / _telegram   the consent "an meinem verknüpften Signal / Telegram" (off), *_at when
+    //                                           answered — like recognize_by_whatsapp
+    //   user_bridge_accounts   the keyed hash of the fixed account id of a person's own linked login at a service
+    //                          (Signal: the ACI) — "eigenes Signal" compares it with a contact's; never the id itself
+    // Goes with the user (ON DELETE CASCADE).
+    sql: `
+      ALTER TABLE users ADD COLUMN recognize_by_signal INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN recognize_by_signal_at TEXT;
+      ALTER TABLE users ADD COLUMN recognize_by_telegram INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN recognize_by_telegram_at TEXT;
+      CREATE TABLE IF NOT EXISTS user_bridge_accounts (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        network TEXT NOT NULL,
+        account_hash TEXT NOT NULL,
+        seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, network, account_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_bridge_accounts_hash ON user_bridge_accounts (network, account_hash);`,
+    detect: (db) => hasColumn(db, 'users', 'recognize_by_telegram_at') && tableExists(db, 'user_bridge_accounts'),
+  },
 ];
 
 module.exports = { migrations };
