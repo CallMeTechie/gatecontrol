@@ -24,6 +24,7 @@ belong to; without a family the level is not offered), **Alle auf diesem Server*
 | E-mail addresses | only me | the main address as before (locked for directory members); further ones are confirmed by a code when the server can send mail (SMTP) |
 | Birthday | family | `YYYY-MM-DD` or `--MM-DD`; "Jahr verbergen" — nobody else sees the year |
 | Language, time zone | only me | the time zone is the same value as the quiet hours (`notify_user_prefs.tz`) |
+| Picture ("Wer sieht dein Bild?") | all | `all` / `contacts` / `family` / `self`, for all of GateControl — docs/feature-avatars.md "Wer sieht dein Bild?"; administrators see the picture anyway, marked "für andere verborgen" |
 | Address | — | not part of the profile |
 
 Administrators see what they need to manage an account — name, user name, e-mail, language (changed in "Bearbeiten"
@@ -74,7 +75,7 @@ The same on three mounts — `/api/v1/me` (web session), `/api/v1/portal/me` (po
 | Method and path | Body → answer |
 |---|---|
 | `GET …/profile` | `{ ok, user, palette, profile }` (`user` / `palette`: picture and colour as before) |
-| `PATCH …/profile` | `{ displayName?, firstName?, lastName?, about?, birthday?: { date, yearHidden } \| null, email?, language?, timezone?, visibility?: { firstName, lastName, about, birthday, email, language, timezone }, recognition?: { byWhatsapp?, byPhone? } }` → `{ ok, profile }` |
+| `PATCH …/profile` | `{ displayName?, firstName?, lastName?, about?, birthday?: { date, yearHidden } \| null, email?, language?, timezone?, visibility?: { firstName, lastName, about, birthday, email, language, timezone, avatar }, recognition?: { byWhatsapp?, byPhone? } }` → `{ ok, profile }` |
 | `POST …/profile/phones` | `{ kind, number, visibility?, useForRecognition? }` → `201 { ok, phone, profile }` |
 | `PATCH …/profile/phones/:id` | the same fields, each optional (a new number starts unconfirmed) → `{ ok, phone, profile }` |
 | `DELETE …/profile/phones/:id` | → `{ ok, profile }` |

@@ -386,6 +386,8 @@
         <section class="pt-card pt-pad pt-look" aria-labelledby="pt-c-look">
           <h2 class="pt-h2" id="pt-c-look">{{ t('avatar.title') }}</h2>
           <div id="pt-look"></div>
+          {#- "Wer sieht dein Bild?" (visibility.avatar, public/js/portal.js renderLookVis) — for all of GateControl -#}
+          <div class="pt-look-vis" id="pt-look-vis" hidden></div>
         </section>
         <section class="pt-card pt-pad" id="pt-pf-recog" aria-labelledby="pt-h-recog" hidden></section>
         {#- Plugin sections on the viewer's own profile (docs/plugins.md "Portal", since 1.188.0):

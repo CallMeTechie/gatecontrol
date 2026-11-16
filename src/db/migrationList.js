@@ -4255,6 +4255,23 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_remote_recordings_created ON remote_recordings (created_at);`,
     detect: (db) => tableExists(db, 'remote_host_keys') && hasColumn(db, 'remote_sessions', 'engine') && hasColumn(db, 'remote_recordings', 'plain_bytes'),
   },
+  {
+    version: 154,
+    name: 'profile_avatar_visibility',
+    // "Wer sieht dein Bild?" (docs/feature-avatars.md, services/avatars.js): users.profile_visibility gets the key
+    // `avatar` — 'all' | 'contacts' | 'family' | 'self'. No new column, no new table: a missing key means "not chosen
+    // yet" (= 'all', and a plugin may still hand over its old setting once — profile.adoptAvatarLevel). This
+    // migration only makes the column safe to read with json_extract: broken JSON goes (the defaults apply), an
+    // unknown avatar value goes.
+    sql: `
+      UPDATE users SET profile_visibility = NULL
+        WHERE profile_visibility IS NOT NULL AND json_valid(profile_visibility) = 0;
+      UPDATE users SET profile_visibility = json_remove(profile_visibility, '$.avatar')
+        WHERE profile_visibility IS NOT NULL AND json_type(profile_visibility, '$.avatar') IS NOT NULL
+          AND (json_type(profile_visibility, '$.avatar') <> 'text'
+            OR json_extract(profile_visibility, '$.avatar') NOT IN ('all', 'contacts', 'family', 'self'));`,
+    detect: () => false,
+  },
 ];
 
 module.exports = { migrations };

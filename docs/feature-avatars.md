@@ -45,6 +45,37 @@ letters, one word → first two letters) in white on the colour.
 - Removing the picture deletes the row: the old URL answers 404 at once. Deleting the user
   deletes the picture (`ON DELETE CASCADE`).
 
+## Wer sieht dein Bild?
+
+Since 7c (Messenger-Brücken stage 7) the person chooses who sees the picture, once for all of
+GateControl: `visibility.avatar` of the user profile (docs/feature-user-profile.md), in the portal
+on "Mein Profil" (card "Profilbild & Farbe"), in the Android app on the profile page.
+
+| Level | Messenger (list, chat head, sender, push) | Familie | other plugins (`gc.users`) | "Wer bist du?", wall tablet |
+|---|---|---|---|---|
+| `all` (default) | everybody | everybody | everybody | picture |
+| `contacts` | family + everybody with a chat or group with the person | family | like `family` | initials |
+| `family` | family | family | family | initials |
+| `self` | nobody (initials) | nobody | nobody | initials |
+
+- "Familie" in the core: both are direct members of one GateControl group of the kind `family`
+  (like the profile fields). The core treats `contacts` like `family`; only the Messenger knows who
+  chats with whom and widens it itself (`gc.users.list({ unmasked: true })` + `avatarVisibility`).
+- Hidden means `avatarUrl: null` — the apps and pages show the initials on the favourite colour.
+- The person always sees her own picture. Administrators see it in the administration too (user
+  profile, users list) — they may change and remove it; `GET /api/v1/users/:id` carries
+  `avatarVisibility` and `avatarHidden` (the card shows "für andere verborgen").
+- **A narrower level gives the picture a new address** (`avatars.rotate`): the old, perhaps cached
+  URL answers 404 at once. A wider level keeps the address.
+- WhatsApp, Signal and Telegram never get the picture: the bridges set no profile picture at the
+  service. The pictures of the contacts at a bridge come from the person's own account there.
+- Stored in `users.profile_visibility` (key `avatar`) only once chosen — a missing key is "not
+  chosen yet" (= `all`). Migration 154 cleans the column (broken JSON, unknown values).
+- Takeover: the Messenger's old `prefs.ext.privacy.avatar` (`all` / `family` / `nobody`) is handed
+  over once per person by `gc.users.adoptAvatarVisibility` (`nobody` → `self`) — only a narrower
+  level, only while nothing is chosen. An older app that still writes `privacy.avatar` is forwarded
+  with `gc.users.setAvatarVisibility` (only for the person of that changing request).
+
 ## Storage
 
 Migration 101 `user_avatars`: table `user_avatars(user_id PK → users.id ON DELETE CASCADE,
@@ -109,14 +140,19 @@ writes: 60 per 15 minutes and person.
 ### Portal
 
 The header viewer (`viewer` of `portal.njk`) carries `avatarUrl`, `color`, `colorHex`; "Wer bist
-du?" shows the pictures of the people of a shared device. `portal-ctx.canEditLook` is true for a
+du?" shows the pictures of the people of a shared device — only of those at `all` (nobody is signed
+in yet), the others with their initials. The group pages show the members as the viewer may see
+them. `portal-ctx.canEditLook` is true for a
 signed-in person (not on a kiosk device): the tab "Meine Geräte" then has the card "Profilbild &
 Farbe".
 
 ### Plugins
 
-`gc.users.list()/get(id)` → `{ id, name, role, avatarUrl, color, colorHex, initials }`; every
-plugin frame may load `<origin>/avatars/` (docs/plugins.md "User interface").
+`gc.users.list({ viewer? })/get(id, { viewer? })` → `{ id, name, role, avatarUrl, color, colorHex,
+initials, avatarVisibility }` — `avatarUrl` only where that viewer may see the picture (without a
+viewer only `all`; the viewer counts only while that person has a request to the plugin in flight).
+`{ unmasked: true }` hands out every picture for a plugin that applies `avatarVisibility` itself.
+Every plugin frame may load `<origin>/avatars/` (docs/plugins.md "User interface").
 
 ## Activity log
 
