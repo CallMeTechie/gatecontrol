@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.292.0] — 2026-11-16
+
+### Features
+- gc.remote Version 7 – Ziele für „Gerät hinzufügen“ (candidates, scan, Auto-Port) (#509)
+
+---
+
 ## [1.291.1] — 2026-11-16
 
 ### Fixes
