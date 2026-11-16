@@ -90,12 +90,12 @@ describe('permission remote', () => {
     assert.equal(bad.ok, false);
     assert.ok(bad.errors.includes('permissions.remote: invalid'));
   });
-  it('installs with the permission shown; gc.remote version 2 exists', async () => {
+  it('installs with the permission shown; gc.remote version 3 exists', async () => {
     const r = await install(remotePackage());
     assert.equal(r.plugin.permissions.remote, true, 'shown in the install dialog');
     let has = null;
     for (let i = 0; i < 50 && !has; i++) { try { has = await pget('/has'); } catch { await wait(100); } }
-    assert.deepEqual([has.remote, has.version], [true, 2]);
+    assert.deepEqual([has.remote, has.version], [true, 3]);
   });
 });
 
@@ -133,12 +133,13 @@ describe('targets', () => {
     }
     assert.equal((await call('probe', { id: 't', host: '::1', port: 22 })).code, 'ERR_REMOTE_NOT_ALLOWED');
   });
-  it('a gateway LAN target needs a listener; wake needs a MAC; recordings are not there yet', async () => {
+  it('a gateway LAN target needs a listener; wake needs a MAC; no recordings without the drive', async () => {
     const r = await call('session', { user: adminId, protocol: 'vnc', target: { id: 't', host: '192.168.1.5', port: 5900, gateway: { peerId: 99 } } });
     assert.equal(r.code, 'ERR_REMOTE_LISTENER_REQUIRED');
     assert.equal((await call('wake', { id: 't', host: '10.8.0.44', port: 3389 })).code, 'ERR_INVALID');
     assert.equal((await call('listener', { key: 'k', gateway: { peerId: 99 }, host: '192.168.1.5', port: 3389 })).code, 'ERR_NOT_FOUND');
-    assert.deepEqual((await call('recordings.available')).result, { available: false, reason: 'not_yet' });
+    const av = (await call('recordings.available')).result;
+    assert.deepEqual([av.available, av.reason, av.engines], [false, 'no_drive', { term: false, guac: false }]);
     // the gateways and pools a listener can name (stage 1): names and ids only
     const gw = (await call('gateways')).result;
     assert.ok(Array.isArray(gw.gateways) && Array.isArray(gw.pools));

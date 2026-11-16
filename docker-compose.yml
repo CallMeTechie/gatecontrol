@@ -13,6 +13,11 @@ services:
       # do not just switch such an install to this file, move the data first (handbook,
       # FAQ "move the server data from a Docker volume to ./data").
       - ./data:/data
+      # Recordings of the plugin "Fernzugriff" (optional, off unless a device records): the same
+      # volume at the same path in guacd, which writes the RDP/VNC recordings into it. Outside
+      # ./data on purpose — recordings are large and not part of a backup of ./data. GateControl
+      # encrypts every file (GC_REMOTE_REC_MAX_GB, default 10; GC_REMOTE_REC_DAYS, default 30).
+      - remote-recordings:/recordings
     env_file:
       - .env
     restart: unless-stopped
@@ -32,6 +37,10 @@ services:
     # ["guacd","-b","127.0.0.1","-f"] makes guacd bind 0.0.0.0 (verified live);
     # the flags-only form binds 127.0.0.1 (C1 loopback-only invariant).
     command: ["-b", "127.0.0.1", "-f"]
+    # Recordings (see gatecontrol above): guacd writes them in one go into /recordings/guac;
+    # GateControl encrypts each file after its session and removes the plain one.
+    volumes:
+      - remote-recordings:/recordings
     restart: unless-stopped
     # Non-Swarm Compose ignores deploy.resources; use service-level limits so a
     # session burst can't starve the co-located GC process.
@@ -272,3 +281,5 @@ networks:
 
 volumes:
   clamav-db:
+  # Recordings of the plugin "Fernzugriff" (gatecontrol and guacd)
+  remote-recordings:

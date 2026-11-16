@@ -229,6 +229,16 @@ config.guac = {
   maxPerRoute:     envInt('GC_GUAC_MAX_PER_ROUTE', 2),
 };
 
+// gc.remote stage 3 (services/remote/recordings.js, docs/feature-remote-access.md): the drive of the
+// recordings — the volume remote-recordings of docker-compose.yml, mounted at the same path in this
+// container and in guacd. Without it nothing is recorded. maxGb: all recordings together; days: the
+// longest a recording is kept (the plugin may delete earlier).
+config.remoteRecordings = {
+  dir:   env('GC_REMOTE_REC_DIR', '/recordings'),
+  maxGb: envInt('GC_REMOTE_REC_MAX_GB', 10),
+  days:  envInt('GC_REMOTE_REC_DAYS', 30),
+};
+
 // Source ranges allowed to reach an internal-only route (HTTP gate in
 // services/caddyConfig.js, L4 gate in services/l4.js). Derived from the
 // resolved VPN subnet so it can never drift from `subnet`. The

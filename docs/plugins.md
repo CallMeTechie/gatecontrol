@@ -2942,8 +2942,9 @@ names **person and target** in every call — the same pattern as `gc.print` and
 A plugin process has no network of its own and its frames have `connect-src 'none'`, so a
 Guacamole WebSocket in the frame is impossible: a session always runs on a page of
 GateControl. Code: `src/services/remote/` (`sessions.js`, `vault.js`, `targets.js`,
-`recordings.js`, `facade.js`), host API `remoteCall` in `src/services/plugins/hostApi.js`,
-the page `src/routes/remoteSession.js`, the tunnel `src/tunnel/guacTunnel.js`.
+`recordings.js`, `facade.js`, since version 3 `term.js`, `hostKeys.js`, `sshkeys.js`), host API
+`remoteCall` in `src/services/plugins/hostApi.js`, the page `src/routes/remoteSession.js`, the
+tunnels `src/tunnel/guacTunnel.js` and `src/tunnel/termTunnel.js` (version 3).
 
 ```json
 "permissions": { "remote": true }
@@ -2954,7 +2955,8 @@ permissions). Without it `gc.remote` does not exist and the host answers
 `ERR_REMOTE_DENIED`; an older GateControl ignores the permission and `gc.remote` is missing —
 check `gc.remote && gc.remote.version >= 1` (`>= 2` for what stage 2, the Windows switch,
 needs: `hubAddress`, `peerAddress`, `from`, the asking device's `vpnIp`, the admin part of
-the facade and signal topics).
+the facade and signal topics; `>= 3` for stage 3: the SSH terminal of the core, tmux, pinned
+host keys, `vault.generate` and recordings).
 
 **Targets.** Every call names a target `{ id, name?, host, port }` (direct: the VPN address
 of a device, the server's LAN, a public host) or `{ id, name?, listener: '<key>' }` (through
@@ -2967,12 +2969,15 @@ resolved by the core, every address is checked and guacd gets the checked addres
 
 | Call | Answer / rule |
 |---|---|
-| `gc.remote.version` | `2` (`1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
-| `gc.remote.session({ user, target, protocol, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol, from }` — a **ticket**; `from` (version 2): the address guacd connects from to a direct target, the hub address (`null` for a listener target) — a Windows PC opens 3389 for exactly it. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. `record: true` → `ERR_REMOTE_RECORDING_UNAVAILABLE` until stage 3. Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
+| `gc.remote.version` | `3` (`2`: without `engine`, `tmux`, `hostKeys`, `vault.generate` and recordings; `1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
+| `gc.remote.session({ user, target, protocol, engine?, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol, engine, record, from }` — a **ticket**; `from` (version 2): the address guacd connects from to a direct target, the hub address (`null` for a listener target) — a Windows PC opens 3389 for exactly it. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. Version 3: `engine`: `guac` (default, guacd) \| `term` (the SSH terminal of the core, `protocol: 'ssh'` only — see "The SSH terminal" below; needs a `credential` with username and a password or key, else `ERR_REMOTE_CREDENTIAL_REQUIRED`), `options.tmux`: `{ attach: name }` \| `{ create: name }` (engine `term` only; name `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`), `record: true`: the session is recorded (only when `recordings.available()` allows it for the engine, else `ERR_REMOTE_RECORDING_UNAVAILABLE`; the page shows the hint first). Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
 | `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel |
-| `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions` |
+| `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, engine, via, recordingId, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions`; `via`: `browser` \| `app` (version 3: a native terminal) |
 | `gc.remote.vault.put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? })` | `{ handle: 'rv_<32 hex>', kind: password \| ssh_key \| username, label, has: { username, password, domain, privateKey, passphrase }, readable, createdAt, updatedAt }` — **never a value**. With `handle` a change of that entry: fields not given stay, `null` / `''` clears. Encrypted with the server key (AES-256-GCM, table `remote_vault`, in backups as ciphertext); `readable: false` after a restore onto another server key — ask for it again. ≤ 5000 per plugin |
-| `gc.remote.vault.remove(handle)` / `info(handle)` / `list()` | `{ removed }` / metadata \| `null` / `[metadata]` |
+| `gc.remote.vault.remove(handle)` / `info(handle)` / `list()` | `{ removed }` / metadata \| `null` / `[metadata]` — version 3: metadata also carries `publicKey` (the public half of a generated key, else `null`) |
+| `gc.remote.vault.generate({ kind: 'ed25519', label?, username?, handle? })` | version 3: metadata + `publicKey` (one `authorized_keys` line) + `fingerprint` — a new ed25519 pair made **in the core** (OpenSSH format); the private key goes into the vault (a new entry, or the entry `handle`: its key and passphrase are replaced, username and password stay), never to the plugin |
+| `gc.remote.tmux.list(target, { credential })` | version 3: `[{ name, windows, attached, created, activity, attachable }]` — the tmux sessions on the target (`tmux ls`, its own SSH connection, no terminal). Only to a target whose host key is pinned (`ERR_REMOTE_HOST_KEY_UNPINNED`: connect once in the terminal), a changed key `ERR_REMOTE_HOST_KEY_MISMATCH`, no tmux `ERR_REMOTE_TMUX_UNAVAILABLE`, no tmux server running `[]`, login refused `ERR_REMOTE_AUTH_FAILED`, `ERR_REMOTE_UNREACHABLE` / `ERR_REMOTE_TIMEOUT`. `attachable: false` for a name the terminal cannot attach to (outside the name rule above) |
+| `gc.remote.hostKeys.pin({ targetId, alg, sha256 })` / `list()` / `remove(targetId)` | version 3: `{ targetId, alg, sha256, source: trust \| plugin, pinnedBy, pinnedAt }` / `[pin]` / `{ removed }` — the pinned SSH host key of a target (`sha256` as `ssh-keygen -l` prints it after `SHA256:`, 43 characters). A pin replaces the old one; `remove` lets the next terminal connection ask the person again. Activity log `remote_host_key_pinned` |
 | `gc.remote.probe(target)` | `{ online, responseTime, via: direct \| gateway }` — TCP; a gateway target through the gateway's probe |
 | `gc.remote.wake(target)` | `{ sent: true, via: gateway \| server }` — magic packet to `target.mac` (through the gateway of the target / its listener, else the server's broadcast); once per 10 s and MAC (`ERR_REMOTE_RATE_LIMITED`) |
 | `gc.remote.listener({ key, gateway: { peerId } \| { poolId }, host, port, listenPort? })` | `{ key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared }` — an L4 route (TCP, no TLS) on the server that the gateway passes on to `host:port` in its home network, as old gateway-mode RDP routes have it. An existing L4 route with exactly this target and port (the one of an old RDP route) is **reused** (`shared: true`) and never removed by the plugin. A port in use: `ERR_REMOTE_PORT_IN_USE` |
@@ -2980,9 +2985,11 @@ resolved by the core, every address is checked and guacd gets the checked addres
 | `gc.remote.gateways()` | `{ gateways: [{ peerId, name, online }], pools: [{ poolId, name }] }` — the home gateways and failover pools a listener can name (names and ids only). Since the GateControl after 1.281.0 (stage 1 of "Fernzugriff"): feature-detect it (`typeof gc.remote.gateways === 'function'`) |
 | `gc.remote.hubAddress()` | version 2: the server's address in the VPN (`GC_WG_GATEWAY_IP`, e.g. `'10.8.0.1'`) — where guacd's connections to VPN devices come from |
 | `gc.remote.peerAddress(userId, deviceId)` | version 2: the VPN address of an app device (`gc.devices.list` id) of the person, `null` when its token is bound to no peer — **only** for a device of that person and **only while a request of that person to the plugin is in flight** (else `ERR_REMOTE_NOT_ALLOWED`; `ERR_INVALID` without ids). For the firewall of a PC: 3389 opens for exactly the helper's device |
-| `gc.remote.recordings.available()` | `{ available: false, reason: 'not_yet' }` in version 1 (recording comes with stage 3) |
-| `gc.remote.recordings.list({ targetId?, sessionId?, limit? })` / `stream(id)` / `remove(id)` | `[]` until stage 3 / `{ url, expiresAt }` (`ERR_REMOTE_RECORDING_UNAVAILABLE` for now) / `{ removed }` |
-| `gc.remote.on('session', handler)` | hook `remoteSession`: `{ phase: start \| end \| abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? }` — `end` for `normal` / `ended_by_plugin`, `abort` for `heartbeat`, `plugin_stopped`, `reclaimed` |
+| `gc.remote.recordings.available()` | `{ available, reason: null \| no_drive \| full, engines: { term, guac }, usedBytes, maxBytes, days }` — version 3 (versions 1–2: `{ available: false, reason: 'not_yet' }`). `engines.guac`: guacd sees the drive too (RDP, VNC, Telnet and SSH over guacd) — see "Recordings" below |
+| `gc.remote.recordings.list({ targetId?, sessionId?, userId?, limit? })` | `[{ id: 'rr_<32 hex>', sessionId, targetId, userId, protocol, format: asciicast \| guac, status: recording \| sealing \| ready \| failed, bytes, durationSeconds, startedAt, endedAt, createdAt }]` newest first (≤ 500) — no secret, no key |
+| `gc.remote.recordings.stream(id, { user })` | version 3: `{ ref, url: '/remote/session/<ref>', expiresAt, format }` — a **playback ticket** (60 s, single use) for exactly that person, opened like a session with `GC.openSession(ref)`; the plugin decides who may watch (administrators and the owner of the device). `ERR_INVALID` without `user`, `ERR_REMOTE_RECORDING_UNAVAILABLE` while it is still written |
+| `gc.remote.recordings.remove(id)` | `{ removed }` — row and file (`ERR_REMOTE_BUSY` while it is still written); activity log `remote_recording_deleted` |
+| `gc.remote.on('session', handler)` | hook `remoteSession`: `{ phase: start \| end \| abort \| recording_viewed, sessionId, ref, targetId, userId, protocol, mode, engine, via, record, recordingId, startedAt, hostKey?, reason?, durationSeconds?, endedAt? }` — `end` for `normal` / `ended_by_plugin`, `abort` for `heartbeat`, `plugin_stopped`, `reclaimed` and (engine `term`) `host_key_mismatch`, `host_key_rejected`, `auth_failed`, `unreachable`, …; `start` of a terminal comes once it is connected and carries `hostKey: { alg, sha256 }`; `recording_viewed` (version 3): `{ recordingId, targetId, userId, at }` when a playback ticket was opened |
 
 **The session page.** The frame opens the ticket with **`GC.openSession(ref)`** (frames of a
 plugin with the permission only, in a click: `{ ok }` \| `{ ok: false, code: no_gesture \|
@@ -2999,7 +3006,51 @@ session never opens the old path and the other way round. Limits (`config.guac`)
 (`GC_GUAC_HEARTBEAT_MS` × `GC_GUAC_HEARTBEAT_MISSES`). A ticket lives until `gc.remote.end`,
 until its plugin is stopped (a crash restart keeps it) or 8 h after it was opened; tickets are
 in memory only — a restart ends them (open rows end as `server_restart`). Activity log:
-`remote_session_started`, `remote_session_ended`, `remote_recording_deleted`.
+`remote_session_started`, `remote_session_ended`, `remote_recording_deleted`, and since version 3
+`remote_host_key_pinned`, `remote_host_key_changed`, `remote_recording_viewed`.
+
+**The SSH terminal** (version 3, `engine: 'term'`). SSH without guacd: `ssh2` in the core, the
+page `/remote/session/<ref>` shows xterm.js (`public/vendor/xterm`, no CDN), the WebSocket
+`/api/v1/remote/ssh-tunnel` speaks **`gc-term.v1`** (`src/services/remote/term.js`). The token
+(60 s, single use) comes from `POST /remote/session/<ref>/token` (`{ token, wsPath, ttl, engine }`)
+and travels in the `Sec-WebSocket-Protocol` header — `gc-term.v1, token.<token>` —, never in the
+address. Frames: client → `{t:'hello', cols, rows, term}` (first, within 10 s), `{t:'resize', cols,
+rows}`, `{t:'ping'}` (→ `{t:'pong'}`), `{t:'trust'}` / `{t:'distrust'}`, `{t:'bye'}`, binary = input
+(ignored in `view` mode); server → `{t:'hostkey', hostKey:{alg, sha256}}`, `{t:'ready', hostKey,
+hostKeyNew, tmux:{available, session}, recording, mode}`, `{t:'exit', code, reason}`, `{t:'error',
+code}`, binary = output. The password or key is taken from the vault only when the connection is
+made; neither ever leaves the core.
+* **Host key**: the first connection to a target sends `hostkey`; the person compares the
+  fingerprint and confirms (`trust`, 60 s) — only then the core pins it and logs in. Afterwards
+  only that key connects; another one gives `error host_key_mismatch`, an activity log entry
+  `remote_host_key_changed` and nothing else (no "connect anyway") until the pin is removed. A
+  session in `view` mode cannot confirm a key (`host_key_unpinned`).
+* **tmux**: `options.tmux` runs `tmux new -A -s '<name>'` (attaches when the session exists,
+  creates it otherwise) after a `tmux -V` check; without tmux a plain shell and
+  `ready.tmux.available: false`. A reconnect attaches to the same session — tmux runs on the
+  device, not on the server.
+* **Apps (native terminals)**: `POST /api/v1/client/remote/term-token { ref }` (app token,
+  scope `client`, only the ticket's person; the ticket binds itself to that app token) →
+  `{ token, wsPath, ttl }`, then the same WebSocket. The plugin hands the app the `ref`.
+* The overall guacd limit (`GC_GUAC_MAX_GLOBAL`) does not count terminal sessions; the limits per
+  person and per target do.
+
+**Recordings** (version 3, `src/services/remote/recordings.js`). Optional — only with
+`record: true`, and only after the hint on the session page ("Diese Sitzung wird
+aufgezeichnet", a red dot while it runs; `ready.recording: true` for the apps, which must show
+both). The drive is the volume `remote-recordings` at `/recordings` (`GC_REMOTE_REC_DIR`) in
+the GateControl container **and** in guacd (release `docker-compose.yml`; `update.sh` marker 9
+writes `.remote-recordings-state.json`, `engines.guac` follows its `guacd`). The terminal
+records **asciicast v2, output only** (keystrokes are not stored); guacd writes its own
+recording (`recording-include-keys` off) into `/recordings/guac`, which the core seals after the
+session in one sequential pass. Every file is encrypted like plugin media (a key per file,
+wrapped with a key derived from the server secret, AES-256-GCM in 64 KiB chunks) and written a
+chunk at a time — nothing is converted on the server, the browser plays the files itself
+(xterm.js, `Guacamole.SessionRecording`). Limits: `GC_REMOTE_REC_MAX_GB` (default 10) for all
+recordings together — a full drive answers `reason: full` and stops a running terminal
+recording; `GC_REMOTE_REC_DAYS` (default 30) at most, the plugin may delete earlier. The
+playback page `/remote/session/<ref>` of a `stream` ticket loads the decrypted file from
+`/remote/session/<ref>/recording` (same person, same browser session, two hours).
 
 **The asking device** (version 2): an app request (`/api/v1/client/plugins/<id>/api/…`) to a plugin with
 `permissions.remote` carries `req.user.device = { id, platform, vpnIp }` — `vpnIp` the first address of the peer

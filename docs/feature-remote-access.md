@@ -75,6 +75,30 @@ The core adds:
   `/api/v1/rdp/status` for app tokens (`wake`, `statusAdmin`, `statusAll`) — the devices of the plugin have no row
   in `rdp_routes`.
 
+## Stage 3 (SSH with tmux and recordings, gc.remote version 3, the plugin „Fernzugriff“ 1.2)
+
+* **SSH terminal in the core** — `engine: 'term'`: ssh2 on the server, xterm.js on the session page (vendored,
+  no CDN), the protocol `gc-term.v1` on `/api/v1/remote/ssh-tunnel` (docs/plugins.md "The SSH terminal").
+  guacd stays for RDP, VNC, Telnet and the SSH targets that were not switched over (`engine: 'guac'`).
+* **tmux** — `options.tmux { attach | create }` runs `tmux new -A -s '<name>'` on the device (the name is checked
+  strictly: letters, digits, `_`, `-`); `gc.remote.tmux.list` reads the sessions for "Fortsetzen".
+* **Host keys** — pinned per target: the first connection asks the person to confirm the fingerprint, a
+  different key blocks and lands in the activity log (`remote_host_key_changed`). `gc.remote.hostKeys.*` for the
+  plugin (pin a key the Linux agent reported, reset after a planned change).
+* **Keys** — `gc.remote.vault.generate` makes an ed25519 pair in the core; the plugin shows the public key for
+  `authorized_keys`, the private one never leaves the vault.
+* **Native apps** — `POST /api/v1/client/remote/term-token` turns a ticket into a WebSocket token for an app
+  token of the same person; the apps build their terminals natively (no WebView).
+* **Recordings** — optional, only with the hint before the start and a red dot during the session. SSH in the
+  terminal: asciicast v2 (output only). RDP/VNC/Telnet/SSH over guacd: guacd's recording on the drive
+  `remote-recordings` (both `docker-compose.yml` files; `update.sh` marker 9 reports whether guacd and GateControl
+  have it mounted — they get it with the next update). Encrypted like plugin media, written in whole 64 KiB chunks
+  (the slow disk of a small VPS), never converted on the server: playback in the browser (xterm.js,
+  `Guacamole.SessionRecording`) through a single-use ticket of the person the plugin names
+  (`gc.remote.recordings.stream`), each viewing logged (`remote_recording_viewed`). Limits:
+  `GC_REMOTE_REC_MAX_GB` (10), `GC_REMOTE_REC_DAYS` (30). Recordings are outside `./data` and not in backups;
+  pinned host keys are.
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime
@@ -98,6 +122,12 @@ is not affected.
   address (only through the plugin's own listener).
 * Every opened tunnel is a row of `remote_sessions` and an entry of the
   activity log (`remote_session_started` / `remote_session_ended`).
+* SSH (stage 3): the host key is always checked once pinned, and pinned only after
+  the person confirmed it; tmux names are checked against a strict pattern and
+  quoted; tokens of the terminal are single-use, 60 s and bound to the ticket's
+  person; no key or password ever reaches a log, a recording's metadata or an app.
+* Recordings only with the hint; playback only through a ticket for the person
+  the plugin names (administrators and the owner), every viewing logged.
 
 ## Deprecated: plaintext credentials of `/connect`
 

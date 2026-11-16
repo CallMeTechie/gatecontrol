@@ -58,6 +58,7 @@ function applyDataDirEnv(dir) {
   setIfUnset('GC_DNSMASQ_CONF', path.join(dir, 'dnsmasq.conf'));
   setIfUnset('GC_GATEWAY_LATEST_CACHE', path.join(dir, 'gateway-latest.json'));
   setIfUnset('GC_SERVER_LOG_DIR', path.join(dir, 'logs'));            // utils/serverLogFile (Server-Log, unter NODE_ENV=test aus)
+  setIfUnset('GC_REMOTE_REC_DIR', path.join(dir, 'remote-recordings')); // services/remote/recordings (Laufwerk der Aufzeichnungen; fehlt = keine)
   return dir;
 }
 

@@ -66,6 +66,8 @@ function metaOf(row, secret = decryptRow(row)) {
     has,
     // the server key changed since the entry was written (a restore from another server): enter it again
     readable: !!secret,
+    // the public half of a key made by generate() (version 3) — public by nature, for authorized_keys
+    publicKey: secret && typeof secret.publicKey === 'string' ? secret.publicKey : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -103,6 +105,8 @@ function put(pluginId, input, { source = null } = {}) {
     const old = decryptRow(row) || {};
     const next = { ...old };
     for (const [k, v] of Object.entries(fields)) { if (v == null) delete next[k]; else next[k] = v; }
+    // a key given by hand replaces a generated one: its public half no longer fits
+    if (fields.privateKey !== undefined) delete next.publicKey;
     if (!Object.keys(next).length) throw new VaultError('invalid', 'an entry needs at least one value');
     db().prepare('UPDATE remote_vault SET secret_enc = ?, label = ?, updated_at = ? WHERE handle = ?')
       .run(encrypt(JSON.stringify(next)), label === undefined ? row.label : label, now, row.handle);
@@ -117,6 +121,31 @@ function put(pluginId, input, { source = null } = {}) {
   db().prepare(`INSERT INTO remote_vault (handle, plugin_id, label, source, secret_enc, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(handle, pluginId, label || null, source ? String(source).slice(0, SOURCE_MAX) : null, encrypt(JSON.stringify(secret)), now, now);
   return metaOf(db().prepare('SELECT * FROM remote_vault WHERE handle = ?').get(handle), secret);
+}
+
+/**
+ * gc.remote.vault.generate({ kind: 'ed25519', label?, username?, handle? }) → metadata + publicKey
+ * A new SSH key pair made in the core: the private key goes into the vault (a new entry, or the
+ * entry `handle` — its old key and passphrase are replaced, username and password stay), the
+ * plugin gets the public key to show for authorized_keys. Never the private key.
+ */
+function generate(pluginId, input) {
+  const o = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const kind = o.kind == null ? 'ed25519' : String(o.kind);
+  if (kind !== 'ed25519') throw new VaultError('invalid', 'kind: ed25519');
+  if (o.username != null && (typeof o.username !== 'string' || o.username.length > FIELDS.username)) throw new VaultError('invalid', 'username: a string');
+  const label = o.label === undefined ? undefined : labelOf(o.label);
+  const pair = require('./sshkeys').generateEd25519(label || 'gatecontrol');
+  const entry = { privateKey: pair.privateKey, passphrase: null };
+  if (o.username) entry.username = o.username;
+  if (label !== undefined) entry.label = label;
+  if (o.handle != null) entry.handle = o.handle;
+  const meta = put(pluginId, entry);
+  const row = rowOf(pluginId, meta.handle);
+  const secret = decryptRow(row) || {};
+  secret.publicKey = pair.publicKey;
+  db().prepare('UPDATE remote_vault SET secret_enc = ?, updated_at = ? WHERE handle = ?').run(encrypt(JSON.stringify(secret)), new Date().toISOString(), meta.handle);
+  return { ...metaOf(db().prepare('SELECT * FROM remote_vault WHERE handle = ?').get(meta.handle), secret), fingerprint: pair.fingerprint };
 }
 
 /** gc.remote.vault.remove(handle) → { removed } */
@@ -180,4 +209,4 @@ function restoreBackup(rows) {
   return n;
 }
 
-module.exports = { put, remove, info, list, resolve, forget, exportBackup, restoreBackup, isHandle, VaultError, FIELDS, HANDLE_RE };
+module.exports = { put, generate, remove, info, list, resolve, forget, exportBackup, restoreBackup, isHandle, VaultError, FIELDS, HANDLE_RE };

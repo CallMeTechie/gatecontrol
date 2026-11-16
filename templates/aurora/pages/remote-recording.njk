@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  {# No-FOUC theme-mode pre-paint (matches aurora/layout.njk; nonce for CSP) #}
+  <script nonce="{{ cspNonce }}">(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ t('remote.rec.title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+  {# xterm.js adds style elements of its own: they carry the page's nonce (style-src-elem; vendor/xterm/README.md) #}
+  <script nonce="{{ cspNonce }}">(function(){var n=document.currentScript&&document.currentScript.nonce;if(!n)return;var c=document.createElement.bind(document);document.createElement=function(t,o){var e=c(t,o);if(String(t).toLowerCase()==='style')e.setAttribute('nonce',n);return e;};})();</script>
+</head>
+<body class="rdp-session-body">
+{# gc.remote stage 3 — playback of a recording (asciicast: xterm.js, guacd: Guacamole.SessionRecording); nothing converted on the server #}
+<div class="rdp-session-page">
+  <div id="rrec-display" class="rdp-session-display">
+    <div id="rrec-host" class="rterm-host" aria-label="{{ t('remote.rec.title') }}"></div>
+    <div id="rrec-error" class="rdp-error-veil" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="rrec-error-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg></div>
+          <h2 id="rrec-error-h">{{ t('rdp.session.status.error') }}</h2>
+          <p class="rdp-em-text">{{ t('remote.rec.failed') }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="rdp-session-toolbar">
+    <span class="rdp-pill rdp-pill--connecting" id="rrec-pill"><span class="rdp-dot"></span><span id="rrec-status">{{ t('remote.rec.loading') }}</span></span>
+    <button class="rdp-tbtn" type="button" id="rrec-play" disabled title="{{ t('remote.rec.play') }}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span class="rdp-tbtn-label" id="rrec-play-label">{{ t('remote.rec.play') }}</span></button>
+    <input class="rterm-seek" type="range" id="rrec-seek" min="0" max="1000" value="0" step="1" disabled aria-label="{{ t('remote.rec.position') }}">
+    <span class="rterm-time" id="rrec-time">0:00 / 0:00</span>
+    <select class="rdp-tbtn" id="rrec-speed" aria-label="{{ t('remote.rec.speed') }}">
+      <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+    </select>
+    <button class="rdp-tbtn" type="button" id="rrec-btn-fullscreen" title="{{ t('rdp.session.fullscreen') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.fullscreen') }}</span></button>
+  </div>
+</div>
+
+<script src="/vendor/xterm/xterm.js?v={{ appVersion }}"></script>
+<script src="/vendor/xterm/addon-fit.js?v={{ appVersion }}"></script>
+{% if recording.format == 'guac' %}<script src="/vendor/guacamole-common-js/guacamole-common.min.js?v={{ appVersion }}"></script>{% endif %}
+<script src="/js/remote-term-kit.js?v={{ appVersion }}"></script>
+<script type="application/json" id="rrec-cfg" nonce="{{ cspNonce }}">{{ { ref: remoteRef, format: recording.format } | dump | safe }}</script>
+<script type="application/json" id="rrec-i18n" nonce="{{ cspNonce }}">{{ { play: t('remote.rec.play'), pause: t('remote.rec.pause'), ready: t('remote.rec.title'), failed: t('remote.rec.failed') } | dump | safe }}</script>
+<script src="/js/remote-player.js?v={{ appVersion }}"></script>
+</body>
+</html>

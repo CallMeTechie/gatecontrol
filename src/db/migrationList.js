@@ -4225,6 +4225,36 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_remote_recordings_plugin ON remote_recordings (plugin_id, created_at DESC);`,
     detect: (db) => tableExists(db, 'remote_vault') && tableExists(db, 'remote_sessions') && tableExists(db, 'remote_listeners') && tableExists(db, 'remote_recordings'),
   },
+  {
+    version: 153,
+    name: 'remote_stage3',
+    // gc.remote, version 3 (stage 3 of the plugin "Fernzugriff": SSH terminal and recordings)
+    //   remote_host_keys   the pinned SSH host key of a target (per plugin and target id): alg + SHA-256 of the
+    //                      key as OpenSSH prints it. source: trust (a person confirmed it on the first connection)
+    //                      | plugin (gc.remote.hostKeys.pin). A key that differs blocks every connection.
+    //   remote_sessions    engine: guac (guacd) | term (the SSH terminal of the core); recording_id of the session
+    //   remote_recordings  key_enc: the file key, wrapped with a key derived from the server secret (like plugin
+    //                      media); status: recording | sealing | ready | failed; duration_seconds; plain_bytes
+    sql: `
+      CREATE TABLE IF NOT EXISTS remote_host_keys (
+        plugin_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        alg TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'trust',
+        pinned_by INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (plugin_id, target_id)
+      );
+      ALTER TABLE remote_sessions ADD COLUMN engine TEXT NOT NULL DEFAULT 'guac';
+      ALTER TABLE remote_sessions ADD COLUMN recording_id TEXT;
+      ALTER TABLE remote_recordings ADD COLUMN key_enc TEXT;
+      ALTER TABLE remote_recordings ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
+      ALTER TABLE remote_recordings ADD COLUMN duration_seconds INTEGER;
+      ALTER TABLE remote_recordings ADD COLUMN plain_bytes INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_remote_recordings_created ON remote_recordings (created_at);`,
+    detect: (db) => tableExists(db, 'remote_host_keys') && hasColumn(db, 'remote_sessions', 'engine') && hasColumn(db, 'remote_recordings', 'plain_bytes'),
+  },
 ];
 
 module.exports = { migrations };

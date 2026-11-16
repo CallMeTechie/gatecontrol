@@ -59,6 +59,26 @@
       </div>
     </div>
 
+    {# gc.remote (stage 3): a recorded session shows this hint before it starts, and a red dot while it runs #}
+    {% if remoteRecord %}
+    <div id="rdp-rec-overlay" class="rdp-error-veil" style="display:flex" role="dialog" aria-modal="true" aria-labelledby="rdp-rec-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+          </div>
+          <h2 id="rdp-rec-h">{{ t('rdp.session.rec_title') }}</h2>
+          <p class="rdp-em-text">{{ t('rdp.session.rec_text') }}</p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" type="button" id="rdp-rec-back">{{ t('rdp.wizard.back') }}</button>
+          <button class="btn btn-primary" type="button" id="rdp-rec-ok">{{ t('remote.term.rec_start') }}</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
   </div>{# /rdp-session-display #}
 
   {# ─── Slim toolbar ────────────────────────────────────────────────────── #}
@@ -69,6 +89,8 @@
       <span id="rdp-pill-indicator" class="rdp-dot"></span>
       <span id="rdp-status-text">{{ t('rdp.session.status.connecting') }}</span>
     </span>
+
+    {% if remoteRecord %}<span class="rterm-rec" title="{{ t('rdp.session.rec_title') }}"><span class="rdp-dot"></span>{{ t('remote.term.rec_badge') }}</span>{% endif %}
 
     <span class="rdp-spacer"></span>
 
@@ -126,7 +148,7 @@
 <script src="/js/rdp-player.js?v={{ appVersion }}"></script>
 
 {# JSON island 1: init config — no user free-text, only numeric id + enum protocol + CSRF + guac object #}
-<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height, remoteRef: remoteRef } | dump | safe }}</script>
+<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height, remoteRef: remoteRef, remoteRecord: remoteRecord or false } | dump | safe }}</script>
 
 {# JSON island 2: i18n strings needed for JS state updates #}
 <script type="application/json" id="rdp-session-i18n" nonce="{{ cspNonce }}">{{ {
@@ -225,7 +247,15 @@
     }
   });
 
-  player.connect();
+  /* a recorded gc.remote session starts only after the hint was confirmed */
+  var recOvl = document.getElementById('rdp-rec-overlay');
+  if (remoteRef && cfg.remoteRecord === true && recOvl) {
+    document.getElementById('rdp-rec-ok').addEventListener('click', function () { recOvl.style.display = 'none'; player.connect(); });
+    document.getElementById('rdp-rec-back').addEventListener('click', function () { location.href = '/portal'; });
+    document.getElementById('rdp-rec-ok').focus();
+  } else {
+    player.connect();
+  }
   window.addEventListener('beforeunload', function () { player.disconnect(); });
 
   /* ── Toolbar wiring ────────────────────────────────────────── */

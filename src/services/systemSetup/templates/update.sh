@@ -67,9 +67,19 @@
 #    member is checked (a plain file or folder below hs/data or <bridge>/data),
 #    the containers are stopped, the current folders kept as *.prev, the file
 #    unpacked; result in $DATA_DIR/.bridges-restore.json.
+# Marker 9 (recordings of the plugin "Fernzugriff", gc.remote stage 3): the
+# release docker-compose.yml mounts the volume remote-recordings at
+# /recordings in gatecontrol AND guacd (guacd writes the RDP/VNC recordings
+# there, GateControl encrypts them). Every run writes
+# $DATA_DIR/.remote-recordings-state.json: whether docker-compose.yml has the
+# volume ("compose") and whether the running guacd / gatecontrol containers
+# have it mounted. Nothing is restarted for it: the containers pick the
+# volume up at the next update (ensure_guacd's `up -d guacd` recreates guacd
+# when the compose file changed); until then GateControl records SSH only
+# and says so.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 8
+# gc-update-sh: 9
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -245,6 +255,20 @@ ensure_guacd() {
     docker pull guacamole/guacd:1.6.0 >>"$LOG" 2>&1 || true
     docker compose up -d guacd >>"$LOG" 2>&1 || true
   )
+}
+
+# Marker 9: is the drive of the recordings there? (state only — see the header)
+REC_STATE="$DATA_DIR/.remote-recordings-state.json"
+has_recordings_mount() { # $1=container
+  docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$1" 2>/dev/null | grep -qx '/recordings'
+}
+sync_recordings() {
+  local compose=false guacd=false gc=false
+  grep -q 'remote-recordings:/recordings' "$COMPOSE_DIR/docker-compose.yml" 2>/dev/null && compose=true
+  has_recordings_mount guacd && guacd=true
+  has_recordings_mount "$CONTAINER" && gc=true
+  printf '{"checked_at":"%s","compose":%s,"guacd":%s,"gatecontrol":%s}\n' \
+    "$(date -Iseconds)" "$compose" "$guacd" "$gc" | write_atomic "$REC_STATE"
 }
 
 CLAMAV_IMAGE="${GC_CLAMAV_IMAGE:-clamav/clamav:1.4}"
@@ -817,7 +841,7 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
 
   if recreate; then
     rm -f "$BAD_FILE" 2>/dev/null || true
-    ensure_guacd || true; ensure_clamav || true; prune_images || true; self_update || true; write_state updated "$mode"; exit 0
+    ensure_guacd || true; sync_recordings || true; ensure_clamav || true; prune_images || true; self_update || true; write_state updated "$mode"; exit 0
   fi
   new_ver="$(image_version "$new_id")"
   log "recreate/health failed — image $new_id ${new_ver:+(v$new_ver)}"
@@ -833,7 +857,7 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
   if docker tag "$ROLLBACK_TAG" "$IMAGE" >>"$LOG" 2>&1 && recreate ${pull_never:+"$pull_never"} \
      && [ "$(running_image)" = "$prev" ]; then
     printf '%s rolled_back %s\n' "$new_id" "$new_ver" | write_atomic "$BAD_FILE"
-    ensure_guacd || true
+    ensure_guacd || true; sync_recordings || true
     log "rolled back to $prev — $new_id will not be retried until :latest changes"
     write_state rolled_back "$mode" "$new_id" "$new_ver"; exit 1
   fi
@@ -852,6 +876,7 @@ fi
 
 sync_clamav || true
 sync_bridges || true
+sync_recordings || true
 
 if [ "$MODE" = "manual" ]; then
   if [ ! -f "$FLAG_FILE" ]; then
