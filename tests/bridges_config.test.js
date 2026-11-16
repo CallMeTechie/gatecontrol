@@ -327,6 +327,9 @@ describe('the bridge configuration (mautrix-whatsapp)', () => {
     assert.equal(model.network.history_sync.max_initial_conversations, 0);
     assert.equal(model.network.history_sync.request_full_sync, false);
     assert.equal(model.network.history_sync.media_requests.auto_request_media, false);
+    // version 12: the status room stays (no status is lost), sending into it stays off (no status posted by mistake)
+    assert.equal(model.network.enable_status_broadcast, true);
+    assert.equal(model.network.disable_status_broadcast_send, true);
     assert.equal(model.encryption.allow, false);
     assert.equal(model.bridge.personal_filtering_spaces, false);
     assert.equal(model.matrix.federate_rooms, false);

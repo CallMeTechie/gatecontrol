@@ -1776,7 +1776,7 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'recognition.set') return br.recognition.set(uid, a.allowed, { source: 'user', actorId: uid }, a.network == null ? 'whatsapp' : a.network);
     if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
-    if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
+    if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId, a.status === true ? { status: true } : null);
     if (op === 'typing') return await br.typing(uid, a.network, a.chatId, a.on === true);
     if (op === 'history.get') return br.history.get(uid);
     if (op === 'history.set') return br.history.set(uid, a.days);

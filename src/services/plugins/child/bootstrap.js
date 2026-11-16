@@ -347,8 +347,10 @@ function makeBridges() {
      *  10: Signal — the network 'signal', networks[].flows / history / needs, status().stickers, configure({ animatedStickers }),
      *  chat.timer, message.action, message.viewOnce, recognition per network, matchAccounts via own_<network>;
      *  11: Telegram — the network 'telegram', status().telegramApp { set, setAt, setBy }, needs 'app',
-     *  configure({ telegramApp: { apiId, apiHash } | null }), login steps with retry, chat.members / chat.bot, message.tooLarge) */
-    version: 11,
+     *  configure({ telegramApp: { apiId, apiHash } | null }), login steps with retry, chat.members / chat.bot, message.tooLarge;
+     *  12: WhatsApp status — chat.status (the room of the contacts' status updates, readOnly), read(…, { status: true }),
+     *  send / react / redact there refused with reason status_room) */
+    version: 12,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy } } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean, telegram?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean, telegramApp?: { apiId, apiHash } | null }) → status() — inside a changing request of an administrator; the Telegram application id is kept encrypted and never returned */
@@ -378,8 +380,8 @@ function makeBridges() {
     react: (userId, network, chatId, reaction) => hostCall('bridges.react', { userId, network, chatId, reaction }),
     /** redact(userId, network, chatId, { txnId, target }) → { ok } — delete for everyone / take a reaction back */
     redact: (userId, network, chatId, redaction) => hostCall('bridges.redact', { userId, network, chatId, redaction }),
-    /** read(userId, network, chatId, messageId) → { ok } */
-    read: (userId, network, chatId, messageId) => hostCall('bridges.read', { userId, network, chatId, messageId }),
+    /** read(userId, network, chatId, messageId, opts?) → { ok, skipped? } — version 12: in a status room (chat.status) only with opts { status: true } */
+    read: (userId, network, chatId, messageId, opts) => hostCall('bridges.read', { userId, network, chatId, messageId, status: !!(opts && opts.status === true) }),
     /** typing(userId, network, chatId, on) → { ok } */
     typing: (userId, network, chatId, on) => hostCall('bridges.typing', { userId, network, chatId, on: on === true }),
     // ── since version 4: files, a new chat by number (docs/plugins.md "Messenger bridges", "Files") ──

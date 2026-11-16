@@ -285,6 +285,14 @@ const NETWORK_MODELS = {
       // With history (stage 5): rooms for the most recent chats at once; never a full sync, never asking the phone for
       // files that ran out
       history_sync: { max_initial_conversations: history ? HISTORY.conversations : 0, request_full_sync: false, media_requests: { auto_request_media: false } },
+      // gc.bridges version 12 (WhatsApp status): the contacts' status updates arrive in their own room (status@broadcast),
+      // which events.js marks as chat.status — the messenger shows them in its status row, not as a chat. Written down
+      // so a change of the bridge's defaults moves nothing: without the room the status updates would be lost, and
+      // sending into it would post a status of the person to all their contacts (never — the plugin answers a status
+      // in the direct chat). The bridge's mute_status_broadcast / status_broadcast_tag are account data of the person's
+      // account and have no effect here, so they keep their defaults.
+      enable_status_broadcast: true,
+      disable_status_broadcast_send: true,
     },
   }),
   // stage 7a: mautrix-signal v0.2610.0 (pkg/connector/example-config.yaml, config.go). It logs in as a linked device by
