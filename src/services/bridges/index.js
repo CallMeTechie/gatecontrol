@@ -193,9 +193,23 @@ function readKey() {
   return null;
 }
 
+// Each bridge registers on the homeserver with its own pair of tokens: the homeserver tells the registrations apart by
+// the as_token, so a shared one would let a bridge act inside another bridge's namespace (and its /register fails).
+// WhatsApp keeps the purposes it had from the start — the tokens of an existing installation stay as they are.
+// Keys as config.js bridgeTokens() reads them.
+const BRIDGE_TOKEN_PURPOSES = Object.freeze({
+  whatsapp: { asToken: 'as_token', hsToken: 'hs_token' },
+  signal: { signalAsToken: 'as_token:signal', signalHsToken: 'hs_token:signal' },
+  telegram: { telegramAsToken: 'as_token:telegram', telegramHsToken: 'hs_token:telegram' },
+});
+
 function tokens(key) {
+  const perBridge = {};
+  for (const purposes of Object.values(BRIDGE_TOKEN_PURPOSES)) {
+    for (const [name, purpose] of Object.entries(purposes)) perBridge[name] = derive(key, purpose);
+  }
   return {
-    asToken: derive(key, 'as_token'), hsToken: derive(key, 'hs_token'), provisionSecret: derive(key, 'provisioning'),
+    ...perBridge, provisionSecret: derive(key, 'provisioning'),
     // the server's own application service on the internal homeserver (config.js)
     coreAsToken: derive(key, 'core_as_token'), coreHsToken: derive(key, 'core_hs_token'),
     // a registration without address: the bridge acts with its token for the people's internal accounts ("double puppeting")
@@ -1351,5 +1365,5 @@ module.exports = {
   login, logins, logout, unlinkFor, mxidOf, _reset,
   start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, recognition, refreshOwnNumbers, _openContactRef: openContactRef,
   history, historyOf, linkedAt, health, mediaFetched, cleanupRun, tick, masterKey, writeMasterKey, _forget: forget, HISTORY_OPTIONS, HISTORY_DEFAULT,
-  _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
+  _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime, _tokens: tokens,
 };

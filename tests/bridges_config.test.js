@@ -25,7 +25,7 @@ const config = require('../src/services/bridges/config');
 const images = require('../src/services/bridges/images');
 const TUWUNEL = require('./fixtures/bridges/keys-tuwunel-1.9.4.json');
 const MAUTRIX = require('./fixtures/bridges/keys-mautrix-whatsapp-0.2610.0.json');
-const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43) };
+const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43), signalAsToken: 'h'.repeat(43), signalHsToken: 'i'.repeat(43), telegramAsToken: 'j'.repeat(43), telegramHsToken: 'k'.repeat(43) };
 
 function keyPaths(o, prefix = '') {
   const out = [];
@@ -234,6 +234,53 @@ describe('the homeserver configuration (Tuwunel)', () => {
   });
 });
 
+describe('the tokens of the registrations: one pair per bridge', () => {
+  /** [global.appservice.<id>] → { as_token, hs_token } as written into tuwunel.toml */
+  function tomlTokens(toml) {
+    const out = {};
+    let id = null;
+    for (const l of toml.split('\n')) {
+      const head = /^\[global\.appservice\.([a-z]+)\]$/.exec(l);
+      if (head) { id = head[1]; out[id] = {}; continue; }
+      if (/^\[/.test(l)) { if (!/^\[\[global\.appservice\./.test(l)) id = null; continue; }
+      const kv = /^(as_token|hs_token) = (".*")$/.exec(l);
+      if (kv && id) out[id][kv[1]] = JSON.parse(kv[2]);
+    }
+    return out;
+  }
+
+  it('no as_token or hs_token twice in tuwunel.toml (core, puppet, whatsapp, signal, telegram)', () => {
+    // the homeserver finds a registration by its as_token: a shared one put whatsappbot into signal's namespace
+    const regs = tomlTokens(config.hsToml(config.hsModel(SECRETS, ['whatsapp', 'signal', 'telegram'])));
+    assert.deepEqual(Object.keys(regs).sort(), ['gatecontrol', 'gcpuppet', 'signal', 'telegram', 'whatsapp']);
+    const all = Object.values(regs).flatMap((r) => [r.as_token, r.hs_token]);
+    for (const t of all) assert.match(t, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(new Set(all).size, 10, 'every token once');
+  });
+
+  it('every bridge’s config.yaml carries the tokens of its own registration', () => {
+    const f = config.files(SECRETS, ['whatsapp', 'signal']);
+    const regs = tomlTokens(f['hs/config/tuwunel.toml']);
+    for (const n of ['whatsapp', 'signal']) {
+      const yaml = parseYaml(f[`${n}/config/config.yaml`]);
+      assert.equal(yaml.appservice.as_token, regs[n].as_token, n);
+      assert.equal(yaml.appservice.hs_token, regs[n].hs_token, n);
+      assert.equal(yaml.appservice.id, n);
+    }
+    assert.notEqual(regs.whatsapp.as_token, regs.signal.as_token);
+  });
+
+  it('a bridge without its own tokens is refused rather than given another one’s', () => {
+    const rest = { ...SECRETS };
+    delete rest.signalAsToken;
+    delete rest.signalHsToken;
+    assert.throws(() => config.hsModel(rest, ['whatsapp', 'signal']), /no tokens for signal/);
+    assert.throws(() => config.bridgeModel('signal', rest), /no tokens for signal/);
+    assert.ok(config.hsModel(rest, ['whatsapp']).appservices.whatsapp, 'WhatsApp alone needs nothing new');
+    assert.deepEqual(config.bridgeTokens(SECRETS, 'whatsapp'), { asToken: SECRETS.asToken, hsToken: SECRETS.hsToken });
+  });
+});
+
 describe('the bridge configuration (mautrix-whatsapp)', () => {
   const model = config.bridgeModel('whatsapp', SECRETS);
 
@@ -384,6 +431,31 @@ describe('the service with stage 2', () => {
     // no status call and no host API gives a token away
     const all = JSON.stringify(bridges.status());
     for (const t of Object.values(secrets)) assert.ok(!all.includes(t));
+  });
+
+  it('the tokens per bridge: WhatsApp keeps the ones it always had, Signal and Telegram get their own', () => {
+    const crypto = require('node:crypto');
+    const key = `${'A'.repeat(42)}g`;
+    const t = bridges._tokens(key);
+    // fixed values of an existing installation (before tokens per bridge) — they must never change
+    assert.equal(t.asToken, 'zf6cMSMqpTGzkPxCgvVYNRJF0OZs6Gs41f9qey8ehvY');
+    assert.equal(t.hsToken, 'KnLrusm9S2muabh2Odbbtb_WSzBXHcbxqZHUCIgj0qg');
+    const derive = (p) => crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update(`gatecontrol-bridges:${p}`).digest('base64url');
+    assert.equal(t.signalAsToken, derive('as_token:signal'));
+    assert.equal(t.signalHsToken, derive('hs_token:signal'));
+    assert.equal(t.telegramAsToken, derive('as_token:telegram'));
+    assert.equal(t.telegramHsToken, derive('hs_token:telegram'));
+    const values = Object.values(t);
+    assert.equal(new Set(values).size, values.length, 'no token twice');
+    // WhatsApp alone: the same files and so the same rev as before — update.sh leaves the containers alone
+    const before = {
+      asToken: t.asToken, hsToken: t.hsToken, provisionSecret: t.provisionSecret, coreAsToken: t.coreAsToken,
+      coreHsToken: t.coreHsToken, puppetAsToken: t.puppetAsToken, puppetHsToken: t.puppetHsToken,
+    };
+    for (const opts of [{ history: true }, {}]) {
+      assert.deepEqual(config.files(t, ['whatsapp'], opts), config.files(before, ['whatsapp'], opts));
+      assert.equal(config.rev(t, ['whatsapp'], opts), config.rev(before, ['whatsapp'], opts));
+    }
   });
 
   it('shows "outdated" when a container runs another image than the pinned one', () => {

@@ -96,7 +96,7 @@ const backlog = (o = {}) => call('bridges.history.pull', o).then((r) => r.events
 describe('configuration', () => {
   const config = require('../src/services/bridges/config');
   const keysOf = (o, pre = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length ? [pre + k, ...keysOf(v, pre + k + '.')] : [pre + k]));
-  const secrets = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43) };
+  const secrets = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43), signalAsToken: 'h'.repeat(43), signalHsToken: 'i'.repeat(43), telegramAsToken: 'j'.repeat(43), telegramHsToken: 'k'.repeat(43) };
 
   it('history allowed: the bridge keeps the phone’s history and fills the most recent chats; otherwise as before', () => {
     const on = config.bridgeModel('whatsapp', secrets, { history: true });

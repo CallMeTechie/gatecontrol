@@ -78,9 +78,26 @@ const HISTORY = Object.freeze({ conversations: 30, messages: 200, catchup: 100 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const userRegex = (prefix) => `@${reEsc(prefix)}.*:${reEsc(SERVER_NAME)}`;
 
+// The tokens of each bridge's own registration (index.js tokens() derives them): never shared between bridges — the
+// homeserver finds a registration by its as_token, so with a shared one a bridge lands in another one's namespace
+const BRIDGE_TOKEN_KEYS = Object.freeze({
+  whatsapp: ['asToken', 'hsToken'],
+  signal: ['signalAsToken', 'signalHsToken'],
+  telegram: ['telegramAsToken', 'telegramHsToken'],
+});
+
+/** → { asToken, hsToken } of the bridge `network`; throws when the secrets have none for it. */
+function bridgeTokens(secrets, network) {
+  const keys = BRIDGE_TOKEN_KEYS[network];
+  if (!keys) throw new Error(`bridges config: unknown network ${network}`);
+  const [asToken, hsToken] = keys.map((k) => secrets[k]);
+  if (typeof asToken !== 'string' || !asToken || typeof hsToken !== 'string' || !hsToken) throw new Error(`bridges config: no tokens for ${network}`);
+  return { asToken, hsToken };
+}
+
 /**
  * The homeserver's configuration as a model: { global: { key: value }, appservices: { id: { …, users: [ns] } } }.
- * @param {{asToken:string, hsToken:string, coreAsToken:string, coreHsToken:string, puppetAsToken:string, puppetHsToken:string}} secrets
+ * @param {{asToken:string, hsToken:string, signalAsToken:string, signalHsToken:string, coreAsToken:string, coreHsToken:string, puppetAsToken:string, puppetHsToken:string}} secrets
  * @param {string[]} networks the bridges that are switched on
  */
 function hsModel(secrets, networks) {
@@ -106,11 +123,12 @@ function hsModel(secrets, networks) {
     },
   };
   for (const n of networks) {
+    const own = bridgeTokens(secrets, n);
     appservices[n] = {
       // the homeserver reaches a bridge by HTTP only; the relay next to it hands the call to the bridge's Unix socket
       url: `http://bruecken-${n}-relay:${RELAY_PORT[n]}`,
-      as_token: secrets.asToken,
-      hs_token: secrets.hsToken,
+      as_token: own.asToken,
+      hs_token: own.hsToken,
       sender_localpart: `${n}bot`,
       rate_limited: false,
       receive_ephemeral: true,
@@ -185,6 +203,7 @@ function bridgeModel(network, secrets, opts = {}) {
   const history = opts.history === true;
   if (!NETWORK_MODELS[network]) throw new Error(`bridges config: unknown network ${network}`);
   const own = NETWORK_MODELS[network]({ history });
+  const tokens = bridgeTokens(secrets, network);
   const model = {
     homeserver: {
       address: `unix://${HS_SOCKET_BRIDGE}`,
@@ -200,8 +219,8 @@ function bridgeModel(network, secrets, opts = {}) {
       // no picture: the default one lies on another server, which this island never reaches
       bot: { username: `${network}bot`, avatar: 'remove' },
       ephemeral_events: true,
-      as_token: secrets.asToken,
-      hs_token: secrets.hsToken,
+      as_token: tokens.asToken,
+      hs_token: tokens.hsToken,
       username_template: `${network}_{{.}}`,
     },
     database: {
@@ -369,5 +388,5 @@ function write(dir, secrets, networks, opts = {}) {
 
 module.exports = {
   SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT, PUPPET_ID, PUPPET_BOT, HISTORY,
-  hsModel, hsToml, bridgeModel, bridgeYaml, files, rev, write,
+  hsModel, hsToml, bridgeModel, bridgeYaml, files, rev, write, bridgeTokens, BRIDGE_TOKEN_KEYS,
 };
