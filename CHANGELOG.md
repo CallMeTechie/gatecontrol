@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.295.0] — 2026-11-16
+
+### Features
+- alte Medien vom Handy nachladen (gc.bridges Version 13) (#513)
+
+---
+
 ## [1.294.0] — 2026-11-16
 
 ### Features
