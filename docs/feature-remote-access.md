@@ -145,6 +145,20 @@ The core adds:
   of content beyond the focused field (to insert text at the cursor); nothing outside a session. The server sees the
   input as it sees the picture (no end-to-end encryption).
 
+## Stage 7 (sharing a Windows screen, gc.remote version 6, the plugin „Fernzugriff“ 1.5)
+
+* **The same relay** — the GateControl app for Windows („Bildschirm teilen“, also Windows Home, nobody is signed off)
+  captures a display (Electron `desktopCapturer`), encodes H.264 with WebCodecs (hardware first) and sends it as the
+  sender of `gc-screen.v1`. Tickets, tokens, limits and end reasons are those of stage 5/6.
+* **Mouse and keyboard** — the hello says `input: 'desktop'`; in control the viewer sends `move`, `button`, `wheel` and
+  `kbd` (physical keys, shortcuts included), pasting is `text`. The core cleans and limits them (moves 30 a second of
+  their own, a release always passes) and logs none of it. The PC carries them out with `SendInput` only while the
+  mode in force is control and Windows' input desktop is the normal one; it lets go of everything when control ends.
+* **Displays** — the hello names the displays (index and size); the viewer may pick one (`{t:'display', i}`).
+* **What the PC never does** — no input into Windows' secure desktop (UAC prompt, lock and sign-in screen, Ctrl+Alt+Del):
+  that would take a system service, which GateControl does not install. The person at the PC sees a bar at the top
+  („… sieht zu / steuert · Beenden“) for the whole session.
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime

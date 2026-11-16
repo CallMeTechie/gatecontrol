@@ -5,7 +5,11 @@
    Stage 6: while the relay says mode control (the person at the phone allowed it, the phone can do it), mouse,
    touch and keyboard on the picture go to the phone as {t:'input'} — click = tap, hold = long press, drag =
    swipe, wheel = scroll, right button = back, typing = text into the field selected on the phone — and the
-   toolbar shows „Du steuerst“. The phone can go down to view at any time; then input stops at once. */
+   toolbar shows „Du steuerst“. The phone can go down to view at any time; then input stops at once.
+   Stage 7: a Windows PC (the relay says input 'desktop'): the mouse moves, its buttons and wheel and the physical keys
+   go as they are (move, button, wheel, kbd) — shortcuts included —, pasting is text; every key and button still held
+   is let go when control ends, the window loses the focus or the session ends. With more than one display the
+   toolbar offers the choice. */
 (function () {
   'use strict';
   var K = window.GCScreenKit;
@@ -40,6 +44,10 @@
   var needKey = true;
   var mode = 'view';
   var toastTimer = null;
+  // stage 7: what sends (a PC takes mouse and keyboard), the keys and buttons held now
+  var sender = K.senderInfo(null);
+  var desk = false;
+  var held = { keys: new Set(), buttons: new Set(), at: null };
 
   function fail(code) {
     stopped = true;
@@ -117,18 +125,120 @@
     $('rscreen-control').style.display = on ? 'inline-flex' : 'none';
     $('rscreen-keys').style.display = on ? 'inline-flex' : 'none';
     canvas.classList.toggle('rscreen-canvas--control', on);
-    if (!on) { showText(false); pointer = null; }
+    if (!on) { releaseHeld(true); showText(false); pointer = null; }
     note(on ? '' : T('view_only'));
     if (!on && (announce || was === 'control') && reason && reason !== 'viewer_only') toast(T(K.modeKey(reason)));
   }
 
   function input(frame) { if (mode === 'control' && frame) sendJson(frame); }
 
+  // ─── Stage 7: a PC ───
+
+  /** Let go of every key and button held (also after control ended: a release is always safe). */
+  function releaseHeld(force) {
+    K.releaseAll(Array.from(held.keys), Array.from(held.buttons), held.at).forEach(function (f) { if (force || mode === 'control') sendJson(f); });
+    held.keys.clear();
+    held.buttons.clear();
+  }
+
+  /** The relay told what sends: a PC gets mouse and keyboard, the phone keys go, the display choice shows. */
+  function setSender(m) {
+    sender = K.senderInfo(m);
+    var was = desk;
+    desk = sender.input === 'desktop';
+    if (was && !desk) releaseHeld(true);
+    canvas.classList.toggle('rscreen-canvas--desktop', desk);
+    ['rscreen-key-back', 'rscreen-key-home', 'rscreen-key-recents'].forEach(function (id) { $(id).style.display = desk ? 'none' : ''; });
+    $('rscreen-control').title = desk ? T('control_hint_desktop') : T('control_hint');
+    var sel = $('rscreen-display-select');
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    sender.displays.forEach(function (d, n) {
+      var o = document.createElement('option');
+      o.value = String(d.i);
+      o.textContent = T('display_n').replace('%s', String(n + 1)) + (d.primary ? ' · ' + T('display_primary') : '') + ' · ' + d.w + '×' + d.h;
+      sel.appendChild(o);
+    });
+    sel.value = sender.display == null ? '' : String(sender.display);
+    $('rscreen-display').style.display = sender.displays.length > 1 ? 'inline-flex' : 'none';
+  }
+  $('rscreen-display-select').addEventListener('change', function () {
+    var i = Number($('rscreen-display-select').value);
+    if (Number.isInteger(i)) { releaseHeld(false); sendJson({ t: 'display', i: i }); }
+  });
+
+  var lastMove = 0;
+  canvas.addEventListener('pointermove', function (ev) {
+    if (!desk || mode !== 'control') return;
+    // about 20 moves a second, 30 while a button is held (dragging)
+    if (ev.timeStamp - lastMove < (held.buttons.size ? 33 : 50)) return;
+    var u = unitOf(ev);
+    if (!u) return;
+    lastMove = ev.timeStamp;
+    held.at = u;
+    input(K.moveInput(u));
+  });
+  canvas.addEventListener('pointerdown', function (ev) {
+    if (!desk || mode !== 'control') return;
+    ev.preventDefault();
+    canvas.focus();
+    var b = K.buttonName(ev.button);
+    var u = unitOf(ev);
+    if (!b || !u) return;
+    held.at = u;
+    held.buttons.add(b);
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* gone */ }
+    input(K.buttonInput(b, true, u));
+  });
+  function deskUp(ev) {
+    if (!desk) return;
+    var b = K.buttonName(ev.button);
+    if (!b || !held.buttons.has(b)) return;
+    held.buttons.delete(b);
+    var u = unitOf(ev) || held.at;
+    if (u) { held.at = u; sendJson(K.buttonInput(b, false, u)); }
+  }
+  canvas.addEventListener('pointerup', deskUp);
+  canvas.addEventListener('pointercancel', function () { if (desk) releaseHeld(true); });
+
+  var deskWheel = null;
+  canvas.addEventListener('wheel', function (ev) {
+    if (!desk || mode !== 'control') return;
+    ev.preventDefault();
+    var u = unitOf(ev);
+    if (!u) return;
+    var px = ev.deltaMode === 1 ? 40 : (ev.deltaMode === 2 ? canvas.getBoundingClientRect().height : 1);
+    if (!deskWheel) {
+      deskWheel = { at: u, dx: 0, dy: 0 };
+      setTimeout(function () { var w = deskWheel; deskWheel = null; input(K.wheelInput(w.at, w.dx, w.dy)); }, 50);
+    }
+    deskWheel.dx += ev.deltaX * px;
+    deskWheel.dy += ev.deltaY * px;
+  }, { passive: false });
+
+  canvas.addEventListener('keydown', function (ev) {
+    if (!desk || mode !== 'control') return;
+    var f = K.kbdInput(ev.code, true);
+    if (!f) return;
+    ev.preventDefault();
+    if (held.keys.size >= 16 && !held.keys.has(ev.code)) return;
+    held.keys.add(ev.code);
+    input(f);
+  });
+  canvas.addEventListener('keyup', function (ev) {
+    if (!desk || !held.keys.has(ev.code)) return;
+    ev.preventDefault();
+    held.keys.delete(ev.code);
+    sendJson(K.kbdInput(ev.code, false));
+  });
+  // the window loses the keyboard (Alt+Tab of the helper, another tab): nothing stays pressed on the PC
+  canvas.addEventListener('blur', function () { if (desk) releaseHeld(true); });
+  document.addEventListener('visibilitychange', function () { if (desk && document.hidden) releaseHeld(true); });
+
   var pointer = null;
   function unitOf(ev) { return K.toUnit(ev.clientX, ev.clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height); }
 
   canvas.addEventListener('pointerdown', function (ev) {
-    if (mode !== 'control') return;
+    if (mode !== 'control' || desk) return;
     ev.preventDefault();
     canvas.focus();
     if (ev.button === 2) { input(K.keyInput('back')); return; }
@@ -165,7 +275,7 @@
 
   var wheel = null;
   canvas.addEventListener('wheel', function (ev) {
-    if (mode !== 'control') return;
+    if (mode !== 'control' || desk) return;
     ev.preventDefault();
     var u = unitOf(ev);
     if (!u) return;
@@ -188,7 +298,7 @@
   var typedTimer = null;
   function flushTyped() { clearTimeout(typedTimer); if (typed) input(K.textInput(typed)); typed = ''; }
   canvas.addEventListener('keydown', function (ev) {
-    if (mode !== 'control' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (mode !== 'control' || desk || ev.ctrlKey || ev.metaKey || ev.altKey) return;
     if (ev.key === 'Enter' || ev.key === 'Backspace') { ev.preventDefault(); flushTyped(); input(K.keyInput(ev.key === 'Enter' ? 'enter' : 'backspace')); return; }
     if (ev.key && Array.from(ev.key).length === 1) {
       ev.preventDefault();
@@ -261,14 +371,18 @@
           attempt = 0;
           show('rscreen-reconnect', false);
           state('connected');
+          if (m.sender) setSender(m.sender);
           setMode(m.mode, m.modeReason, false);
+        } else if (m.t === 'sender') {
+          setSender(m);
         } else if (m.t === 'waiting') {
           veil(m.reason === 'sender_lost' ? T('sender_lost') : T('waiting'));
         } else if (m.t === 'config') {
           veil(null);
           configure(m);
         } else if (m.t === 'state') {
-          veil(m.paused ? T('paused') : null);
+          if (m.paused && desk) releaseHeld(true);
+          veil(m.paused ? T(m.reason === 'secure' && desk ? 'paused_secure' : 'paused') : null);
         } else if (m.t === 'mode') {
           setMode(m.mode, m.reason, true);
         } else if (m.t === 'input_fail') {
@@ -292,6 +406,9 @@
       ws.onclose = function () {
         clearInterval(pingTimer);
         ws = null;
+        // the PC lets go of everything itself when the viewer is gone
+        held.keys.clear();
+        held.buttons.clear();
         if (stopped || ended) return;
         closeDecoder();
         retry();
@@ -311,11 +428,12 @@
     if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen();
   });
   $('rscreen-btn-disconnect').addEventListener('click', function () {
+    releaseHeld(true);
     stopped = true;
     clearTimeout(retryTimer);
     if (ws && ws.readyState === 1) sendJson({ t: 'bye' }); else state('disconnected');
   });
-  window.addEventListener('beforeunload', function () { stopped = true; if (ws) { try { ws.close(); } catch (e) { /* closed */ } } });
+  window.addEventListener('beforeunload', function () { releaseHeld(true); stopped = true; if (ws) { try { ws.close(); } catch (e) { /* closed */ } } });
 
   veil(T('waiting'));
   connect();

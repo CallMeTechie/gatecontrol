@@ -1,4 +1,5 @@
-/* Shared logic of the screen viewer of gc.remote (stage 5, input stage 6, templates/aurora/pages/remote-screen.njk):
+/* Shared logic of the screen viewer of gc.remote (stage 5, input stage 6, a PC's mouse and keyboard stage 7,
+   templates/aurora/pages/remote-screen.njk):
    the gc-screen.v1 client without the DOM — tests require this file.
    Browser: window.GCScreenKit; Node: module.exports. */
 (function (root, factory) {
@@ -141,7 +142,53 @@
   var NOTICES = ['view_only', 'input_rate'];
   function noticeKey(code) { return NOTICES.indexOf(code) >= 0 ? 'remote.screen.notice.' + code : null; }
 
+  // ─── Stage 7: a Windows PC — mouse and keyboard (input 'desktop') ───
+
+  /** {t:'sender'} or ready.sender → { platform, input: 'desktop'|'touch', displays: [{ i, primary, w, h }], display } */
+  function senderInfo(m) {
+    var o = m && typeof m === 'object' ? m : {};
+    var displays = Array.isArray(o.displays) ? o.displays.filter(function (d) { return d && typeof d.i === 'number'; }).slice(0, 8) : [];
+    return { platform: typeof o.platform === 'string' ? o.platform : null, input: o.input === 'desktop' ? 'desktop' : 'touch',
+      displays: displays, display: typeof o.display === 'number' ? o.display : (displays[0] ? displays[0].i : null) };
+  }
+
+  // KeyboardEvent.code of a physical key the relay passes on (the same list as services/remote/screen.js)
+  var CODES = ['Enter', 'Escape', 'Backspace', 'Tab', 'Space', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Semicolon', 'Quote',
+    'Backquote', 'Comma', 'Period', 'Slash', 'IntlBackslash', 'CapsLock', 'NumLock', 'ScrollLock', 'PrintScreen', 'Pause', 'Insert', 'Delete', 'Home',
+    'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ContextMenu', 'ShiftLeft', 'ShiftRight', 'ControlLeft',
+    'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal',
+    'NumpadEnter'];
+  var CODE_RE = /^(?:Key[A-Z]|Digit[0-9]|Numpad[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/;
+  function keyCode(code) { return typeof code === 'string' && (CODES.indexOf(code) >= 0 || CODE_RE.test(code)); }
+
+  /** A key down or up → a kbd frame, or null for a key the PC is not given. */
+  function kbdInput(code, down) { return keyCode(code) ? { t: 'input', k: 'kbd', code: code, down: down === true } : null; }
+
+  /** MouseEvent.button → the name of the button (left, middle, right), null for others (back, forward). */
+  function buttonName(n) { return n === 0 ? 'left' : (n === 1 ? 'middle' : (n === 2 ? 'right' : null)); }
+  function buttonInput(b, down, at) { return b && at ? { t: 'input', k: 'button', b: b, down: down === true, x: at.x, y: at.y } : null; }
+  function moveInput(at) { return at ? { t: 'input', k: 'move', x: at.x, y: at.y } : null; }
+
+  /** Wheel deltas in pixels → a wheel frame of WHEEL_DELTA units (120 = one notch, ±1200), null for nothing. */
+  function wheelInput(at, dxPx, dyPx) {
+    if (!at) return null;
+    // a mouse's notch is about 100 px in the browser; Windows wants 120 per notch, down negative
+    var dx = Math.round(clamp(dxPx * 1.2, -1200, 1200));
+    var dy = Math.round(clamp(-dyPx * 1.2, -1200, 1200));
+    if (dx === 0 && dy === 0) return null;
+    return { t: 'input', k: 'wheel', x: at.x, y: at.y, dx: dx, dy: dy };
+  }
+
+  /** The keys and buttons still held → the frames that let all of them go (mode view, the window lost focus, the end). */
+  function releaseAll(keys, buttons, at) {
+    var out = [];
+    (keys || []).forEach(function (c) { var f = kbdInput(c, false); if (f) out.push(f); });
+    (buttons || []).forEach(function (b) { var f = buttonInput(b, false, at || { x: 0.5, y: 0.5 }); if (f) out.push(f); });
+    return out;
+  }
+
   return { PROTOCOL: PROTOCOL, HEADER: HEADER, errorKey: errorKey, isFinal: isFinal, endKey: endKey, parseFrame: parseFrame, parseMedia: parseMedia,
     decoderConfig: decoderConfig, backoff: backoff, fit: fit, toUnit: toUnit, gesture: gesture, scroll: scroll, textInput: textInput, keyInput: keyInput,
-    modeKey: modeKey, failKey: failKey, noticeKey: noticeKey };
+    modeKey: modeKey, failKey: failKey, noticeKey: noticeKey, senderInfo: senderInfo, keyCode: keyCode, kbdInput: kbdInput, buttonName: buttonName,
+    buttonInput: buttonInput, moveInput: moveInput, wheelInput: wheelInput, releaseAll: releaseAll };
 }));

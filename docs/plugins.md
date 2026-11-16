@@ -3084,6 +3084,21 @@ session page shows „Du steuerst“ and a bar with Zurück / Start / Übersicht
 control: click = tap, hold = long press, drag = swipe, wheel = scroll, right button = back, typing = text into
 the field selected on the phone.
 
+**A PC as sender** (version 6, stage 7). The GateControl app for Windows shares a display through the same relay
+(„Bildschirm teilen“, also on Windows Home). Its hello adds `input: 'desktop'` (a phone: `touch`, the default),
+`app.platform: 'windows'` and `displays: [{ i, primary, w, h }]` (≤ 8, index and size only) with `display` (the one
+shared). The viewer hears what sends as `{t:'sender', platform, input, displays?, display?}` (and in `ready.sender`
+when the PC came first). Only to a desktop sender, only in control, the viewer's mouse and keyboard pass: `move {x,
+y}`, `button {x, y, b: left|right|middle, down}`, `wheel {x, y, dx, dy}` (integers −1200…1200, 120 = one notch) and
+`kbd {code, down}` (`KeyboardEvent.code` of a physical key from a fixed list: letters, digits, F1…F24, the number
+pad, editing and arrow keys, the modifiers) — the phone kinds stay allowed (a phone browser as viewer); a phone
+never gets the desktop kinds. Moves have a bucket of their own (30 a second, the excess goes silently); a release
+(`down: false`) never falls to the input limits. The viewer picks a display with `{t:'display', i}` (in any mode,
+two a second), the PC answers with `{t:'displays', displays, display}` → the viewer's `{t:'sender'}` again (a bad
+list ends the session with `bad_frame`). `input_fail.k` may name the desktop kinds. The session page switches to
+mouse and keyboard as they are for a PC, lets go of every key and button held when control ends, the window loses
+the focus or the session ends, and offers the displays when there are more than one.
+
 **Recordings** (version 3, `src/services/remote/recordings.js`). Optional — only with
 `record: true`, and only after the hint on the session page ("Diese Sitzung wird
 aufgezeichnet", a red dot while it runs; `ready.recording: true` for the apps, which must show

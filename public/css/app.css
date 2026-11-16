@@ -2628,6 +2628,9 @@ body.rdp-session-body {
 .rscreen-toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); padding: 8px 14px; border-radius: 10px; background: rgba(15, 20, 28, .92); color: #fff; font-size: 13px; z-index: 5; text-align: center; }
 .rscreen-textbar { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(560px, calc(100% - 32px)); gap: 8px; padding: 8px; border-radius: 12px; background: var(--surface, #111827); border: 1px solid var(--border, #1f2937); z-index: 6; align-items: center; }
 .rscreen-textbar .input { flex: 1; min-width: 0; }
+.rscreen-display { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2, #9ca3af); }
+.rscreen-display select { height: 28px; padding: 0 8px; font-size: 12px; max-width: 220px; }
+.rscreen-canvas--desktop { cursor: default; }
 @media (max-width: 640px) {
   .rdp-session-toolbar .rdp-tbtn-label { display: none; }
   .rterm-note { display: none; }

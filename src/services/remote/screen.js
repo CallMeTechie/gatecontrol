@@ -29,6 +29,16 @@
 // The server passes on only the cleaned object (cleanInput), limits it (30 a second, text 5 a second and
 // 4000 characters in 10 s) and logs none of it.
 //
+// Stage 7 (version 6): a Windows PC shares its screen ("Bildschirm teilen" in the GateControl app). Its hello says
+// input: 'desktop' (a phone: 'touch', the default), app.platform 'windows' and the displays it has; the viewer hears
+// that as {t:'sender', platform, input, displays?, display?} (and in ready when the sender is there first). Only to a
+// desktop sender, and only in control, the viewer's mouse and keyboard pass:
+//   viewer → sender text {t:'input', k: 'move'|'button'|'wheel'|'kbd', …}   (the phone kinds stay allowed)
+//   viewer → sender text {t:'display', i}          the screen to share (in any mode, at most 2 a second)
+//   sender → server text {t:'displays', displays, display}   the list or the shared screen changed → {t:'sender', …}
+// Moves have a bucket of their own (30 a second, the excess goes silently); a release (down: false) never falls to
+// the input limits, so no key stays pressed on the PC because of them.
+//
 // The core never decodes or transcodes anything: it reads the flag byte of a frame (a viewer gets frames
 // from the next key frame on, and a slow one loses delta frames until the next key frame) and counts bytes
 // (a bucket per session). Key frames carry SPS/PPS in front (the phone sets KEY_PREPEND_HEADER_TO_SYNC_FRAMES),
@@ -76,6 +86,22 @@ const MAX_PATH = 32;
 const INPUT_FAILS_PER_S = 5;
 const NOTICE_EVERY_MS = 1000;
 const KEYS = Object.freeze(['back', 'home', 'recents', 'enter', 'backspace']);
+// stage 7: the desktop input of a Windows PC
+const MOVES_PER_S = 30;
+const DISPLAY_PER_S = 2;
+const MAX_DISPLAYS = 8;
+const MAX_WHEEL = 1200;
+const BUTTONS = Object.freeze(['left', 'right', 'middle']);
+const TOUCH_KINDS = Object.freeze(['tap', 'long', 'swipe', 'scroll', 'key', 'text']);
+const DESKTOP_KINDS = Object.freeze(['move', 'button', 'wheel', 'kbd']);
+// KeyboardEvent.code of a physical key (the layout of the PC decides the character)
+const KEY_CODES = new Set([
+  'Enter', 'Escape', 'Backspace', 'Tab', 'Space', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Semicolon', 'Quote', 'Backquote',
+  'Comma', 'Period', 'Slash', 'IntlBackslash', 'CapsLock', 'NumLock', 'ScrollLock', 'PrintScreen', 'Pause', 'Insert', 'Delete', 'Home', 'End',
+  'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ContextMenu', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight',
+  'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal', 'NumpadEnter',
+]);
+const KEY_CODE_RE = /^(?:Key[A-Z]|Digit[0-9]|Numpad[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/;
 const MODE_REASONS = Object.freeze(['sender', 'service_off', 'locked']);
 const FAIL_REASONS = Object.freeze(['no_field', 'blocked', 'locked', 'secure']);
 const LIMITS = Object.freeze({ maxBitrate: MAX_BITRATE, maxFps: MAX_FPS, maxEdge: MAX_EDGE, maxFrame: MAX_FRAME });
@@ -146,15 +172,46 @@ function cleanConfig(m) {
   return { t: 'config', codec: m.codec, width: Number(m.width), height: Number(m.height) };
 }
 
+/**
+ * Stage 7: the displays of a PC → { displays, display } | null (none given) | false (not valid).
+ * Only an index, primary and the size of each — no name, no position.
+ */
+function cleanDisplays(m) {
+  if (m.displays == null) return null;
+  if (!Array.isArray(m.displays) || m.displays.length < 1 || m.displays.length > MAX_DISPLAYS) return false;
+  const displays = [];
+  for (const d of m.displays) {
+    if (!d || typeof d !== 'object' || !Number.isInteger(d.i) || d.i < 0 || d.i >= MAX_DISPLAYS) return false;
+    const w = Number(d.w);
+    const h = Number(d.h);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 16 || h < 16 || w > 16384 || h > 16384) return false;
+    if (displays.some((x) => x.i === d.i)) return false;
+    displays.push({ i: d.i, primary: d.primary === true, w, h });
+  }
+  const display = m.display == null ? displays[0].i : m.display;
+  if (!displays.some((x) => x.i === display)) return false;
+  return { displays, display };
+}
+
 function cleanSenderHello(m) {
   if (!sizeOk(m.width, m.height)) return null;
   const fps = m.fps == null ? 15 : Number(m.fps);
   if (!Number.isFinite(fps) || fps < 1 || fps > MAX_FPS) return null;
+  const ds = cleanDisplays(m);
+  if (ds === false) return null;
   return {
     width: Number(m.width), height: Number(m.height), fps,
     scope: m.scope === 'app' ? 'app' : 'display',
     platform: m.app && typeof m.app.platform === 'string' && /^[a-z]{1,16}$/.test(m.app.platform) ? m.app.platform : null,
+    // stage 7: a PC takes mouse and keyboard, a phone taps and swipes
+    input: m.input === 'desktop' ? 'desktop' : 'touch',
+    ...(ds || {}),
   };
+}
+
+/** What the viewer learns of the sender (stage 7): {t:'sender', platform, input, displays?, display?}. */
+function senderFrame(info) {
+  return { t: 'sender', platform: info.platform, input: info.input, ...(info.displays ? { displays: info.displays, display: info.display } : {}) };
 }
 
 const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
@@ -168,9 +225,11 @@ const msIn = (v, min, max, dflt) => {
 /**
  * An input frame of the viewer → the cleaned object that goes to the phone, or null (dropped). Only the
  * fields of the contract, coordinates 0…1 of the picture, rounded; text without control characters.
+ * Stage 7: `kind` 'desktop' (a PC) also takes move, button, wheel and kbd; a phone ('touch') never gets them.
  */
-function cleanInput(m) {
+function cleanInput(m, kind = 'touch') {
   if (!m || typeof m !== 'object') return null;
+  if (DESKTOP_KINDS.includes(m.k)) return kind === 'desktop' ? cleanDesktopInput(m) : null;
   switch (m.k) {
     case 'tap':
       return unit(m.x) && unit(m.y) ? { t: 'input', k: 'tap', x: round4(m.x), y: round4(m.y) } : null;
@@ -205,6 +264,30 @@ function cleanInput(m) {
       return null;
   }
 }
+
+const wheelDelta = (v) => Number.isInteger(v) && v >= -MAX_WHEEL && v <= MAX_WHEEL;
+
+/** The mouse and keyboard of a PC (stage 7) → the cleaned frame or null. */
+function cleanDesktopInput(m) {
+  switch (m.k) {
+    case 'move':
+      return unit(m.x) && unit(m.y) ? { t: 'input', k: 'move', x: round4(m.x), y: round4(m.y) } : null;
+    case 'button':
+      if (!BUTTONS.includes(m.b) || typeof m.down !== 'boolean' || !unit(m.x) || !unit(m.y)) return null;
+      return { t: 'input', k: 'button', b: m.b, down: m.down, x: round4(m.x), y: round4(m.y) };
+    case 'wheel':
+      if (!unit(m.x) || !unit(m.y) || !wheelDelta(m.dx) || !wheelDelta(m.dy) || (m.dx === 0 && m.dy === 0)) return null;
+      return { t: 'input', k: 'wheel', x: round4(m.x), y: round4(m.y), dx: m.dx, dy: m.dy };
+    case 'kbd':
+      if (typeof m.code !== 'string' || typeof m.down !== 'boolean' || !(KEY_CODES.has(m.code) || KEY_CODE_RE.test(m.code))) return null;
+      return { t: 'input', k: 'kbd', code: m.code, down: m.down };
+    default:
+      return null;
+  }
+}
+
+/** A release lets go of something (a key, a mouse button): it never falls to the input limits. */
+const isRelease = (c) => (c.k === 'kbd' || c.k === 'button') && c.down === false;
 
 function send(ws, obj) {
   try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch { /* gone */ }
@@ -248,6 +331,8 @@ function relayOf(t) {
     // stage 6: the mode in force (control only with the phone's control: true), the input limits
     mode: t.mode === 'control' ? 'control' : 'view', modeReason: t.mode === 'control' ? null : 'viewer_only',
     inputs: INPUT_PER_S, inputsAt: Date.now(), textInputs: 0, textInputsAt: Date.now(), textChars: [], lastNotice: 0, fails: 0, failsAt: Date.now(),
+    // stage 7: moves of the mouse, the choice of a display
+    moves: MOVES_PER_S, movesAt: Date.now(), displayAsks: 0, displayAsksAt: Date.now(),
   };
   relays.set(t.ref, r);
   // the longest session (GC_REMOTE_SCREEN_MAX_MIN)
@@ -289,6 +374,15 @@ function downgrade(r, reason) {
   try { require('./sessions').screenMode(r.ticket, r.sid, 'view', reason); } catch (e) { logger.debug({ err: e.message }, 'remote screen: mode not recorded'); }
 }
 
+/** Moves of the mouse (stage 7): a refill bucket of their own. */
+function moveAllowed(r, now) {
+  r.moves = Math.min(MOVES_PER_S, r.moves + ((now - r.movesAt) / 1000) * MOVES_PER_S);
+  r.movesAt = now;
+  if (r.moves < 1) return false;
+  r.moves -= 1;
+  return true;
+}
+
 /** A refill bucket: true = one more may pass. */
 function inputAllowed(r, now) {
   r.inputs = Math.min(INPUT_PER_S, r.inputs + ((now - r.inputsAt) / 1000) * INPUT_PER_S);
@@ -320,10 +414,20 @@ function onInput(r, m) {
   const now = Date.now();
   if (r.mode !== 'control') { notice(r, 'view_only', now); return; }
   if (!r.sender || !r.sender.hello) return;
-  const c = cleanInput(m);
+  const c = cleanInput(m, r.sender.info && r.sender.info.input);
   if (!c) return;
-  if (!inputAllowed(r, now) || (c.k === 'text' && !textAllowed(r, [...c.text].length, now))) { notice(r, 'input_rate', now); return; }
+  if (c.k === 'move') { if (moveAllowed(r, now)) send(r.sender.ws, c); return; }
+  if (!isRelease(c) && (!inputAllowed(r, now) || (c.k === 'text' && !textAllowed(r, [...c.text].length, now)))) { notice(r, 'input_rate', now); return; }
   send(r.sender.ws, c);
+}
+
+/** The viewer picks a display of a PC (stage 7, in any mode — watching includes it), at most 2 a second. */
+function onDisplay(r, m, now = Date.now()) {
+  const info = r.sender && r.sender.hello ? r.sender.info : null;
+  if (!info || !info.displays || !Number.isInteger(m.i) || !info.displays.some((d) => d.i === m.i)) return;
+  if (now - r.displayAsksAt >= 1000) { r.displayAsksAt = now; r.displayAsks = 0; }
+  if (++r.displayAsks > DISPLAY_PER_S) return;
+  send(r.sender.ws, { t: 'display', i: m.i });
 }
 
 /** Both sides are there for the first time: the row of remote_sessions and the hook start. */
@@ -456,6 +560,14 @@ function onText(r, side, m) {
       if (r.viewer) send(r.viewer.ws, { t: 'state', paused: m.paused, ...(reason ? { reason } : {}) });
       return;
     }
+    // stage 7: a PC shares another display now (or got one more): the viewer hears it
+    if (m.t === 'displays') {
+      const ds = cleanDisplays(m);
+      if (!ds) { send(side.ws, { t: 'error', code: 'bad_frame' }); endRelay(r, 'bad_frame'); return; }
+      side.info = { ...side.info, ...ds };
+      if (r.viewer && r.viewer.hello) send(r.viewer.ws, senderFrame(side.info));
+      return;
+    }
     // the phone goes down to view (its "Nur ansehen", the service went off, …) — never up
     if (m.t === 'mode') {
       if (m.mode === 'view') downgrade(r, MODE_REASONS.includes(m.reason) ? m.reason : 'sender');
@@ -466,13 +578,14 @@ function onText(r, side, m) {
       const now = Date.now();
       if (now - r.failsAt >= 1000) { r.failsAt = now; r.fails = 0; }
       if (++r.fails > INPUT_FAILS_PER_S) return;
-      const k = ['tap', 'long', 'swipe', 'scroll', 'key', 'text'].includes(m.k) ? m.k : null;
+      const k = TOUCH_KINDS.includes(m.k) || DESKTOP_KINDS.includes(m.k) ? m.k : null;
       send(r.viewer.ws, { t: 'input_fail', ...(k ? { k } : {}), reason: FAIL_REASONS.includes(m.reason) ? m.reason : 'blocked' });
     }
     return;
   }
   // the viewer: a key frame, and (stage 6) its input — only in control mode
   if (m.t === 'keyframe') { if (r.viewer) r.viewer.needKey = true; askKeyframe(r); return; }
+  if (m.t === 'display') { onDisplay(r, m); return; }
   if (m.t === 'input') onInput(r, m);
 }
 
@@ -494,6 +607,8 @@ function onHello(r, side, m) {
     // the mode in force: control only when the phone can carry input out and shares the whole display
     if (r.mode === 'control' && (m.control !== true || h.scope !== 'display')) downgrade(r, m.control !== true ? 'sender_no_control' : 'app_scope');
     send(side.ws, { t: 'ready', role: 'sender', mode: r.mode, ...(r.modeReason ? { modeReason: r.modeReason } : {}), peer: { name: personName(t.userId) }, limits: LIMITS });
+    // stage 7: the viewer learns what it watches (a PC takes mouse and keyboard)
+    if (r.viewer && r.viewer.hello) send(r.viewer.ws, senderFrame(h));
     if (r.viewer) {
       send(side.ws, { t: 'viewer', state: 'joined', name: personName(t.userId) });
       // the phone is back after a lost connection: the viewer's "waiting" goes
@@ -510,7 +625,9 @@ function onHello(r, side, m) {
     r.viewer = side;
     if (old && old !== side) { send(old.ws, { t: 'error', code: 'replaced' }); closeSide(old, 4000); }
     clearTimeout(r.viewerLostTimer);
-    send(side.ws, { t: 'ready', role: 'viewer', mode: r.mode, ...(r.modeReason ? { modeReason: r.modeReason } : {}), peer: { name: t.target.name || null }, limits: LIMITS });
+    const sender = r.sender && r.sender.hello ? senderFrame(r.sender.info) : null;
+    send(side.ws, { t: 'ready', role: 'viewer', mode: r.mode, ...(r.modeReason ? { modeReason: r.modeReason } : {}), peer: { name: t.target.name || null }, limits: LIMITS,
+      ...(sender ? { sender: { platform: sender.platform, input: sender.input, ...(sender.displays ? { displays: sender.displays, display: sender.display } : {}) } } : {}) });
     if (r.config) send(side.ws, r.config);
     if (r.sender) {
       send(r.sender.ws, { t: 'viewer', state: 'joined', name: personName(t.userId) });
@@ -584,5 +701,6 @@ function _resetForTest() {
 
 module.exports = {
   PROTOCOL, WS_PATH, HEADER, MAX_FRAME, LIMITS, ScreenError, mintToken, takeToken, tokenOfProtocols, parseHeader, header, admit, run, endRef, count, cleanInput,
+  cleanDisplays,
   _resetForTest,
 };
