@@ -102,9 +102,13 @@ async function quiet() {
     // is busy for real it can end after `until`), and one more: sent after the report, so answered after the
     // storage thread started the log anew (storage.js asks it to before the report is handed on, on the port of
     // the calls). The write below is then "the first write after a checkpoint", whatever the disk took.
-    const want = service.running() ? seen.length + 1 : 0;
+    // Only a COMPLETE checkpoint lets the storage thread start the log anew (storage.js: onCheckpointed). One that a
+    // read cut short (wal_checkpoint PASSIVE with busy frames) is reported as well and tried again at the next tick —
+    // the write must not run into that retry, so the reads go on until a complete one was reported.
+    const done = () => seen.filter((c) => c.complete).length;
+    const want = service.running() ? done() + 1 : 0;
     for (;;) {
-      const last = performance.now() >= until && (seen.length >= want || performance.now() >= until + REPORT_WAIT_MS);
+      const last = performance.now() >= until && (done() >= want || performance.now() >= until + REPORT_WAIT_MS);
       if (last && !want) break;
       const from = Date.now();
       const t0 = performance.now();
