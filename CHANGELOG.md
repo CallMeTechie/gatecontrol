@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.290.0] — 2026-11-16
+
+### Features
+- Bild-Sichtbarkeit im Profil – „Wer sieht dein Bild?“ (Stufe 7c) (#505)
+
+---
+
 ## [1.289.0] — 2026-11-16
 
 ### Features
