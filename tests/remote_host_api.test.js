@@ -90,12 +90,12 @@ describe('permission remote', () => {
     assert.equal(bad.ok, false);
     assert.ok(bad.errors.includes('permissions.remote: invalid'));
   });
-  it('installs with the permission shown; gc.remote version 3 exists', async () => {
+  it('installs with the permission shown; gc.remote version 4 exists', async () => {
     const r = await install(remotePackage());
     assert.equal(r.plugin.permissions.remote, true, 'shown in the install dialog');
     let has = null;
     for (let i = 0; i < 50 && !has; i++) { try { has = await pget('/has'); } catch { await wait(100); } }
-    assert.deepEqual([has.remote, has.version], [true, 3]);
+    assert.deepEqual([has.remote, has.version], [true, 4]);
   });
 });
 

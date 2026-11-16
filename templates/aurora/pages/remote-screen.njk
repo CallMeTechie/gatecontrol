@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  {# No-FOUC theme-mode pre-paint (matches aurora/layout.njk; nonce for CSP) #}
+  <script nonce="{{ cspNonce }}">(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ t('remote.screen.title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+</head>
+<body class="rdp-session-body">
+{# gc.remote stage 5 — the screen of a phone through the relay of the core (services/remote/screen.js, gc-screen.v1) #}
+<div class="rdp-session-page">
+  <div id="rscreen-display" class="rdp-session-display">
+    <div class="rscreen-host"><canvas id="rscreen-canvas" class="rscreen-canvas" aria-label="{{ t('remote.screen.title') }}"></canvas></div>
+
+    {# No picture yet / the phone paused it #}
+    <div id="rscreen-wait" class="rdp-reconnect-veil rscreen-wait" style="display:none">
+      <div class="rdp-reconnect-card">
+        <div class="rdp-big-spin"></div>
+        <div class="rdp-rc-sub" id="rscreen-wait-text"></div>
+      </div>
+    </div>
+
+    {# Reconnecting overlay #}
+    <div id="rscreen-reconnect" class="rdp-reconnect-veil" style="display:none">
+      <div class="rdp-reconnect-card">
+        <div class="rdp-big-spin"></div>
+        <div class="rdp-rc-title">{{ t('rdp.session.reconnecting') }}</div>
+        <div class="rdp-rc-sub" id="rscreen-reconnect-sub"></div>
+      </div>
+    </div>
+
+    {# The session is over #}
+    <div id="rscreen-end" class="rdp-error-veil" style="display:none" role="dialog" aria-modal="true" aria-labelledby="rscreen-end-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar rdp-em-bar--info"></div>
+        <div class="rdp-em-body">
+          <h2 id="rscreen-end-h">{{ t('remote.screen.ended') }}</h2>
+          <p class="rdp-em-text" id="rscreen-end-text"></p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-primary" type="button" id="rscreen-end-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> {{ t('rdp.wizard.back') }}</button>
+        </div>
+      </div>
+    </div>
+
+    {# Error overlay #}
+    <div id="rscreen-error" class="rdp-error-veil" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="rscreen-error-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg></div>
+          <h2 id="rscreen-error-h">{{ t('rdp.session.status.error') }}</h2>
+          <span class="rdp-em-cause" id="rscreen-error-cause"></span>
+          <p class="rdp-em-text" id="rscreen-error-text"></p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" type="button" id="rscreen-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> {{ t('rdp.wizard.back') }}</button>
+          <button class="btn btn-primary" type="button" id="rscreen-retry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> {{ t('remote.term.reconnect') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rdp-session-toolbar" id="rscreen-toolbar">
+    <span class="rdp-pill rdp-pill--connecting" id="rscreen-pill">
+      <span id="rscreen-pill-dot" class="rdp-dot"></span>
+      <span id="rscreen-status">{{ t('rdp.session.status.connecting') }}</span>
+    </span>
+    {% if screen.device %}<span class="rterm-note">{{ screen.device }}</span>{% endif %}
+    <span class="rterm-note" id="rscreen-note"></span>
+    <span class="rdp-spacer"></span>
+    <span class="rterm-note rscreen-relay" title="{{ t('remote.screen.relay_hint') }}">{{ t('remote.screen.relay') }}</span>
+    <button class="rdp-tbtn" type="button" id="rscreen-btn-fullscreen" title="{{ t('rdp.session.fullscreen') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.fullscreen') }}</span></button>
+    <button class="rdp-tbtn rdp-tbtn--danger" type="button" id="rscreen-btn-disconnect" title="{{ t('rdp.session.disconnect') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.disconnect') }}</span></button>
+  </div>
+</div>
+
+<script src="/js/remote-screen-kit.js?v={{ appVersion }}"></script>
+{# JSON island 1: the ticket (only its exact shape is used), CSRF, mode — no secret #}
+<script type="application/json" id="rscreen-cfg" nonce="{{ cspNonce }}">{{ { ref: remoteRef, csrf: csrfToken, mode: screen.mode } | dump | safe }}</script>
+{# JSON island 2: texts #}
+<script type="application/json" id="rscreen-i18n" nonce="{{ cspNonce }}">{{ {
+  connecting: t('rdp.session.status.connecting'), connected: t('rdp.session.status.connected'), reconnecting: t('rdp.session.status.reconnecting'),
+  disconnected: t('rdp.session.status.disconnected'), error: t('rdp.session.status.error'),
+  view_only: t('remote.screen.view_only'), waiting: t('remote.screen.waiting'), sender_lost: t('remote.screen.sender_lost'), paused: t('remote.screen.paused'),
+  ended: t('remote.screen.ended'),
+  'remote.screen.end.sender': t('remote.screen.end.sender'), 'remote.screen.end.viewer': t('remote.screen.end.viewer'),
+  'remote.screen.end.ended_by_plugin': t('remote.screen.end.ended_by_plugin'), 'remote.screen.end.sender_lost': t('remote.screen.end.sender_lost'),
+  'remote.screen.end.viewer_lost': t('remote.screen.end.viewer_lost'), 'remote.screen.end.max_duration': t('remote.screen.end.max_duration'),
+  'remote.screen.end.peer_timeout': t('remote.screen.end.peer_timeout'), 'remote.screen.end.plugin_stopped': t('remote.screen.end.plugin_stopped'),
+  'remote.screen.end.other': t('remote.screen.end.other'),
+  'remote.screen.err.not_found': t('remote.screen.err.not_found'), 'remote.screen.err.limit_reached': t('remote.screen.err.limit_reached'),
+  'remote.screen.err.plugin_unavailable': t('remote.screen.err.plugin_unavailable'), 'remote.screen.err.unlicensed': t('remote.screen.err.unlicensed'),
+  'remote.screen.err.no_webcodecs': t('remote.screen.err.no_webcodecs'), 'remote.screen.err.codec_unsupported': t('remote.screen.err.codec_unsupported'),
+  'remote.screen.err.decode_failed': t('remote.screen.err.decode_failed'), 'remote.screen.err.replaced': t('remote.screen.err.replaced'),
+  'remote.screen.err.failed': t('remote.screen.err.failed')
+} | dump | safe }}</script>
+<script src="/js/remote-screen.js?v={{ appVersion }}"></script>
+</body>
+</html>

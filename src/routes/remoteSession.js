@@ -11,9 +11,10 @@
  *                                      session, never a kiosk device), and only in the browser session that opened
  *                                      the address first. Anything else: one and the same 404. Three kinds:
  *                                      guacd (RDP/VNC/SSH/Telnet), the SSH terminal of the core (engine term,
- *                                      xterm.js, stage 3) and the playback of a recording (recordings.stream).
+ *                                      xterm.js, stage 3), the screen of a phone (engine screen, WebCodecs, stage 5)
+ *                                      and the playback of a recording (recordings.stream).
  * POST /remote/session/:ref/token      a fresh single-use token (60 s) for a connect / reconnect — guacamole
- *                                      or gc-term.v1 (engine term).
+ *                                      or gc-term.v1 (engine term) or gc-screen.v1 (engine screen, the viewer).
  * GET  /remote/session/:ref/recording  the decrypted recording of a playback ticket (asciicast or .guac).
  *
  * The ref is never logged.
@@ -59,6 +60,11 @@ function page(req, res) {
     if (!rec) return notFound(req, res);
     return res.render(`${theme}/pages/remote-recording.njk`, {
       title: res.locals.t('remote.rec.title'), remoteRef: t.ref, recording: { format: rec.format === 'guac' ? 'guac' : 'asciicast', protocol: rec.protocol || null },
+    });
+  }
+  if (t.engine === 'screen') {
+    return res.render(`${theme}/pages/remote-screen.njk`, {
+      title: res.locals.t('remote.screen.title'), remoteRef: t.ref, screen: { mode: t.mode, device: t.target.name || null },
     });
   }
   if (t.engine === 'term') {

@@ -39,4 +39,37 @@ router.post('/remote/term-token', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/client/remote/screen-token { ref } — the screen relay (gc.remote stage 5, gc-screen.v1). Two refs
+ * of one ticket of gc.remote.screen: the phone's `senderRef` (only the app device and person the plugin named —
+ * the phone that shares) and the viewer's `ref` (an app of the watching person; bound to that app token on first
+ * use, like the terminal). The answer names the side; the app opens /api/v1/remote/screen-relay with
+ * `Sec-WebSocket-Protocol: gc-screen.v1, token.<token>`. Answers:
+ *   200 { ok, token, wsPath, ttl, role } · 404 not_found · 429 limit_reached · 503 plugin_unavailable · 403 unlicensed
+ */
+router.post('/remote/screen-token', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!requireClientToken(req, res)) return undefined;
+  const v = tokenViewer(req);
+  if (!v) return res.status(403).json({ ok: false, error: 'no_user' });
+  const ref = req.body && typeof req.body.ref === 'string' ? req.body.ref : '';
+  const sessions = require('../../../services/remote/sessions');
+  if (!sessions.REF_RE.test(ref)) return res.status(404).json({ ok: false, error: 'not_found' });
+  let t = sessions.claimSender(ref, v.user.id, req.tokenId);
+  let role = 'sender';
+  if (!t) {
+    t = sessions.claimApp(ref, v.user.id, req.tokenId);
+    role = 'viewer';
+  }
+  if (!t || t.engine !== 'screen') return res.status(404).json({ ok: false, error: 'not_found' });
+  try {
+    const r = await sessions.mint(t, { clientIp: req.ip, via: 'app', role });
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: r.code });
+    return res.json({ ok: true, token: r.token, wsPath: r.wsPath, ttl: r.ttl, role });
+  } catch (err) {
+    logger.error({ err: err.message }, 'remote screen token failed');
+    return res.status(500).json({ ok: false, error: 'mint_failed' });
+  }
+});
+
 module.exports = router;

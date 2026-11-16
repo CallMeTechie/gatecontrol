@@ -1,6 +1,6 @@
 'use strict';
 
-// gc.remote, version 2 — the core part of the plugin "Fernzugriff"
+// gc.remote, version 4 — the core part of the plugin "Fernzugriff"
 // (gatecontrol-remote; docs/plugins.md "Remote access"). A plugin process has
 // no network of its own and its frames have connect-src 'none', so the core
 // keeps the transport (guacd, the tunnels, the session page, the key vault,
@@ -13,12 +13,14 @@
 //   recordings.js  gc.remote.recordings.* — asciicast of the terminal, guacd's recordings on the drive (stage 3)
 //   term.js        the SSH terminal of the core (ssh2, gc-term.v1), gc.remote.tmux.list (stage 3)
 //   hostKeys.js    gc.remote.hostKeys.* — pinned SSH host keys (stage 3)
+//   screen.js      the screen relay gc-screen.v1 of the phones (stage 5), tickets by gc.remote.screen
 //   sshkeys.js     ed25519 pairs for gc.remote.vault.generate, fingerprints
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
 
 // 2: hubAddress, peerAddress, `from` in the answer of session (stage 2: the Windows switch)
 // 3: engine term (SSH terminal of the core), tmux.list, hostKeys.*, vault.generate, recordings for real (stage 3)
-const VERSION = 3;
+// 4: screen (the relay gc-screen.v1: a phone shares its screen, one person watches — stage 5)
+const VERSION = 4;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
@@ -26,6 +28,7 @@ const targets = require('./targets');
 const recordings = require('./recordings');
 const term = require('./term');
 const hostKeys = require('./hostKeys');
+const screen = require('./screen');
 
 // error code of a service → host API code (plain codes stay generic)
 const GENERIC = { invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND' };
@@ -33,7 +36,7 @@ function hostCode(code) {
   return GENERIC[code] || ('ERR_REMOTE_' + String(code || 'failed').toUpperCase());
 }
 
-const KNOWN = [sessions.SessionError, vault.VaultError, targets.TargetError, recordings.RecordingError, term.TermError, hostKeys.HostKeyError];
+const KNOWN = [sessions.SessionError, vault.VaultError, targets.TargetError, recordings.RecordingError, term.TermError, hostKeys.HostKeyError, screen.ScreenError];
 
 /**
  * One gc.remote call (hostApi.js remoteCall — the permission is checked there).
@@ -66,6 +69,7 @@ async function call(plugin, op, args) {
     case 'hostKeys.list': return hostKeys.list(plugin.id);
     case 'hostKeys.remove': return hostKeys.remove(plugin.id, a.targetId);
     case 'recordings.remove': return recordings.remove(plugin, a.id);
+    case 'screen': return sessions.createScreen(plugin, a);
     default: {
       const e = new Error('unknown host API');
       e.code = 'unknown_api';

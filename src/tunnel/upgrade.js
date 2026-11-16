@@ -6,6 +6,8 @@
 //   * /api/v1/client/rdp/guac-tunnel  browser RDP/VNC/SSH (tunnel/guacTunnel.js)
 //   * /api/v1/remote/guac-tunnel      sessions of gc.remote (same guacamole-lite server)
 //   * /api/v1/gateway/edge/ws         edge channel of the gateways (services/edge/hub.js)
+//   * /api/v1/remote/ssh-tunnel       the SSH terminal of gc.remote (tunnel/termTunnel.js, stage 3)
+//   * /api/v1/remote/screen-relay     the screen relay of gc.remote (tunnel/screenTunnel.js, stage 5)
 // Before this module each of them added its own `upgrade` listener and
 // filtered by path; the behaviour is the same: a path nobody registered is
 // left untouched (as before — no listener answered it), a handler that throws
