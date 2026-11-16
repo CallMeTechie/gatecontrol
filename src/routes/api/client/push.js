@@ -80,7 +80,8 @@ function netOf(ip, via) {
 function platformOf(h) {
   const s = String(h || '').trim().toLowerCase();
   if (s === 'win32' || s === 'windows') return 'windows';
-  return s === 'android' ? 'android' : null;
+  // linux: the Linux agent of "Fernzugriff" (gatecontrol-agent, stage 4) — gc.devices.list shows it as linux
+  return s === 'android' || s === 'linux' ? s : null;
 }
 function clientTypeOf(h) {
   const s = String(h || '').trim().toLowerCase();
@@ -394,3 +395,4 @@ module.exports.stream = streamHandler;
 module.exports.viaOf = viaOf;
 module.exports.netOf = netOf;
 module.exports._keepaliveMs = null; // tests only
+module.exports.platformOf = platformOf;

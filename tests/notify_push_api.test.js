@@ -449,3 +449,13 @@ describe('POST /api/v1/client/push/test', () => {
     H.db().prepare('UPDATE notify_device_prefs SET topics = NULL WHERE token_id = ?').run(benPhone.tokenId);
   });
 });
+
+describe('push: platform of the asking app', () => {
+  it('knows the Linux agent (Fernzugriff stage 4)', () => {
+    const { platformOf } = require('../src/routes/api/client/push');
+    assert.equal(platformOf('linux'), 'linux');
+    assert.equal(platformOf('Win32'), 'windows');
+    assert.equal(platformOf('android'), 'android');
+    assert.equal(platformOf('ios-test'), null);
+  });
+});
