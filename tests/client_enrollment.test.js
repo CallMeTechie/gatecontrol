@@ -139,6 +139,16 @@ describe('client enrollment — app redeems the code', () => {
     assert.ok(tokens.authenticate(manual.rawToken), 'manual token untouched');
   });
 
+  it('the Linux agent gets the VPN network and its own label (Fernzugriff stage 4)', async () => {
+    const u = await users.create({ username: 'enroll-linux', role: 'user', password: 'Secret123!x' });
+    const { code } = enrollment.createCode({ userId: u.id });
+    const res = await redeem({ code, hostname: 'pi-garten', platform: 'linux', clientVersion: '1.0.0' });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const cfg = require('../config/default');
+    assert.deepEqual(res.body.vpn, { subnet: cfg.wireguard.subnet, gateway: cfg.wireguard.gatewayIp });
+    assert.match(peers.getById(res.body.peerId).description, /^Linux Agent \(linux, v1\.0\.0\)$/);
+  });
+
   it('a user-level code creates a new peer owned by the user', async () => {
     const u = await users.create({ username: 'enroll-owner', role: 'user', password: 'Secret123!x' });
     const { code } = enrollment.createCode({ userId: u.id });

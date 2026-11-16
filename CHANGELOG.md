@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.289.0] — 2026-11-16
+
+### Features
+- Linux-Agent – VPN-Netz beim Einrichten, Plattform linux im Push, Anleitung in „Gerät hinzufügen“ (Fernzugriff Stufe 4) (#506)
+
+---
+
 ## [1.288.0] — 2026-11-16
 
 ### Features

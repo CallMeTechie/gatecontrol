@@ -8,13 +8,17 @@
  *
  * Body: { code, hostname, platform, clientVersion }
  * Header: X-Machine-Fingerprint (bound when machine binding is active)
- * 200: { ok, token, peerId, peerName, config, hash, scopes }
+ * 200: { ok, token, peerId, peerName, config, hash, scopes, vpn }
+ *      vpn: { subnet, gateway } — the VPN network and the hub address, so a
+ *      device that must not route everything through the tunnel (the Linux
+ *      agent of "Fernzugriff", stage 4) routes only the VPN network
  * 400: { ok:false, error:'invalid_or_expired' } — unknown/expired/used alike
  */
 
 const { Router } = require('express');
 const enrollment = require('../../../services/clientEnrollment');
 const logger = require('../../../utils/logger');
+const appConfig = require('../../../../config/default');
 
 const router = Router();
 
@@ -38,7 +42,7 @@ router.post('/', async (req, res) => {
       clientVersion: typeof body.clientVersion === 'string' ? body.clientVersion : '',
       fingerprint: req.headers['x-machine-fingerprint'],
     }, req.ip);
-    res.json({ ok: true, ...result });
+    res.json({ ok: true, ...result, vpn: { subnet: appConfig.wireguard.subnet, gateway: appConfig.wireguard.gatewayIp } });
   } catch (err) {
     const status = ERROR_STATUS[err.code];
     if (status) return res.status(status).json({ ok: false, error: err.code });

@@ -301,6 +301,8 @@ button, input, select { font: inherit; color: inherit; }
 .pt-code { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .pt-qr { width: 200px; height: 200px; border-radius: 12px; background: #fff; padding: 8px; }
 .pt-code-value { font-family: var(--font-mono); font-size: 22px; font-weight: 700; letter-spacing: .12em; }
+.pt-code-linux { margin-top: 12px; text-align: left; }
+.pt-code-cmd { display: block; font-family: var(--font-mono); font-size: 12px; text-align: left; white-space: pre-wrap; word-break: break-all; user-select: all; padding: 8px 10px; border-radius: 8px; background: var(--surface-3); }
 .pt-toast { position: fixed; left: 50%; bottom: 20px; z-index: 120; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
 .pt-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
 .pt-toast-item { padding: 10px 16px; border-radius: 12px; background: var(--surface-3); border: 1px solid var(--line-2); box-shadow: var(--shadow); font-weight: 600; max-width: calc(100vw - 32px); }

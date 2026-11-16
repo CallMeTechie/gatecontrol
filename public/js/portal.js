@@ -643,6 +643,11 @@
           codeBox.appendChild(el('div', { class: 'pt-code-value' }, String(b.code || '')));
           codeBox.appendChild(count);
           codeBox.appendChild(el('p', { class: 'pt-small pt-muted' }, T('portal.devices.enroll_help')));
+          // Linux (Fernzugriff stage 4): the agent takes the same code on the command line
+          if (b.url) {
+            codeBox.appendChild(el('p', { class: 'pt-small pt-code-linux' }, [el('b', null, T('portal.devices.linux_enroll')), ' ', T('portal.devices.linux_enroll_text')]));
+            codeBox.appendChild(el('code', { class: 'pt-code-cmd' }, 'sudo gatecontrol-agent enroll ' + b.url + ' ' + String(b.code || '')));
+          }
           codeBox.hidden = false;
           create.textContent = T('portal.devices.enroll_again');
           if (timer) clearInterval(timer);

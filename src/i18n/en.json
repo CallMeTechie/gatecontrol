@@ -3133,6 +3133,8 @@
   "portal.devices.enroll_again": "Create a new code",
   "portal.devices.enroll_failed": "The code could not be created.",
   "portal.devices.enroll_help": "In the app choose “Set up with code” and scan the QR code or type in the code.",
+  "portal.devices.linux_enroll": "Set up a Linux device:",
+  "portal.devices.linux_enroll_text": "Install the agent gatecontrol-agent and run this command.",
   "portal.devices.qr": "Setup QR code",
   "portal.devices.valid": "valid for {{time}} · single use",
   "portal.devices.expired": "expired — please create a new code",

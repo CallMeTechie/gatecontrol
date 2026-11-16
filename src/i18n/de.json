@@ -3133,6 +3133,8 @@
   "portal.devices.enroll_again": "Neuen Code erzeugen",
   "portal.devices.enroll_failed": "Der Code konnte nicht erzeugt werden.",
   "portal.devices.enroll_help": "In der App „Mit Code einrichten“ wählen und den QR-Code scannen oder den Code eintippen.",
+  "portal.devices.linux_enroll": "Linux-Gerät einrichten:",
+  "portal.devices.linux_enroll_text": "Agent gatecontrol-agent installieren und diesen Befehl ausführen.",
   "portal.devices.qr": "QR-Code zum Einrichten",
   "portal.devices.valid": "gültig noch {{time}} · einmal einlösbar",
   "portal.devices.expired": "abgelaufen – bitte neuen Code erzeugen",
