@@ -585,7 +585,11 @@ function create(opts) {
         // version 7: the new text with its format (and a new link preview, when the bridge sends one)
         // version 13: WhatsApp's word that the phone could not send a file it was asked for — no English text goes on
         const wf = row.network === 'whatsapp' ? waMediaNotice(nc, true) : null;
-        if (wf) { push({ type: 'edit', ...base, target: rel.event_id, text: null, oldMedia: { request: 'failed' } }); return; }
+        if (wf) {
+          if (wf.request === 'failed') push({ type: 'edit', ...base, target: rel.event_id, text: null, oldMedia: { request: 'failed' } });
+          else stats.skipped++;
+          return;
+        }
         const r = richOf(nc);
         const pv = previewOf(row, nc);
         // version 13: the phone sent a file that had run out — the edit carries it like a message's file

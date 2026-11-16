@@ -200,7 +200,9 @@ describe('the bridge\'s notice about an old file', () => {
     const got = ev(room, KIM, 'm.room.message', { ...nc, body: `* ${nc.body}`, 'm.new_content': nc, 'm.relates_to': { rel_type: 'm.replace', event_id: first.event_id } });
     // makeErrorEdit: the phone did not have it any more
     const gone = ev(room, KIM, 'm.room.message', { msgtype: 'm.notice', body: '* Failed to bridge media after re-requesting it from your phone: media not available on phone', 'm.new_content': { msgtype: 'm.notice', body: 'Failed to bridge media after re-requesting it from your phone: media not available on phone' }, 'm.relates_to': { rel_type: 'm.replace', event_id: second.event_id } });
-    await hs.push('t-om4', { events: [got, gone] });
+    // an edit back into the notice of an old file changes nothing (and brings no English line)
+    const back = ev(room, KIM, 'm.room.message', { msgtype: 'm.notice', body: `* Old photo. ${OFF}`, 'm.new_content': oldNotice('photo', OFF, null), 'm.relates_to': { rel_type: 'm.replace', event_id: second.event_id } });
+    await hs.push('t-om4', { events: [got, gone, back] });
     const evs = (await pulled()).filter((e) => e.type === 'edit');
     assert.equal(evs.length, 2);
     assert.equal(evs[0].target, first.event_id);
