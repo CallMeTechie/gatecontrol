@@ -16,13 +16,16 @@
 //   screen.js      the screen relay gc-screen.v1 of phones and PCs (stage 5, control stage 6, desktop stage 7), tickets by gc.remote.screen
 //   sshkeys.js     ed25519 pairs for gc.remote.vault.generate, fingerprints
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
+//   candidates.js  gc.remote.candidates / scan — what „Gerät hinzufügen“ offers (version 7)
 
 // 2: hubAddress, peerAddress, `from` in the answer of session (stage 2: the Windows switch)
 // 3: engine term (SSH terminal of the core), tmux.list, hostKeys.*, vault.generate, recordings for real (stage 3)
 // 4: screen (the relay gc-screen.v1: a phone shares its screen, one person watches — stage 5)
 // 5: screen with mode control (the viewer operates the phone after its person said so; hook phase mode — stage 6)
 // 6: the relay takes a Windows PC as sender: hello input 'desktop', mouse and keyboard input, displays (stage 7)
-const VERSION = 6;
+// 7: candidates (the targets an administrator can pick), scan (several ports at once), listener listenPort 'auto',
+//    wake by a device of the network watch (target.watch) — the new „Gerät hinzufügen“ of the plugin
+const VERSION = 7;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
@@ -31,6 +34,7 @@ const recordings = require('./recordings');
 const term = require('./term');
 const hostKeys = require('./hostKeys');
 const screen = require('./screen');
+const candidates = require('./candidates');
 
 // error code of a service → host API code (plain codes stay generic)
 const GENERIC = { invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND' };
@@ -56,7 +60,7 @@ async function call(plugin, op, args) {
     case 'vault.list': return vault.list(plugin.id);
     case 'vault.generate': return vault.generate(plugin.id, a);
     case 'probe': return targets.probe(plugin, a.target);
-    case 'wake': return targets.wake(plugin, a.target);
+    case 'wake': return targets.wake(plugin, a.target, { user: a.user });
     case 'listener': return targets.listener(plugin, a.target);
     case 'listener.remove': return targets.removeListener(plugin, a.key);
     case 'listeners': return targets.listeners(plugin);
@@ -72,6 +76,8 @@ async function call(plugin, op, args) {
     case 'hostKeys.remove': return hostKeys.remove(plugin.id, a.targetId);
     case 'recordings.remove': return recordings.remove(plugin, a.id);
     case 'screen': return sessions.createScreen(plugin, a);
+    case 'candidates': return candidates.candidates(plugin, a);
+    case 'scan': return candidates.scan(plugin, a.target, a.ports);
     default: {
       const e = new Error('unknown host API');
       e.code = 'unknown_api';

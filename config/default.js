@@ -247,6 +247,14 @@ config.remoteScreen = {
   maxMinutes: envInt('GC_REMOTE_SCREEN_MAX_MIN', 240),
 };
 
+// gc.remote version 7 (services/remote/targets.js, docs/feature-remote-access.md): the range a listener
+// with listenPort 'auto' takes its port from — the L4 port on the server behind „Gerät hinzufügen“ of the
+// plugin „Fernzugriff“ (internal only, nobody has to pick it).
+config.remoteListeners = {
+  autoMin: envInt('GC_REMOTE_AUTO_PORT_MIN', 40000),
+  autoMax: envInt('GC_REMOTE_AUTO_PORT_MAX', 40999),
+};
+
 // Source ranges allowed to reach an internal-only route (HTTP gate in
 // services/caddyConfig.js, L4 gate in services/l4.js). Derived from the
 // resolved VPN subnet so it can never drift from `subnet`. The
