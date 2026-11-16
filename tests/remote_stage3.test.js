@@ -470,6 +470,34 @@ describe('recordings', () => {
     await call('end', { ref: r.result.ref });
   });
 
+  it('sealing works on the opened file only: a missing guacd file fails the recording, a link is never followed; leftovers are swept', async () => {
+    const id = 'rr_' + '1'.repeat(32);
+    recordings.startGuac(id, { pluginId: ID, targetId: 'dev-r', userId: adminId, protocol: 'rdp' });
+    recordings.finishGuac(id);
+    await recordings._idleForTest();
+    assert.equal(db.prepare('SELECT status FROM remote_recordings WHERE id = ?').get(id).status, 'failed');
+    const id2 = 'rr_' + '2'.repeat(32);
+    const target = path.join(recDir(), 'outside.txt');
+    fs.writeFileSync(target, 'not a recording');
+    fs.symlinkSync(target, recordings.rawGuacPath(id2));
+    recordings.startGuac(id2, { pluginId: ID, targetId: 'dev-r', userId: adminId, protocol: 'rdp' });
+    recordings.finishGuac(id2);
+    await recordings._idleForTest();
+    assert.equal(db.prepare('SELECT status FROM remote_recordings WHERE id = ?').get(id2).status, 'failed');
+    assert.equal(fs.existsSync(recordings.sealedPath(id2, 'guac')), false);
+    assert.equal(fs.readdirSync(path.dirname(recordings.sealedPath(id2, 'guac'))).filter((f) => f.endsWith('.part')).length, 0, 'no half-written file');
+    // an unknown plain file older than an hour goes, the link stays untouched by the age check
+    const orphan = path.join(recordings.guacDir(), 'rr_' + '3'.repeat(32) + '.guac');
+    fs.writeFileSync(orphan, 'x');
+    const old = (Date.now() - 2 * 3600 * 1000) / 1000;
+    fs.utimesSync(orphan, old, old);
+    recordings.sweep();
+    assert.equal(fs.existsSync(orphan), false);
+    assert.equal(fs.readFileSync(target, 'utf8'), 'not a recording');
+    fs.unlinkSync(recordings.rawGuacPath(id2));
+    db.prepare('DELETE FROM remote_recordings WHERE id IN (?, ?)').run(id, id2);
+  });
+
   it('remove, retention, a full drive', async () => {
     const all = (await call('recordings.list')).result;
     assert.equal(all.length, 2);

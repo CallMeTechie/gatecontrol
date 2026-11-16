@@ -377,33 +377,39 @@ async function sealOne(id) {
   const row = db().prepare('SELECT * FROM remote_recordings WHERE id = ?').get(id);
   if (!row || row.format !== 'guac') return;
   const raw = rawGuacPath(id);
-  let st;
-  try { st = await fs.promises.stat(raw); } catch {
+  // work on the opened handle only (no check first): a file that is not there fails the recording
+  let fh;
+  try { fh = await fs.promises.open(raw, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); } catch {
     db().prepare("UPDATE remote_recordings SET status = 'failed' WHERE id = ?").run(id);
     return;
   }
   const key = unwrapKey(row.key_enc, id);
   const out = sealedPath(id, 'guac');
-  fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
-  try { fs.unlinkSync(out); } catch { /* none */ }
-  const w = new SealedWriter(out, key);
-  const fh = await fs.promises.open(raw, 'r');
+  // the sealed file is written under a fresh name and renamed into place (atomic, never an existing file opened)
+  const tmp = out + '.' + crypto.randomBytes(6).toString('hex') + '.part';
+  let w = null;
+  let plain = 0;
   try {
+    if (!(await fh.stat()).isFile()) throw new RecordingError('invalid', 'not a file');
+    fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
+    w = new SealedWriter(tmp, key);
     const buf = Buffer.alloc(CHUNK);
     for (;;) {
       const { bytesRead } = await fh.read(buf, 0, CHUNK, null);
       if (!bytesRead) break;
+      plain += bytesRead;
       w.write(Buffer.from(buf.subarray(0, bytesRead)));
     }
     w.close();
+    await fs.promises.rename(tmp, out);
   } catch (e) {
-    try { w.close(); } catch { /* closed */ }
-    try { fs.unlinkSync(out); } catch { /* gone */ }
+    if (w) { try { w.close(); } catch { /* closed */ } }
+    await fs.promises.unlink(tmp).catch(() => {});
     throw e;
   } finally { await fh.close(); }
   await fs.promises.unlink(raw).catch(() => {});
   db().prepare("UPDATE remote_recordings SET status = 'ready', bytes = ?, plain_bytes = ?, path = ? WHERE id = ?")
-    .run(w.sealed, st.size, path.relative(root(), out), id);
+    .run(w.sealed, plain, path.relative(root(), out), id);
 }
 
 // ─── The host API ───
@@ -508,8 +514,10 @@ function sweep(now = Date.now()) {
   for (const f of files) {
     const m = /^(rr_[0-9a-f]{32})\.guac$/.exec(f);
     const p = path.join(guacDir(), path.basename(f));
+    // the age from the opened file itself (no check of the name before using it); links are never followed
     let st;
-    try { st = fs.lstatSync(p); } catch { continue; }
+    let fd = null;
+    try { fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)); st = fs.fstatSync(fd); } catch { continue; } finally { if (fd != null) { try { fs.closeSync(fd); } catch { /* closed */ } } }
     if (!st.isFile()) continue;
     const known = m ? db().prepare('SELECT status FROM remote_recordings WHERE id = ?').get(m[1]) : null;
     const age = now - st.mtimeMs;
@@ -532,7 +540,8 @@ function recover() {
       continue;
     }
     let size = 0;
-    try { size = fs.statSync(sealedPath(r.id, 'asciicast')).size; } catch { size = 0; }
+    let fd = null;
+    try { fd = fs.openSync(sealedPath(r.id, 'asciicast'), 'r'); size = fs.fstatSync(fd).size; } catch { size = 0; } finally { if (fd != null) { try { fs.closeSync(fd); } catch { /* closed */ } } }
     db().prepare("UPDATE remote_recordings SET status = ?, bytes = ?, ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?")
       .run(size > HEADER_LEN ? 'ready' : 'failed', size, r.id);
   }
