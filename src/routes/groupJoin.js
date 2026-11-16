@@ -43,9 +43,9 @@ function roleLabel(t, role) {
   return t(`grp.role.${role}`);
 }
 
-/** { name, initials, color, avatarUrl } of an account (null when unknown). */
-function person(userId, name) {
-  const f = avatars.info(userId);
+/** { name, initials, color, avatarUrl } of an account as `viewerId` may see it (null when unknown). */
+function person(userId, name, viewerId) {
+  const f = avatars.info(userId, { viewer: viewerId });
   if (!f) return null;
   return { name: name || null, initials: f.initials, color: f.color, avatarUrl: f.avatarUrl };
 }
@@ -60,10 +60,10 @@ function people(uid, groupId) {
   let leaders = [];
   try {
     leaders = groupId == null ? [] : groups.leadersOf(uid, { groupId })
-      .map((l) => ({ ...person(l.userId, nameOf(l.userId)), role: l.role }))
+      .map((l) => ({ ...person(l.userId, nameOf(l.userId), uid), role: l.role }))
       .filter((l) => l.name);
   } catch (err) { logger.warn({ err: err.message }, 'group join: leaders unavailable'); }
-  return { viewer: person(uid, nameOf(uid)), leaders };
+  return { viewer: person(uid, nameOf(uid), uid), leaders };
 }
 
 function render(req, res, invite, extra = {}) {

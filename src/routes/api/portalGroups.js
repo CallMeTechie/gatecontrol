@@ -107,7 +107,7 @@ function needManager(uid, groupId) {
 }
 
 function leadersView(uid, groupId, nm) {
-  return avatars.withLooks(groups.leadersOf(uid, { groupId }).map((l) => ({ userId: l.userId, name: nm.get(l.userId) || null, role: l.role, groupId: l.groupId })));
+  return avatars.withLooks(groups.leadersOf(uid, { groupId }).map((l) => ({ userId: l.userId, name: nm.get(l.userId) || null, role: l.role, groupId: l.groupId })), 'userId', { viewer: uid });
 }
 
 /** May the manager `uid` change this member (role / removal) in group `g`? */
@@ -178,7 +178,7 @@ router.get('/:id', (req, res) => {
       out.members = avatars.withLooks(groups.members(g.id, { nested: true }).map((m) => ({
         userId: m.userId, name: m.name, email: m.email, role: m.role, direct: m.direct, source: m.source === 'local' ? 'local' : 'directory',
         enabled: m.enabled, self: m.userId === u.id, ...memberRights(u.id, g, m),
-      })));
+      })), 'userId', { viewer: u.id });
       out.invites = groups.listInvites(g.id).filter((i) => i.active);
     }
     res.set('Cache-Control', 'no-store');
@@ -214,7 +214,7 @@ router.post('/:id/members', (req, res) => {
     const r = groups.setMember(g.id, target.id, role, opts(req, u.id));
     const m = groups.members(g.id).find((x) => x.userId === target.id);
     const member = m ? { userId: m.userId, name: m.name, email: m.email, role: r.role, direct: true, source: 'local', enabled: m.enabled, self: false, ...memberRights(u.id, g, m) } : null;
-    return res.status(201).json({ ok: true, member: member ? avatars.withLooks([member])[0] : null });
+    return res.status(201).json({ ok: true, member: member ? avatars.withLooks([member], 'userId', { viewer: u.id })[0] : null });
   } catch (err) { return fail(req, res, err); }
 });
 

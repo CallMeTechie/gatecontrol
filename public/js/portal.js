@@ -1655,6 +1655,50 @@
     more.push(pfRow(T('myprofile.f.timezone'), p.timezone || T('myprofile.tz_server', { tz: p.serverTimezone }), el('span', { class: 'pt-pf-note' }, T('myprofile.tz_quiet'))));
     host.appendChild(pfCard(T('myprofile.more'), headBtn(T('myprofile.edit'), PF_IC.edit, editMore, 'pt-pf-edit-more'), null, more, 'pt-pf-more'));
     renderRecognition();
+    renderLookVis();
+  }
+
+  // "Wer sieht dein Bild?" in the card "Profilbild & Farbe" (visibility.avatar, docs/feature-avatars.md): four
+  // levels, saved at once. A narrower level gives the picture a new address — the header and the editor get it.
+  var LOOK_LEVELS = ['all', 'contacts', 'family', 'self'];
+  var lookEditor = null;
+  function renderLookVis() {
+    var box = $('pt-look-vis');
+    var p = pf.data;
+    if (!box || !p) return;
+    clear(box);
+    var offered = p.options && Array.isArray(p.options.avatarVisibility) ? p.options.avatarVisibility : null;
+    if (!offered || !CTX.canEditLook) { box.hidden = true; return; }
+    box.hidden = false;
+    var current = (p.visibility && p.visibility.avatar) || 'all';
+    var list = el('div', { class: 'pt-look-vis-list', role: 'radiogroup', 'aria-labelledby': 'pt-look-vis-h' });
+    LOOK_LEVELS.filter(function (l) { return offered.indexOf(l) >= 0; }).forEach(function (l) {
+      var r = el('input', { type: 'radio', name: 'pt-look-vis', value: l, checked: l === current, id: 'pt-look-vis-' + l });
+      r.addEventListener('change', function () { if (r.checked) saveLookVis(l, box); });
+      var sub = T('myprofile.avatar_vis.sub.' + l);
+      var subKey = 'myprofile.avatar_vis.sub.' + l;
+      list.appendChild(el('label', { class: 'pt-look-vis-opt', for: 'pt-look-vis-' + l }, [r, el('span', null, [
+        el('span', { class: 'pt-block' }, T('myprofile.avatar_vis.' + l)),
+        sub !== subKey ? el('span', { class: 'pt-small pt-muted pt-block' }, sub) : null,
+      ])]));
+    });
+    box.appendChild(el('b', { class: 'pt-look-vis-h', id: 'pt-look-vis-h' }, T('myprofile.avatar_vis.title')));
+    box.appendChild(list);
+    box.appendChild(el('p', { class: 'pt-small pt-muted pt-look-vis-foot' }, T('myprofile.avatar_vis.foot')));
+  }
+  function saveLookVis(level, box) {
+    var inputs = box.querySelectorAll('input');
+    Array.prototype.forEach.call(inputs, function (i) { i.disabled = true; });
+    saveProfile('PATCH', PROFILE_API, { visibility: { avatar: level } }).then(function (r) {
+      if (!(r && typeof r === 'object')) { renderLookVis(); return; }
+      // the picture may have a new address now
+      send('GET', PROFILE_API).then(function (res) {
+        var u = res && res.body && res.body.ok ? res.body.user : null;
+        if (!u) return;
+        if (lookEditor) lookEditor.set(u, res.body.palette);
+        if (window.GCAvatar) { window.GCAvatar.paint($('pt-avatar'), u); window.GCAvatar.paint($('pt-pf-avatar'), u); }
+      }).catch(function () { /* the next load shows it */ });
+    });
   }
 
   function renderRecognition() {
@@ -1934,7 +1978,7 @@
   (function initLook() {
     var host = $('pt-look');
     if (!host || !CTX.canEditLook || !window.GCAvatar) return;
-    window.GCAvatar.editor(host, {
+    lookEditor = window.GCAvatar.editor(host, {
       urls: { profile: '/api/v1/portal/me/profile', avatar: '/api/v1/portal/me/avatar', color: '/api/v1/portal/me/color' },
       csrf: function () { return CTX.csrf || ''; },
       T: function (k) { return T(k); },

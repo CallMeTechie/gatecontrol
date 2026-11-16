@@ -24,6 +24,7 @@ belong to; without a family the level is not offered), **Alle auf diesem Server*
 | E-mail addresses | only me | the main address as before (locked for directory members); further ones are confirmed by a code when the server can send mail (SMTP) |
 | Birthday | family | `YYYY-MM-DD` or `--MM-DD`; "Jahr verbergen" — nobody else sees the year |
 | Language, time zone | only me | the time zone is the same value as the quiet hours (`notify_user_prefs.tz`) |
+| Picture ("Wer sieht dein Bild?") | all | `all` / `contacts` / `family` / `self`, for all of GateControl — docs/feature-avatars.md "Wer sieht dein Bild?"; administrators see the picture anyway, marked "für andere verborgen" |
 | Address | — | not part of the profile |
 
 Administrators see what they need to manage an account — name, user name, e-mail, language (changed in "Bearbeiten"
@@ -63,7 +64,7 @@ The server compares the numbers of the contact list the bridge keeps (no questio
 | an unconfirmed number in the profile | medium (`profile_phone`) | the same, and the administrator did not switch on "nur bestätigte" |
 | (stage 7a) the account's own linked Signal: the contact's fixed account id (ACI) or its number | strong (`own_signal`) | consent "Signal" |
 
-**Per network (stage 7a, migration 154).** One consent per service: `recognition.bySignal` / `byTelegram` next to
+**Per network (stage 7a, migration 155).** One consent per service: `recognition.bySignal` / `byTelegram` next to
 `byWhatsapp` (`PATCH … { recognition: { bySignal: true } }`), and in the own view `recognition.networks: { whatsapp,
 signal, telegram: { allowed, answered, linked } }`. The portal shows a line per linked service. Signal accounts have a
 fixed id: every `whoami` keeps the keyed hash of the person's own (`user_bridge_accounts`, never the id); a phone number
@@ -82,7 +83,7 @@ The same on three mounts — `/api/v1/me` (web session), `/api/v1/portal/me` (po
 | Method and path | Body → answer |
 |---|---|
 | `GET …/profile` | `{ ok, user, palette, profile }` (`user` / `palette`: picture and colour as before) |
-| `PATCH …/profile` | `{ displayName?, firstName?, lastName?, about?, birthday?: { date, yearHidden } \| null, email?, language?, timezone?, visibility?: { firstName, lastName, about, birthday, email, language, timezone }, recognition?: { byWhatsapp?, byPhone? } }` → `{ ok, profile }` |
+| `PATCH …/profile` | `{ displayName?, firstName?, lastName?, about?, birthday?: { date, yearHidden } \| null, email?, language?, timezone?, visibility?: { firstName, lastName, about, birthday, email, language, timezone, avatar }, recognition?: { byWhatsapp?, byPhone? } }` → `{ ok, profile }` |
 | `POST …/profile/phones` | `{ kind, number, visibility?, useForRecognition? }` → `201 { ok, phone, profile }` |
 | `PATCH …/profile/phones/:id` | the same fields, each optional (a new number starts unconfirmed) → `{ ok, phone, profile }` |
 | `DELETE …/profile/phones/:id` | → `{ ok, profile }` |

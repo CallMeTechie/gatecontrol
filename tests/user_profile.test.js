@@ -133,7 +133,7 @@ describe('own profile over the app API', () => {
   it('GET returns picture, colour and the profile; PATCH changes fields, visibility, time zone, consents', async () => {
     const r = await client(phone).get('/api/v1/client/me/profile').expect(200);
     assert.equal(r.body.profile.userId, anna);
-    assert.deepEqual(r.body.profile.visibility, profile.DEFAULT_VISIBILITY);
+    assert.deepEqual(r.body.profile.visibility, { ...profile.DEFAULT_VISIBILITY, avatar: 'all' });
     assert.deepEqual(r.body.profile.recognition.byPhone, false);
     assert.deepEqual(r.body.profile.recognition.byWhatsapp, false);
     const p = await client(phone).patch('/api/v1/client/me/profile').send({

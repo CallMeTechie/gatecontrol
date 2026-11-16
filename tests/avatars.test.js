@@ -528,7 +528,7 @@ describe('plugins: gc.users and the frame CSP', () => {
     avatars.setColor(dora, 'lime');
     const r = await agent.get(`${PLUGINS}/hello/api/users`).expect(200);
     const u = r.body.users.find((x) => x.id === dora);
-    assert.deepEqual(u, { id: dora, name: 'Dora Ernst', role: 'user', avatarUrl: url, color: 'lime', colorHex: '#84CC16', initials: 'DE' });
+    assert.deepEqual(u, { id: dora, name: 'Dora Ernst', role: 'user', avatarUrl: url, color: 'lime', colorHex: '#84CC16', initials: 'DE', avatarVisibility: 'all' });
     const one = await agent.get(`${PLUGINS}/hello/api/user`).query({ id: dora }).expect(200);
     assert.deepEqual(one.body.user, u, 'gc.users.get has the same fields');
     const admin = r.body.users.find((x) => x.id === adminId);

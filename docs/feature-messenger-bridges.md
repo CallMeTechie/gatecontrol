@@ -685,7 +685,7 @@ view-once picture or video (`com.beeper.view_limited`, because of `view_limited_
 channels.
 
 **Erkennen.** `recognition.get / set(userId, …, network)` for `whatsapp`, `signal` and `telegram` (the profile keeps
-one consent per network: `users.recognize_by_signal` / `_telegram`, migration 154). Signal accounts carry a fixed id
+one consent per network: `users.recognize_by_signal` / `_telegram`, migration 155). Signal accounts carry a fixed id
 (the ACI): every whoami notes the keyed hash of the person's own (`profile.noteOwnAccounts`, `user_bridge_accounts`),
 and `matchAccounts` compares a contact's ACI with it — `via: 'own_signal'`, strong, only with that person's consent;
 numbers count where the bridge knows them (`tel:` identifiers) as for WhatsApp. User names never count. A profile
