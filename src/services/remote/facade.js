@@ -13,7 +13,12 @@
 //   * its built-in data was taken over (Daten übernehmen, legacy.everImported).
 // Then each request goes to the plugin's hook
 //   clientFacade({ op, id, query, body, user, ip }) → { handled: false } | { status, body } | { status, body, credential } | { guac }
-// where op is list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd.
+// where op is list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd,
+// and (version 2, stage 2) wake | statusAdmin | statusAll for the parts of the
+// admin API /api/v1/rdp the Windows app uses (routes/api/rdp.js; app tokens only):
+//   wake         POST /api/v1/rdp/:id/wol         → { ok, message }
+//   statusAdmin  GET  /api/v1/rdp/:id/status, /:id/wol/status → { ok, id, online, responseTime, lastCheck }
+//   statusAll    GET  /api/v1/rdp/status          → { ok, statuses: { <id>: { online, responseTime, lastCheck } } }
 // { handled: false } (or a plugin without the hook) leaves the request to
 // the core. A plugin that does not run answers 503 plugin_unavailable (403
 // license_required without a licence): the core data may be outdated.
@@ -39,7 +44,11 @@ const logger = require('../../utils/logger');
 
 const DATASET_PLUGIN = 'gatecontrol-remote';
 const HOOK_MS = 10000;
-const OPS = new Set(['list', 'status', 'connect', 'browserSession', 'sessionStart', 'sessionHeartbeat', 'sessionEnd']);
+const OPS = new Set(['list', 'status', 'connect', 'browserSession', 'sessionStart', 'sessionHeartbeat', 'sessionEnd',
+  // version 2 (stage 2): what the Windows app asks of the admin API /api/v1/rdp — POST /:id/wol,
+  // GET /:id/status and /:id/wol/status, GET /status — for app tokens only (a session there is the core's page)
+  'wake', 'statusAdmin', 'statusAll']);
+const ADMIN_OPS = new Set(['wake', 'statusAdmin', 'statusAll']);
 // keys of the plugin's answer that would carry credentials — the core alone writes them
 const CREDENTIAL_KEYS = ['username', 'password', 'username_encrypted', 'password_encrypted', 'credentials', 'credentials_e2ee'];
 
@@ -178,6 +187,8 @@ async function browserSession(plugin, req, g) {
 function middleware(op) {
   if (!OPS.has(op)) throw new Error('unknown facade op ' + op);
   return async (req, res, next) => {
+    // the admin API: only the app tokens; the admin's browser session keeps the core's answers
+    if (ADMIN_OPS.has(op) && !req.tokenAuth) return next();
     const plugin = active();
     if (!plugin) return next();
     if (!running(plugin.id)) {
@@ -209,4 +220,4 @@ function middleware(op) {
   };
 }
 
-module.exports = { middleware, active, complete, connectHost, DATASET_PLUGIN, OPS, _hookMs: null };
+module.exports = { middleware, active, complete, connectHost, DATASET_PLUGIN, OPS, ADMIN_OPS, _hookMs: null };

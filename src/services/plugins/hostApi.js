@@ -609,6 +609,9 @@ function notify(plugin, args) {
     // `silent: true` — a data push (no banner, no sound, not in the inbox, title optional)
     need(n.silent == null || typeof n.silent === 'boolean', 'ERR_INVALID', 'silent must be a boolean');
     const silent = n.silent === true;
+    // a signal topic (notifyTopics[].signal): only silent data pushes to named devices (notify/hub.js emitSignal)
+    const signal = !!(decl && decl.signal === true);
+    if (signal) need(silent && n.devices != null, 'ERR_INVALID', 'a signal topic takes only silent pushes to devices');
     if (silent || n.devices != null) need(plugin.manifest.permissions && plugin.manifest.permissions.devices === true, 'ERR_DEVICES_DENIED', 'devices / silent need permissions.devices');
     const title = sanitize.title(n.title) || (silent ? sanitize.title(plugin.name) : '');
     need(title, 'ERR_INVALID', 'empty title');
@@ -675,7 +678,7 @@ function notify(plugin, args) {
     if (silent) {
       // own budget, no activity row: data pushes are machine traffic (e.g. "device X: fetch transfer Y")
       dataBudget(plugin);
-      const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, silent: true, collapseKey, ttl, data: d.data, allowCritical: false, image: null, card: null });
+      const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, silent: true, collapseKey, ttl, data: d.data, allowCritical: false, image: null, card: null, ...(signal ? { signal: true } : {}) });
       return { pushed: r.pushed, id: r.id || null, ...extra };
     }
     notifyBudget(plugin);
@@ -1935,10 +1938,11 @@ async function camerasCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
-// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 1) ───
+// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 2) ───
 //
 // gc.remote.session() / end() / sessions() / vault.put|remove|info|list() /
-// probe() / wake() / listener() / listener.remove() / listeners() /
+// probe() / wake() / listener() / listener.remove() / listeners() / gateways() /
+// hubAddress() / peerAddress() (version 2) /
 // recordings.available|list|stream|remove() — docs/plugins.md "Remote access".
 // The plugin names person and target; the core owns guacd, the session page,
 // the tunnel and the secrets (a plugin only ever holds vault handles). Who may
@@ -2607,6 +2611,7 @@ async function handle(plugin, api, args, ctx) {
     case 'remote.session': case 'remote.end': case 'remote.sessions':
     case 'remote.vault.put': case 'remote.vault.remove': case 'remote.vault.info': case 'remote.vault.list':
     case 'remote.probe': case 'remote.wake': case 'remote.listener': case 'remote.listener.remove': case 'remote.listeners': case 'remote.gateways':
+    case 'remote.hubAddress': case 'remote.peerAddress':
     case 'remote.recordings.available': case 'remote.recordings.list': case 'remote.recordings.stream': case 'remote.recordings.remove':
       return remoteCall(plugin, api.slice('remote.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"

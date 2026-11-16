@@ -47,7 +47,9 @@
  * with permissions.devices (since 1.193.0) also gets the asking device as
  * `req.user.device = { id, platform }` (gc.devices.list ids); a plugin with
  * permissions.vpnDns gets the asking device's VPN peer as `req.user.peerId`
- * (the ids of gc.vpnDns.devices; null for a token without a peer). Language:
+ * (the ids of gc.vpnDns.devices; null for a token without a peer); a plugin
+ * with permissions.remote gets the device with its VPN address as
+ * `req.user.device = { id, platform, vpnIp }` (gc.remote version 2). Language:
  * ?lang=de|en, else the owner's language setting, else Accept-Language, else 'de'.
  */
 
@@ -167,6 +169,14 @@ router.all('/:id/api/*', (req, res, next) => {
   // the asking device, for plugins that see devices (permissions.devices)
   if (p && p.manifest.permissions && p.manifest.permissions.devices === true) {
     try { v.user.device = require('../../../services/plugins/devices').viewerDevice(req); } catch { /* no device */ }
+  }
+  // the asking device's VPN address, for the plugin of remote access (permissions.remote, gc.remote version 2):
+  // a Windows PC registers itself with it as the host of its RDP target — null for a token without a peer
+  if (p && p.manifest.permissions && p.manifest.permissions.remote === true) {
+    try {
+      if (!v.user.device) v.user.device = require('../../../services/plugins/devices').viewerDevice(req);
+      if (v.user.device) v.user.device.vpnIp = require('../../../services/remote/targets').tokenAddress(req.tokenId);
+    } catch { /* no device */ }
   }
   // the asking device as a VPN peer, for the plugin of the DNS protection (permissions.vpnDns):
   // "Unterbrechen" in the apps holds for this device — null when the token is bound to no peer

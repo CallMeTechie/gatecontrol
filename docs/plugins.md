@@ -2952,7 +2952,9 @@ the page `src/routes/remoteSession.js`, the tunnel `src/tunnel/guacTunnel.js`.
 The install dialog shows it as "Fernzugriff" (named first, like the other sensitive
 permissions). Without it `gc.remote` does not exist and the host answers
 `ERR_REMOTE_DENIED`; an older GateControl ignores the permission and `gc.remote` is missing —
-check `gc.remote && gc.remote.version >= 1`.
+check `gc.remote && gc.remote.version >= 1` (`>= 2` for what stage 2, the Windows switch,
+needs: `hubAddress`, `peerAddress`, `from`, the asking device's `vpnIp`, the admin part of
+the facade and signal topics).
 
 **Targets.** Every call names a target `{ id, name?, host, port }` (direct: the VPN address
 of a device, the server's LAN, a public host) or `{ id, name?, listener: '<key>' }` (through
@@ -2965,8 +2967,8 @@ resolved by the core, every address is checked and guacd gets the checked addres
 
 | Call | Answer / rule |
 |---|---|
-| `gc.remote.version` | `1` |
-| `gc.remote.session({ user, target, protocol, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol }` — a **ticket**. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. `record: true` → `ERR_REMOTE_RECORDING_UNAVAILABLE` until stage 3. Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
+| `gc.remote.version` | `2` (`1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
+| `gc.remote.session({ user, target, protocol, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol, from }` — a **ticket**; `from` (version 2): the address guacd connects from to a direct target, the hub address (`null` for a listener target) — a Windows PC opens 3389 for exactly it. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. `record: true` → `ERR_REMOTE_RECORDING_UNAVAILABLE` until stage 3. Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
 | `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel |
 | `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions` |
 | `gc.remote.vault.put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? })` | `{ handle: 'rv_<32 hex>', kind: password \| ssh_key \| username, label, has: { username, password, domain, privateKey, passphrase }, readable, createdAt, updatedAt }` — **never a value**. With `handle` a change of that entry: fields not given stay, `null` / `''` clears. Encrypted with the server key (AES-256-GCM, table `remote_vault`, in backups as ciphertext); `readable: false` after a restore onto another server key — ask for it again. ≤ 5000 per plugin |
@@ -2976,6 +2978,8 @@ resolved by the core, every address is checked and guacd gets the checked addres
 | `gc.remote.listener({ key, gateway: { peerId } \| { poolId }, host, port, listenPort? })` | `{ key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared }` — an L4 route (TCP, no TLS) on the server that the gateway passes on to `host:port` in its home network, as old gateway-mode RDP routes have it. An existing L4 route with exactly this target and port (the one of an old RDP route) is **reused** (`shared: true`) and never removed by the plugin. A port in use: `ERR_REMOTE_PORT_IN_USE` |
 | `gc.remote.listener.remove(key)` / `gc.remote.listeners()` | `{ removed }` / `[listener]` |
 | `gc.remote.gateways()` | `{ gateways: [{ peerId, name, online }], pools: [{ poolId, name }] }` — the home gateways and failover pools a listener can name (names and ids only). Since the GateControl after 1.281.0 (stage 1 of "Fernzugriff"): feature-detect it (`typeof gc.remote.gateways === 'function'`) |
+| `gc.remote.hubAddress()` | version 2: the server's address in the VPN (`GC_WG_GATEWAY_IP`, e.g. `'10.8.0.1'`) — where guacd's connections to VPN devices come from |
+| `gc.remote.peerAddress(userId, deviceId)` | version 2: the VPN address of an app device (`gc.devices.list` id) of the person, `null` when its token is bound to no peer — **only** for a device of that person and **only while a request of that person to the plugin is in flight** (else `ERR_REMOTE_NOT_ALLOWED`; `ERR_INVALID` without ids). For the firewall of a PC: 3389 opens for exactly the helper's device |
 | `gc.remote.recordings.available()` | `{ available: false, reason: 'not_yet' }` in version 1 (recording comes with stage 3) |
 | `gc.remote.recordings.list({ targetId?, sessionId?, limit? })` / `stream(id)` / `remove(id)` | `[]` until stage 3 / `{ url, expiresAt }` (`ERR_REMOTE_RECORDING_UNAVAILABLE` for now) / `{ removed }` |
 | `gc.remote.on('session', handler)` | hook `remoteSession`: `{ phase: start \| end \| abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? }` — `end` for `normal` / `ended_by_plugin`, `abort` for `heartbeat`, `plugin_stopped`, `reclaimed` |
@@ -2997,6 +3001,20 @@ until its plugin is stopped (a crash restart keeps it) or 8 h after it was opene
 in memory only — a restart ends them (open rows end as `server_restart`). Activity log:
 `remote_session_started`, `remote_session_ended`, `remote_recording_deleted`.
 
+**The asking device** (version 2): an app request (`/api/v1/client/plugins/<id>/api/…`) to a plugin with
+`permissions.remote` carries `req.user.device = { id, platform, vpnIp }` — `vpnIp` the first address of the peer
+the app's token is bound to (`null` without one). A Windows PC registers itself with it as the host of its RDP target.
+
+**Signals to the own app** (version 2): the PC learns "open 3389 for this address" / "close it" from a silent
+data push on a **signal topic** — `notifyTopics: [{ id: 'remote_signal', label, signal: true }]` (needs
+`permissions.notify` and `permissions.devices`). On such a topic only `gc.notify({ topic, silent: true, users,
+devices, data })` is allowed (`ERR_INVALID` otherwise); it reaches the named devices at once, past the person's
+topic switch, device mutes and quiet hours, no rule and no inbox entry, never mailed or routed into a chat, and it
+does not depend on the notification centre's licence (the plugin's own licence decides). The topic is neither
+offered to the person (Benachrichtigungen) nor as a rule to the administrator. Budget: the 600 silent pushes per
+hour and plugin. A signal topic cannot be `chat`, `email`, `allowCritical` or `default`. An older GateControl
+ignores `signal`: the push is then an ordinary silent data push (the person's switches apply).
+
 **Uninstall**: tickets and tunnels end, the plugin's own listener routes go (shared ones stay);
 "Alles löschen" also removes its vault entries and recordings.
 
@@ -3010,6 +3028,7 @@ these requests to the plugin's hook
 ```js
 async clientFacade({ op, id, query, body, user: { id, tokenId, peerId, scopes, platform, selfIp }, ip }, gc)
 // op: list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd
+//     version 2: wake | statusAdmin | statusAll (the admin API the Windows app uses, see below)
 // → { handled: false }                       the core answers as before
 //   { status, body }                         sent as it is (credential keys in it are removed)
 //   { status, body, credential: { handle, fields? } }   connect: the core adds connection.credentials_e2ee
@@ -3023,6 +3042,19 @@ endpoints: a route of `list` or the `connection` of `connect` with `access_mode:
 `connect_address` gets it, and a `connection` without `peer_hostname` (the key left out) gets `peer_hostname`,
 `peer_fqdn` and `peer_fqdn_primary` of its `host` (feature `internal_dns`, else `null`) — the plugin needs no access
 to the peers. On 1.281.0 (no `server`) the plugin "Fernzugriff" answers `{ handled: false }`.
+
+Since version 2 the facade also answers the parts of the **admin API** `/api/v1/rdp` that the Windows app
+calls with its token (`full-access`) — devices of the plugin (ids ≥ 100000) have no row in the core's tables:
+
+| op | Route | Answer the plugin gives |
+|---|---|---|
+| `wake` | `POST /api/v1/rdp/:id/wol` | `{ ok, message }` (→ `gc.remote.wake`) |
+| `statusAdmin` | `GET /api/v1/rdp/:id/status`, `GET /api/v1/rdp/:id/wol/status` | `{ ok, id, online, responseTime, lastCheck }` (→ `gc.remote.probe`) |
+| `statusAll` | `GET /api/v1/rdp/status` | `{ ok, statuses: { <id>: { online, responseTime, lastCheck } } }` — keyed by id, as the app reads it |
+
+Only token requests go to the plugin; the administrator's browser session keeps the core's answers. The plugin
+answers before the core's feature check (`remote_desktop`) — it has a licence of its own; `{ handled: false }`
+leaves the request to the core as before.
 
 Credentials never pass through the plugin and only go out with **ECDH** (`ecdhPublicKey` of the
 app): without it the facade answers `400 ecdh_required` — no RSA, no plaintext. A plugin

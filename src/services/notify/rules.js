@@ -148,7 +148,7 @@ function pluginTopics() {
     for (const t of declared) {
       if (!t || !PLUGIN_TOPIC_ID_RE.test(String(t.id))) continue;
       out.push({ topic: `plugin:${p.id}:${t.id}`, plugin_id: p.id, plugin_name: name, id: t.id, label: t.label || { de: t.id, en: t.id }, default: t.default !== false, enabled: p.enabled, chat: t.chat === true,
-        email: t.email === true && t.chat !== true });
+        email: t.email === true && t.chat !== true, ...(t.signal === true ? { signal: true } : {}) });
     }
   }
   return out;
@@ -167,6 +167,8 @@ function list() {
     if (rule) out.push({ ...rule, group: ev.group, plugin_id: null });
   }
   for (const t of pluginTopics()) {
+    // a signal topic (notifyTopics[].signal) is a machine channel: no rule to set
+    if (t.signal === true) continue;
     const rule = rows.has(t.topic) ? rowToRule(rows.get(t.topic)) : ensurePluginRule(t.topic);
     if (rule) out.push({ ...rule, group: 'plugins', plugin_id: t.plugin_id, plugin_topic: t });
   }

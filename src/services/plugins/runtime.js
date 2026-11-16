@@ -185,7 +185,7 @@ class PluginProcess {
       vpnDns: perms.vpnDns === true,
       // gc.bridges: permissions.bridges (messenger bridges)
       bridges: perms.bridges === true,
-      // gc.remote: permissions.remote (remote access, version 1 — services/remote)
+      // gc.remote: permissions.remote (remote access, version 2 — services/remote)
       remote: perms.remote === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }

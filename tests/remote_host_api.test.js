@@ -90,12 +90,12 @@ describe('permission remote', () => {
     assert.equal(bad.ok, false);
     assert.ok(bad.errors.includes('permissions.remote: invalid'));
   });
-  it('installs with the permission shown; gc.remote version 1 exists', async () => {
+  it('installs with the permission shown; gc.remote version 2 exists', async () => {
     const r = await install(remotePackage());
     assert.equal(r.plugin.permissions.remote, true, 'shown in the install dialog');
     let has = null;
     for (let i = 0; i < 50 && !has; i++) { try { has = await pget('/has'); } catch { await wait(100); } }
-    assert.deepEqual([has.remote, has.version], [true, 1]);
+    assert.deepEqual([has.remote, has.version], [true, 2]);
   });
 });
 
@@ -271,6 +271,92 @@ describe('built-in data import `remote`', () => {
     const r = await agent.get('/rdp').expect(302);
     assert.equal(r.headers.location, '/plugins/' + ID);
     await agent.get('/api/v1/rdp').expect((res) => assert.notEqual(res.status, 410));
+  });
+});
+
+describe('gc.remote version 2 (stage 2: the Windows switch)', () => {
+  const H = require('./helpers/notify');
+  let anna, pc, phone;
+  const app2 = (tok) => ({
+    get: (p) => supertest(app).get(`/api/v1/client/plugins/${ID}/api${p}`).set('X-API-Token', tok).set('X-Client-Platform', 'windows'),
+  });
+  before(() => {
+    anna = H.makeUser('remote-anna');
+    pc = H.makeDevice(anna, { name: 'remote-pc', platform: 'windows' });
+    phone = H.makeDevice(anna, { name: 'remote-phone' });
+  });
+
+  it('hubAddress, and `from` in the answer of session: guacd connects from the hub address', async () => {
+    const hub = require('../config/default').wireguard.gatewayIp || '10.8.0.1';
+    assert.equal((await call('hubAddress')).result, hub);
+    const s = await call('session', { user: adminId, target: { id: 'host-1', host: pc.ip, port: 3389 }, protocol: 'rdp' });
+    assert.equal(s.ok, true, JSON.stringify(s));
+    assert.equal(s.result.from, hub);
+    await call('end', { ref: s.result.ref });
+  });
+
+  it('an app request carries the device with its VPN address (req.user.device.vpnIp)', async () => {
+    const me = (await app2(pc.raw).get('/me').expect(200)).body.user;
+    assert.equal(me.id, anna);
+    assert.deepEqual(me.device, { id: String(pc.tokenId), platform: 'windows', vpnIp: pc.ip });
+  });
+
+  it('peerAddress: only an own device of the person, only in a request of that person', async () => {
+    // in the app request of the person: its own device
+    assert.deepEqual((await app2(phone.raw).get('/myAddress').expect(200)).body, { ok: true, result: phone.ip });
+    // the admin's request is no request of anna
+    assert.equal((await call('peerAddress', { userId: anna, deviceId: String(phone.tokenId) })).code, 'ERR_REMOTE_NOT_ALLOWED');
+    // a device of somebody else
+    assert.equal((await call('peerAddress', { userId: adminId, deviceId: String(phone.tokenId) })).code, 'ERR_REMOTE_NOT_ALLOWED');
+    assert.equal((await call('peerAddress', { userId: adminId })).code, 'ERR_INVALID');
+  });
+
+  it('a signal topic: silent pushes to devices only, past mutes and switches, not offered as a topic or rule', async () => {
+    const m = require('../src/services/plugins/manifest');
+    const base = { id: 'x-y', name: 'X', version: '1.0.0', publisher: 'p', description: 'd', gatecontrol: '>=1.0.0', entry: 'server/index.js', permissions: { notify: true } };
+    const topic = (t) => m.validate({ ...base, notifyTopics: [{ id: 'sig', label: 'Sig', signal: true, ...t }] });
+    assert.equal(topic({}).ok, true);
+    assert.equal(topic({}).manifest.notifyTopics[0].signal, true);
+    for (const bad of [{ chat: true }, { email: true }, { allowCritical: true }, { signal: 'yes' }]) assert.equal(topic(bad).ok, false, JSON.stringify(bad));
+    assert.equal(m.validate({ ...base, notifyTopics: [{ id: 'default', label: 'D', signal: true }] }).ok, false);
+
+    const T = `plugin:${ID}:remote_signal`;
+    // the person muted the topic on the PC — a signal still arrives
+    db.prepare('UPDATE notify_device_prefs SET topics = ? WHERE token_id = ?').run(JSON.stringify([T]), pc.tokenId);
+    H.clearNotifications();
+    assert.equal((await call('notify', { topic: 'remote_signal', title: 'x', users: [anna] })).code, 'ERR_INVALID', 'never a visible push');
+    assert.equal((await call('notify', { topic: 'remote_signal', silent: true, users: [anna] })).code, 'ERR_INVALID', 'only to devices');
+    const r = await call('notify', { topic: 'remote_signal', silent: true, users: [anna], devices: [String(pc.tokenId)], data: { type: 'remote.firewall.close', sessionKey: 'fw_1' } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.result.pushed, true);
+    const rows = H.deliveries(r.result.id);
+    assert.deepEqual(rows.map((d) => d.token_id), [pc.tokenId]);
+    const store = require('../src/services/notify/store');
+    const payload = store.payload(store.deliveryRow(rows[0].seq));
+    assert.deepEqual([payload.kind, payload.silent, payload.data.type], ['data', true, 'remote.firewall.close']);
+    const rules = require('../src/services/notify/rules');
+    assert.equal(rules.list().some((x) => x.event_id === T), false, 'no rule for the admin');
+    assert.equal(require('../src/services/notify/hub').topicsForUser(anna, 'de').some((x) => x.id === T), false, 'no switch for the person');
+  });
+
+  it('the facade answers what the Windows app asks of /api/v1/rdp — app tokens only', async () => {
+    const admTok = require('../src/services/tokens').create({ name: 'remote-pro-app', scopes: ['full-access'], userId: adminId }, '127.0.0.1').rawToken;
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, message: 'Magic packet sent' } } });
+    const w = await supertest(app).post('/api/v1/rdp/100001/wol').set('X-API-Token', admTok).expect(200);
+    assert.equal(w.body.message, 'Magic packet sent');
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, id: 100001, online: true, responseTime: 3, lastCheck: 'now' } } });
+    assert.equal((await supertest(app).get('/api/v1/rdp/100001/status').set('X-API-Token', admTok).expect(200)).body.online, true);
+    assert.equal((await supertest(app).get('/api/v1/rdp/100001/wol/status').set('X-API-Token', admTok).expect(200)).body.id, 100001);
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, statuses: { 100001: { online: true } } } } });
+    assert.deepEqual((await supertest(app).get('/api/v1/rdp/status').set('X-API-Token', admTok).expect(200)).body.statuses, { 100001: { online: true } });
+    const calls = (await pget('/facadeCalls')).result.slice(-4);
+    assert.deepEqual(calls.map((c) => [c.op, c.id]), [['wake', '100001'], ['statusAdmin', '100001'], ['statusAdmin', '100001'], ['statusAll', null]]);
+    assert.equal(calls[0].user.id, adminId);
+    // the admin's browser keeps the core's answers
+    const before = (await pget('/facadeCalls')).result.length;
+    await agent.get('/api/v1/rdp/status');
+    assert.equal((await pget('/facadeCalls')).result.length, before);
+    await ppost('/facade', { answer: null });
   });
 });
 
