@@ -58,7 +58,11 @@ WhatsApp ── bridge (mautrix) ──(Unix socket)──▶ internal Matrix ho
    kept in `/data/bridges/secrets.json` (0600, folder 0700). `as_token`,
    `hs_token` and the provisioning secret are derived from it per purpose
    (HMAC-SHA-256): the file's content is never sent anywhere, and no API
-   returns a token. The session keys of a bridge live in its own database
+   returns a token. Every registration has its own pair: the homeserver finds
+   a registration by its `as_token`, so a shared one would put one bridge's
+   bot into another bridge's namespace (its `/register` fails). WhatsApp keeps
+   the purposes `as_token`/`hs_token` it had from the start; Signal and
+   Telegram use `as_token:<network>`/`hs_token:<network>`. The session keys of a bridge live in its own database
    where it runs; a backup of them leaves that place only encrypted (later
    stage).
 4. **A contract, not a pass-through.** `gc.bridges` takes fixed network names
