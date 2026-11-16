@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.284.0] — 2026-11-16
+
+### Features
+- Fernzugriff Stufe 2 – Windows-Schalter (gc.remote Version 2) (#500)
+
+---
+
 ## [1.283.0] — 2026-11-15
 
 ### Features
