@@ -19,7 +19,8 @@
 </head>
 <body class="rdp-session-body">
 {# gc.remote stage 5 — the screen of a phone through the relay of the core (services/remote/screen.js, gc-screen.v1);
-   stage 6 — in mode control mouse, touch and keyboard go to the phone, the toolbar says „Du steuerst“ #}
+   stage 6 — in mode control mouse, touch and keyboard go to the phone, the toolbar says „Du steuerst“;
+   stage 7 — a Windows PC: mouse and keyboard as they are, the choice of its display #}
 <div class="rdp-session-page">
   <div id="rscreen-display" class="rdp-session-display">
     <div class="rscreen-host"><canvas id="rscreen-canvas" class="rscreen-canvas" tabindex="0" aria-label="{{ t('remote.screen.title') }}"></canvas></div>
@@ -98,6 +99,11 @@
       <button class="rdp-tbtn" type="button" id="rscreen-key-recents" title="{{ t('remote.screen.key.recents') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="rdp-tbtn-label">{{ t('remote.screen.key.recents') }}</span></button>
       <button class="rdp-tbtn" type="button" id="rscreen-key-text" title="{{ t('remote.screen.key.text') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span class="rdp-tbtn-label">{{ t('remote.screen.key.text') }}</span></button>
     </span>
+    {# Stage 7: a PC with more than one display #}
+    <label class="rscreen-display" id="rscreen-display" style="display:none" title="{{ t('remote.screen.display') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <select id="rscreen-display-select" class="input" aria-label="{{ t('remote.screen.display') }}"></select>
+    </label>
     <span class="rdp-spacer"></span>
     <span class="rterm-note rscreen-relay" title="{{ t('remote.screen.relay_hint') }}">{{ t('remote.screen.relay') }}</span>
     <button class="rdp-tbtn" type="button" id="rscreen-btn-fullscreen" title="{{ t('rdp.session.fullscreen') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.fullscreen') }}</span></button>
@@ -129,7 +135,9 @@
   'remote.screen.mode_view.app_scope': t('remote.screen.mode_view.app_scope'),
   'remote.screen.fail.no_field': t('remote.screen.fail.no_field'), 'remote.screen.fail.blocked': t('remote.screen.fail.blocked'),
   'remote.screen.fail.locked': t('remote.screen.fail.locked'), 'remote.screen.fail.secure': t('remote.screen.fail.secure'),
-  'remote.screen.notice.view_only': t('remote.screen.notice.view_only'), 'remote.screen.notice.input_rate': t('remote.screen.notice.input_rate')
+  'remote.screen.notice.view_only': t('remote.screen.notice.view_only'), 'remote.screen.notice.input_rate': t('remote.screen.notice.input_rate'),
+  control_hint: t('remote.screen.control_hint'), control_hint_desktop: t('remote.screen.control_hint_desktop'),
+  display_n: t('remote.screen.display_n'), display_primary: t('remote.screen.display_primary'), paused_secure: t('remote.screen.paused_secure')
 } | dump | safe }}</script>
 <script src="/js/remote-screen.js?v={{ appVersion }}"></script>
 </body>

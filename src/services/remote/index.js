@@ -1,6 +1,6 @@
 'use strict';
 
-// gc.remote, version 5 — the core part of the plugin "Fernzugriff"
+// gc.remote, version 6 — the core part of the plugin "Fernzugriff"
 // (gatecontrol-remote; docs/plugins.md "Remote access"). A plugin process has
 // no network of its own and its frames have connect-src 'none', so the core
 // keeps the transport (guacd, the tunnels, the session page, the key vault,
@@ -13,7 +13,7 @@
 //   recordings.js  gc.remote.recordings.* — asciicast of the terminal, guacd's recordings on the drive (stage 3)
 //   term.js        the SSH terminal of the core (ssh2, gc-term.v1), gc.remote.tmux.list (stage 3)
 //   hostKeys.js    gc.remote.hostKeys.* — pinned SSH host keys (stage 3)
-//   screen.js      the screen relay gc-screen.v1 of the phones (stage 5, control stage 6), tickets by gc.remote.screen
+//   screen.js      the screen relay gc-screen.v1 of phones and PCs (stage 5, control stage 6, desktop stage 7), tickets by gc.remote.screen
 //   sshkeys.js     ed25519 pairs for gc.remote.vault.generate, fingerprints
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
 
@@ -21,7 +21,8 @@
 // 3: engine term (SSH terminal of the core), tmux.list, hostKeys.*, vault.generate, recordings for real (stage 3)
 // 4: screen (the relay gc-screen.v1: a phone shares its screen, one person watches — stage 5)
 // 5: screen with mode control (the viewer operates the phone after its person said so; hook phase mode — stage 6)
-const VERSION = 5;
+// 6: the relay takes a Windows PC as sender: hello input 'desktop', mouse and keyboard input, displays (stage 7)
+const VERSION = 6;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
