@@ -60,7 +60,8 @@ function body(req) { return req.body && typeof req.body === 'object' && !Buffer.
 async function refreshOwn(userId) {
   try {
     const br = require('../../services/bridges');
-    if (typeof br.refreshOwnNumbers === 'function') await br.refreshOwnNumbers(userId, 'whatsapp');
+    // stage 7a: every network of the bridges (WhatsApp, Signal)
+    if (typeof br.refreshOwnNumbers === 'function') for (const n of br.NETWORKS || ['whatsapp']) await br.refreshOwnNumbers(userId, n);
   } catch { /* the bridge is not there — the stored state stays */ }
 }
 

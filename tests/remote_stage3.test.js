@@ -563,7 +563,7 @@ describe('the drive in the release files', () => {
   });
   it('update.sh (marker 9) reports the mounts and restarts nothing for it', () => {
     const s = fs.readFileSync(path.join(ROOT, 'update.sh'), 'utf8');
-    assert.match(s, /^# gc-update-sh: 9$/m);
+    assert.ok(Number((/^# gc-update-sh: (\d+)$/m.exec(s) || [])[1]) >= 9, 'marker 9 or later');
     assert.match(s, /REC_STATE="\$DATA_DIR\/\.remote-recordings-state\.json"/);
     assert.match(s, /sync_bridges \|\| true\nsync_recordings \|\| true\n/);
     assert.match(s, /ensure_guacd \|\| true; sync_recordings \|\| true;/);

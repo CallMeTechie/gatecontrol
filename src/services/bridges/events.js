@@ -61,6 +61,18 @@
 //   history   a channel brings at most CHANNEL_HISTORY posts when it is opened or linked (channelTrim).
 //   older     rooms known before this version get kind, channel and readOnly when their next event arrives, or by
 //             refreshRooms() (index.js, a few per tick) — bridge_rooms.channel NULL = not looked at yet.
+//
+// Signal (gc.bridges version 10, stage 7a; mautrix-signal v0.2610.0):
+//   kind      the chat's id at the bridge is a group's id (44 characters of Base64, pkg/signalid ParsePortalID) or a
+//             person's service id (a UUID, "PNI:<uuid>" for one known by number only) — never passed on.
+//   timer     disappearing messages: the room's state com.beeper.disappearing_timer { type, timer (ms) } →
+//             chat.timer { type: 'after_read' | 'after_send', seconds } (null: off; missing: not known in this event);
+//             the bridge's notice about a change (com.beeper.action_message type disappearing_timer) is a `notice` with
+//             action { type: 'timer', seconds }. The messages themselves are deleted by the bridge (redactions).
+//   view-once with bridge.view_limited_media (config.js) a view-once picture carries com.beeper.view_limited: it is
+//             a message of kind 'unsupported' with viewOnce: true — the picture is not passed on and not kept.
+//   sticker   m.sticker as before (kind 'sticker'), the emoji as its name.
+//   history   at most the days the network allows (opts.historyOf(userId, network): Signal 30).
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -94,7 +106,11 @@ const PREVIEW_TEXT_MAX = 1000;
 // what the id of a chat at the bridge (m.bridge channel.id) says about its kind, per network
 const CHAT_IDS = {
   whatsapp: [[/@newsletter$/, 'channel'], [/@g\.us$/, 'group'], [/@(s\.whatsapp\.net|lid)$/, 'direct']],
+  // stage 7a: a Signal group's id is 32 bytes in Base64 (44 characters), a person's a service id (UUID, PNI:<uuid>)
+  signal: [[/^[A-Za-z0-9+/]{43}=$/, 'group'], [/^(PNI:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'direct']],
 };
+const TIMER_TYPES = ['after_read', 'after_send'];
+const TIMER_MAX_S = 366 * 86400;
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
 const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
 const REF_RE = /^m[A-Za-z0-9_-]{40,700}$/;
@@ -212,7 +228,7 @@ function create(opts) {
     const target = opts.target();
     if (!target) throw new hs.HsError('ERR_BRIDGE_UNREACHABLE', 'the homeserver is not set up', 'not_running');
     const st = await hs.state(target, mxidOf(row.user_id), row.room_id);
-    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null };
+    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null, timer: null };
     for (const ev of st) applyState(i, ev);
     if (info.size > 2000) info.clear();
     info.set(row.room_id, i);
@@ -249,6 +265,13 @@ function create(opts) {
       i.channel = channel;
       return 'kind';
     }
+    // stage 7a: the chat's disappearing messages (bridgev2 database.DisappearingSetting.ToEventContent: {} when off)
+    if (ev.type === 'com.beeper.disappearing_timer') {
+      const t = timerOf(c);
+      if ((t && i.timer && t.type === i.timer.type && t.seconds === i.timer.seconds) || (!t && !i.timer)) return null;
+      i.timer = t;
+      return 'timer';
+    }
     if (ev.type === 'm.room.power_levels') {
       // may the person write? their level against the one of a message (a channel; a group where only admins write)
       const lvl = (v, d) => (Number.isSafeInteger(Number(v)) && v !== null && v !== '' ? Number(v) : d);
@@ -273,7 +296,7 @@ function create(opts) {
   }
 
   // version 7: channel and readOnly whenever the room's state is known (with it, every 'chat' event carries them)
-  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly } : {}) });
+  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly, timer: i.timer ? { ...i.timer } : null } : {}) });
   const contactOf = (row, i, mxid) => ({ id: contactRef(row.network, mxid), name: (i && i.names.get(mxid)) || null, avatar: i ? pictureRef(row.user_id, i.avatars.get(mxid)) : null });
 
   async function senderOf(row, i, ev) {
@@ -360,7 +383,7 @@ function create(opts) {
     const push = (payload, extra) => {
       const mxc = extra && extra.mxc ? extra.mxc : null;
       if (hist && HISTORY_TYPES.includes(payload.type)) {
-        if (!keepHistory(row.user_id, at)) {
+        if (!keepHistory(row.user_id, at, row.network)) {
           stats.historyDropped++;
           if (mxc) out.push({ userId: row.user_id, network: row.network, drop: true, mxc });
           return;
@@ -391,7 +414,7 @@ function create(opts) {
       if (backlog) return;
       const changed = applyState(i, ev);
       if (changed === 'kind' || changed === 'power') row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
-      if (changed === 'name' || changed === 'kind' || changed === 'avatar' || changed === 'power') push({ type: 'chat', chat: chatOf(row, i) });
+      if (changed === 'name' || changed === 'kind' || changed === 'avatar' || changed === 'power' || changed === 'timer') push({ type: 'chat', chat: chatOf(row, i) });
       if (changed === 'member') push({ type: 'contact', chat: chatOf(row, i), contact: contactOf(row, i, ev.state_key) });
       return;
     }
@@ -439,13 +462,23 @@ function create(opts) {
       }
       const reply = rel['m.in_reply_to'] && typeof rel['m.in_reply_to'] === 'object' && hs.EVENT_RE.test(String(rel['m.in_reply_to'].event_id || '')) ? rel['m.in_reply_to'].event_id : null;
       const msgtype = ev.type === 'm.sticker' ? 'm.sticker' : c.msgtype;
+      // stage 7a: a view-once picture or video (com.beeper.view_limited): a hint, never the file
+      if (c['com.beeper.view_limited'] && typeof c['com.beeper.view_limited'] === 'object') {
+        if (hs.mxcOf(c.url, opts.serverName)) out.push({ userId: row.user_id, network: row.network, drop: true, mxc: c.url });
+        push({ type: 'message', ...base, kind: 'unsupported', viewOnce: true, text: null, replyTo: reply });
+        return;
+      }
       if (msgtype === 'm.text' || msgtype === 'm.notice' || msgtype === 'm.emote') {
         // version 7: a channel's post is a text like a contact's; the format as marks, the link preview with its picture
         const r = richOf(c);
         const pv = previewOf(row, c);
         const notice = (sender.system && !sender.channel) || msgtype === 'm.notice';
-        push({ type: 'message', ...base, kind: notice ? 'notice' : 'text', text: r.text, ...(r.marks ? { marks: r.marks } : {}), ...(pv ? { preview: pv.preview } : {}), replyTo: reply },
-          pv && pv.mxc ? { mxc: pv.mxc } : null);
+        // stage 7a: the bridge's notice about the disappearing messages of the chat
+        const am = c['com.beeper.action_message'] && typeof c['com.beeper.action_message'] === 'object' ? c['com.beeper.action_message'] : null;
+        const action = am && am.type === 'disappearing_timer' ? { type: 'timer', seconds: timerSeconds(am.timer) } : null;
+        push({ type: 'message', ...base, kind: notice || action ? 'notice' : 'text', text: r.text, ...(r.marks ? { marks: r.marks } : {}), ...(pv ? { preview: pv.preview } : {}),
+          ...(action ? { action } : {}), replyTo: reply },
+        pv && pv.mxc ? { mxc: pv.mxc } : null);
         return;
       }
       const mk = msgtype === 'm.sticker' ? 'sticker' : MEDIA_TYPES[msgtype];
@@ -467,6 +500,20 @@ function create(opts) {
       return;
     }
     stats.skipped++;
+  }
+
+  /** stage 7a: a timer in milliseconds → whole seconds (1 s … a year), else null. */
+  function timerSeconds(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.min(TIMER_MAX_S, Math.max(1, Math.round(n / 1000)));
+  }
+  /** stage 7a: com.beeper.disappearing_timer → { type, seconds } or null (off). */
+  function timerOf(c) {
+    const seconds = timerSeconds(c && c.timer);
+    const type = c.type === 'after_read_by_recipient' ? 'after_read' : c.type;
+    if (!seconds || !TIMER_TYPES.includes(type)) return null;
+    return { type, seconds };
   }
 
   /** The text of a message with its format (format.js): the parsed HTML, or the plain body without marks. */
@@ -545,12 +592,13 @@ function create(opts) {
   }
 
   /**
-   * Does the person want this piece of history? opts.historyOf(userId) → days: 0 none, -1 everything, n the last n
-   * days (counted from now). Without the option (older callers): everything.
+   * Does the person want this piece of history? opts.historyOf(userId, network) → days: 0 none, -1 everything, n the
+   * last n days (counted from now; stage 7a: a network may cap it — Signal 30). Without the option (older callers):
+   * everything.
    */
-  function keepHistory(userId, at) {
+  function keepHistory(userId, at, network = null) {
     let days = -1;
-    if (opts.historyOf) { try { days = Number(opts.historyOf(userId)); } catch { days = 0; } }
+    if (opts.historyOf) { try { days = Number(opts.historyOf(userId, network)); } catch { days = 0; } }
     if (!Number.isFinite(days) || days === 0) return false;
     return days < 0 || at >= Date.now() - days * 86400000;
   }
@@ -810,11 +858,11 @@ function create(opts) {
   function historyTrim(userId) {
     let n = 0;
     const del = db().prepare('DELETE FROM bridge_backlog WHERE seq = ?');
-    const rows = db().prepare('SELECT seq, payload FROM bridge_backlog WHERE user_id = ?').all(userId);
+    const rows = db().prepare('SELECT seq, network, payload FROM bridge_backlog WHERE user_id = ?').all(userId);
     db().transaction(() => {
       for (const r of rows) {
         const p = open(r.payload);
-        if (!p || !keepHistory(userId, Number(p.at) || 0)) { del.run(r.seq); n++; }
+        if (!p || !keepHistory(userId, Number(p.at) || 0, r.network)) { del.run(r.seq); n++; }
       }
     })();
     return n;

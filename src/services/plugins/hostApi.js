@@ -1637,6 +1637,8 @@ async function vpnDnsCall(plugin, op, args) {
 // Version 9 (chats v2, persons): recognition.get / recognition.set — the person's own consent "Andere dürfen mich an
 // meinem WhatsApp erkennen" (the profile's "Erkennung"), asked by the messenger where WhatsApp is linked — inside a request
 // (set: a changing request) of that person; set goes through services/profile.update (time of the answer, activity log).
+// Version 10 (stage 7a, Signal): the network 'signal' everywhere a network is named; recognition per network ('whatsapp',
+// 'signal', 'telegram'); nothing else changes here — what differs per network lies in services/bridges (NET).
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;

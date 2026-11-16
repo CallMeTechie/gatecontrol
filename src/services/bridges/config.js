@@ -6,7 +6,8 @@
 //
 //   hs/config/tuwunel.toml         the internal homeserver (Tuwunel)
 //   whatsapp/config/config.yaml    the WhatsApp bridge (mautrix-whatsapp)
-//   hs/data, whatsapp/data         their databases
+//   signal/config/config.yaml      stage 7a: the Signal bridge (mautrix-signal) — NETWORK_MODELS says what differs
+//   hs/data, <network>/data        their databases
 //   hs/run, run                    the Unix sockets: hs/run/hs.sock (the homeserver's; the bridge sees that
 //                                  folder read-only), run/<network>.sock (a bridge's; its relay sees it read-only)
 //                                  and run/core.sock (this server's, appservice.js; its relay sees it read-only)
@@ -62,7 +63,8 @@ const SERVER_NAME = 'gc.internal';
 const RUN_DIR = '/run/bruecken';
 const HS_SOCKET = `${RUN_DIR}/hs.sock`;          // as the homeserver sees its own socket
 const HS_SOCKET_BRIDGE = '/run/bruecken-hs/hs.sock'; // as a bridge sees it
-const RELAY_PORT = { whatsapp: 29318, core: 29319 };
+// stage 7: Signal (7a) and Telegram (7b) get relays of their own next to WhatsApp's
+const RELAY_PORT = { whatsapp: 29318, core: 29319, signal: 29320, telegram: 29321 };
 // the server's own application service on the internal homeserver: it owns the accounts of the GateControl people
 const CORE_ID = 'gatecontrol';
 const CORE_BOT = 'gcbot';
@@ -181,8 +183,9 @@ function hsToml(model) {
  */
 function bridgeModel(network, secrets, opts = {}) {
   const history = opts.history === true;
-  if (network !== 'whatsapp') throw new Error(`bridges config: unknown network ${network}`);
-  return {
+  if (!NETWORK_MODELS[network]) throw new Error(`bridges config: unknown network ${network}`);
+  const own = NETWORK_MODELS[network]({ history });
+  const model = {
     homeserver: {
       address: `unix://${HS_SOCKET_BRIDGE}`,
       domain: SERVER_NAME,
@@ -214,6 +217,7 @@ function bridgeModel(network, secrets, opts = {}) {
       split_portals: true,
       // only accounts of the internal server, and only as users — no relay, no administrator
       permissions: { [SERVER_NAME]: 'user' },
+      ...(own.bridge || {}),
     },
     matrix: {
       federate_rooms: false,
@@ -237,6 +241,17 @@ function bridgeModel(network, secrets, opts = {}) {
     encryption: { allow: false, default: false, require: false },
     // warn: the info and debug lines name chats and accounts (ids with phone numbers) — they are not written at all
     logging: { min_level: 'warn', writers: [{ type: 'stdout', format: 'pretty' }] },
+    network: own.network,
+  };
+  return model;
+}
+
+/**
+ * What differs per bridge: its own `network` section (the connector's example-config.yaml of the pinned version) and
+ * the few `bridge` keys only that bridge needs.
+ */
+const NETWORK_MODELS = {
+  whatsapp: ({ history }) => ({
     network: {
       // a contact's name: only what the contact (or the business) shows publicly — never the phone number (the
       // default falls back to it, and to its redacted form) and no " (WA)" (the apps mark the network themselves).
@@ -249,8 +264,32 @@ function bridgeModel(network, secrets, opts = {}) {
       // files that ran out
       history_sync: { max_initial_conversations: history ? HISTORY.conversations : 0, request_full_sync: false, media_requests: { auto_request_media: false } },
     },
-  };
-}
+  }),
+  // stage 7a: mautrix-signal v0.2610.0 (pkg/connector/example-config.yaml, config.go). It logs in as a linked device by
+  // QR code only (login.go: the one flow "qr"). History: with backfill.enabled the bridge asks the phone for the
+  // transfer archive at the link (login.go PerformProvisioning(…, Backfill.Enabled)) and makes a room for every chat
+  // of it (chatsync.go) — once; without it no archive is asked for and a room appears with its first message. Which
+  // days of it a person gets is decided by the server (index.js historyOf: at most 30 days for Signal).
+  signal: () => ({
+    bridge: {
+      // a view-once picture arrives marked (com.beeper.view_limited) instead of with an English line written into
+      // the chat (pkg/msgconv/from-signal.go) — the server turns it into a hint, the picture is not passed on
+      view_limited_media: true,
+    },
+    network: {
+      // only the name the contact shows in their Signal profile: never the number (the default falls back to it),
+      // never the name of the linking person's address book or nickname ("not safe on multi-user instances")
+      displayname_template: '{{or .ProfileName ""}}',
+      use_contact_avatars: false,
+      // no number in the topic of a direct chat's room: no number lies in the homeserver
+      number_in_topic: false,
+      // as the device shows in Signal › Linked devices
+      device_name: 'GateControl',
+      // the default picture of "Note to Self" lies on another server, which this island never reaches
+      note_to_self_avatar: '',
+    },
+  }),
+};
 
 function yamlScalar(v) {
   if (typeof v === 'string') return JSON.stringify(v);

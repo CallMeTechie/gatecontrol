@@ -17,7 +17,9 @@
 //                  States: unconfirmed, whatsapp (the person's own linked WhatsApp has this number — services/bridges
 //                  tells noteOwnNumbers after every whoami), admin (an administrator confirmed it without seeing it),
 //                  directory (reserved for numbers of AD / Entra).
-//   recognition    two consents, both off: by the own linked WhatsApp, by the phone numbers. matchContacts() is the
+//   recognition    consents, all off: by the own linked WhatsApp (stage 7a: Signal, Telegram — one per network), by the
+//                  phone numbers. A network with a fixed account id (Signal's ACI) compares that id too
+//                  (noteOwnAccounts, user_bridge_accounts — keyed hashes, never the id). matchContacts() is the
 //                  only place that compares — for gc.bridges.matchAccounts: "which of my contacts at the bridge are
 //                  accounts here?". A number in two accounts is never used; an unconfirmed number only as a medium
 //                  hint and only while the administrator allows it (profile.match_confirmed_only).
@@ -38,8 +40,14 @@ const { encrypt, decrypt } = require('../utils/crypto');
 const KINDS = Object.freeze(['mobile', 'work', 'home', 'other']);
 const PHONE_VISIBILITY = Object.freeze(['none', 'family', 'all']);
 const FIELD_VISIBILITY = Object.freeze(['self', 'family', 'all']);
-const PHONE_STATES = Object.freeze(['unconfirmed', 'whatsapp', 'admin', 'directory']);
-const CONFIRMED = new Set(['whatsapp', 'admin', 'directory']);
+// stage 7a: "signal" (and "telegram", 7b) — confirmed by the person's own linked login on that network, like "whatsapp"
+const PHONE_STATES = Object.freeze(['unconfirmed', 'whatsapp', 'signal', 'telegram', 'admin', 'directory']);
+const CONFIRMED = new Set(['whatsapp', 'signal', 'telegram', 'admin', 'directory']);
+// the networks a phone state and a consent "Erkennen" exist for, and their columns
+const BRIDGE_NETS = Object.freeze(['whatsapp', 'signal', 'telegram']);
+const REC_COL = Object.freeze({ whatsapp: 'recognize_by_whatsapp', signal: 'recognize_by_signal', telegram: 'recognize_by_telegram' });
+const REC_KEY = Object.freeze({ byWhatsapp: 'whatsapp', bySignal: 'signal', byTelegram: 'telegram' });
+const NET_LABEL = Object.freeze({ whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' });
 const VIS_FIELDS = Object.freeze(['firstName', 'lastName', 'about', 'birthday', 'email', 'language', 'timezone']);
 const DEFAULT_VISIBILITY = Object.freeze({ firstName: 'all', lastName: 'all', about: 'all', birthday: 'family', email: 'self', language: 'self', timezone: 'self' });
 // what a plugin may ask for (permissions.profile)
@@ -120,7 +128,8 @@ function decryptNumber(enc) {
 
 const USER_COLS = `id, username, display_name, email, language, role, enabled, created_at, last_login_at, self_service_enabled, avatar_color,
   first_name, last_name, about, birthday, birthday_year_hidden, profile_visibility,
-  recognize_by_whatsapp, recognize_by_whatsapp_at, recognize_by_phone, recognize_by_phone_at`;
+  recognize_by_whatsapp, recognize_by_whatsapp_at, recognize_by_phone, recognize_by_phone_at,
+  recognize_by_signal, recognize_by_signal_at, recognize_by_telegram, recognize_by_telegram_at`;
 
 function userRow(userId) {
   const id = Number(userId);
@@ -214,6 +223,27 @@ function selfHashes(userId, network = null) {
   return new Set(rows.map((r) => r.number_hash));
 }
 
+/** stage 7a: the keyed hashes of the account ids of the person's own logins (on one network, or all). */
+function selfAccounts(userId, network = null) {
+  const rows = network
+    ? getDb().prepare('SELECT account_hash FROM user_bridge_accounts WHERE user_id = ? AND network = ?').all(userId, network)
+    : getDb().prepare('SELECT account_hash FROM user_bridge_accounts WHERE user_id = ?').all(userId);
+  return new Set(rows.map((r) => r.account_hash));
+}
+/** stage 7a: the keyed hash of a fixed account id at a service (network and id, lower case) — never leaves this module. */
+function hashAccount(network, id) {
+  return crypto.createHmac('sha256', numberKey()).update(`account\0${network}\0${String(id).toLowerCase()}`, 'utf8').digest('base64url');
+}
+/** The consents per network: { whatsapp: { allowed, answered, linked }, signal: {…}, telegram: {…} }. */
+function recognitionNets(u) {
+  const out = {};
+  for (const n of BRIDGE_NETS) {
+    const col = REC_COL[n];
+    out[n] = { allowed: u[col] === 1, answered: !!u[`${col}_at`], linked: selfHashes(u.id, n).size > 0 || selfAccounts(u.id, n).size > 0 };
+  }
+  return out;
+}
+
 function mailReady() {
   try { return require('./email').isSmtpConfigured(); } catch { return false; }
 }
@@ -257,6 +287,10 @@ function ownView(userId) {
       phoneAnswered: !!u.recognize_by_phone_at,
       whatsappLinked: selfHashes(u.id, 'whatsapp').size > 0,
       phonesForRecognition: phones.filter((p) => p.useForRecognition).length,
+      // stage 7a: one consent per network (whatsapp as above, signal, telegram)
+      bySignal: u.recognize_by_signal === 1,
+      byTelegram: u.recognize_by_telegram === 1,
+      networks: recognitionNets(u),
     },
     locked: { displayName: !!dir, email: !!dir, directory: dir ? dir.name : null },
     family: familyIds(u.id).length > 0,
@@ -400,13 +434,14 @@ function update(userId, patch, ctx = {}) {
   if (p.recognition !== undefined) {
     const r = p.recognition;
     if (!r || typeof r !== 'object' || Array.isArray(r)) throw invalid('recognition');
-    for (const [k, col] of [['byWhatsapp', 'recognize_by_whatsapp'], ['byPhone', 'recognize_by_phone']]) {
+    for (const k of Object.keys(r)) if (k !== 'byPhone' && !REC_KEY[k]) throw invalid('recognition', `recognition.${String(k).slice(0, 40)}: unknown`);
+    for (const [k, col] of [['byPhone', 'recognize_by_phone'], ...Object.entries(REC_KEY).map(([key, n]) => [key, REC_COL[n]])]) {
       if (r[k] === undefined) continue;
       if (typeof r[k] !== 'boolean') throw invalid('recognition', `recognition.${k}: true or false`);
       // the answer is kept with its time even when unchanged: "asked once" for the apps and the portal
       sets.push(`${col} = ?`, `${col}_at = datetime('now')`);
       vals.push(r[k] ? 1 : 0);
-      if ((u[col] === 1) !== r[k]) changed.push(k === 'byWhatsapp' ? 'recognitionWhatsapp' : 'recognitionPhone');
+      if ((u[col] === 1) !== r[k]) changed.push({ byPhone: 'recognitionPhone', byWhatsapp: 'recognitionWhatsapp', bySignal: 'recognitionSignal', byTelegram: 'recognitionTelegram' }[k]);
     }
   }
 
@@ -428,6 +463,11 @@ function update(userId, patch, ctx = {}) {
 }
 
 // ─── Phone numbers ───────────────────────────────────────────────
+
+/** stage 7a: the state of a number the person just entered — confirmed by the first own login (whatsapp, signal, telegram) that has it. */
+function ownStateOf(userId, hash) {
+  return BRIDGE_NETS.find((n) => selfHashes(userId, n).has(hash)) || 'unconfirmed';
+}
 
 function needPhones() { if (!phonesEnabled()) throw new ProfileError('ERR_PHONES_OFF', 'phone numbers are switched off on this server'); }
 function phoneOf(userId, phoneId) {
@@ -462,7 +502,7 @@ function addPhone(userId, input, ctx = {}) {
   const row = db.transaction(() => {
     if (db.prepare('SELECT COUNT(*) AS c FROM user_phones WHERE user_id = ?').get(u.id).c >= MAX_PHONES) throw new ProfileError('ERR_LIMIT', `at most ${MAX_PHONES} numbers`);
     if (db.prepare('SELECT 1 FROM user_phones WHERE user_id = ? AND number_hash = ?').get(u.id, hash)) throw new ProfileError('ERR_DUPLICATE', 'this number is in the profile already', 'number');
-    const state = selfHashes(u.id).has(hash) ? 'whatsapp' : 'unconfirmed';
+    const state = ownStateOf(u.id, hash);
     const id = db.prepare(`INSERT INTO user_phones (user_id, kind, number_enc, number_hash, visibility, use_for_recognition, state, confirmed_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ${state === 'unconfirmed' ? 'NULL' : "datetime('now')"})`)
       .run(u.id, f.kind, encrypt(f.number), hash, f.visibility, f.useForRecognition ? 1 : 0, state).lastInsertRowid;
@@ -490,7 +530,7 @@ function updatePhone(userId, phoneId, input, ctx = {}) {
     const hash = hashNumber(f.number);
     if (hash !== row.number_hash) {
       if (db.prepare('SELECT 1 FROM user_phones WHERE user_id = ? AND number_hash = ? AND id <> ?').get(u.id, hash, row.id)) throw new ProfileError('ERR_DUPLICATE', 'this number is in the profile already', 'number');
-      const state = selfHashes(u.id).has(hash) ? 'whatsapp' : 'unconfirmed';
+      const state = ownStateOf(u.id, hash);
       sets.push('number_enc = ?', 'number_hash = ?', 'state = ?', `confirmed_at = ${state === 'unconfirmed' ? 'NULL' : "datetime('now')"}`);
       vals.push(encrypt(f.number), hash, state);
       what.push('number');
@@ -621,15 +661,20 @@ function noteOwnNumbers(userId, network, numbers) {
         db.prepare(`INSERT INTO user_bridge_selves (user_id, network, number_hash) VALUES (?, ?, ?)
           ON CONFLICT(user_id, network, number_hash) DO UPDATE SET seen_at = datetime('now')`).run(userId, network, h);
       }
-      const all = selfHashes(userId);
-      for (const p of db.prepare("SELECT id, state, number_hash FROM user_phones WHERE user_id = ? AND state IN ('unconfirmed', 'whatsapp')").all(userId)) {
-        const on = all.has(p.number_hash);
-        if (on && p.state === 'unconfirmed') { db.prepare("UPDATE user_phones SET state = 'whatsapp', confirmed_at = datetime('now') WHERE id = ?").run(p.id); confirmed++; }
-        else if (!on && p.state === 'whatsapp') { db.prepare("UPDATE user_phones SET state = 'unconfirmed', confirmed_at = NULL WHERE id = ?").run(p.id); dropped++; }
+      // stage 7a: per network — a number stays confirmed by the network that confirmed it while that one still has it;
+      // otherwise the first network (whatsapp, signal, telegram) whose own login has it
+      const by = new Map(BRIDGE_NETS.map((n) => [n, selfHashes(userId, n)]));
+      const q = BRIDGE_NETS.map(() => '?').join(', ');
+      for (const p of db.prepare(`SELECT id, state, number_hash FROM user_phones WHERE user_id = ? AND state IN ('unconfirmed', ${q})`).all(userId, ...BRIDGE_NETS)) {
+        const keep = p.state !== 'unconfirmed' && by.get(p.state) && by.get(p.state).has(p.number_hash);
+        const now = keep ? p.state : (BRIDGE_NETS.find((n) => by.get(n).has(p.number_hash)) || 'unconfirmed');
+        if (now === p.state) continue;
+        if (now === 'unconfirmed') { db.prepare("UPDATE user_phones SET state = 'unconfirmed', confirmed_at = NULL WHERE id = ?").run(p.id); dropped++; }
+        else { db.prepare("UPDATE user_phones SET state = ?, confirmed_at = datetime('now') WHERE id = ?").run(now, p.id); if (p.state === 'unconfirmed') confirmed++; }
       }
     })();
     if (confirmed || dropped) {
-      log('profile_phone_whatsapp', `Telefonnummern über das eigene ${network === 'whatsapp' ? 'WhatsApp' : network}: ${confirmed} bestätigt, ${dropped} nicht mehr bestätigt`, userId,
+      log('profile_phone_whatsapp', `Telefonnummern über das eigene ${NET_LABEL[network] || network}: ${confirmed} bestätigt, ${dropped} nicht mehr bestätigt`, userId,
         { source: 'system' }, { network, confirmed, dropped });
       emitChanged(userId, ['phones']);
     }
@@ -637,7 +682,27 @@ function noteOwnNumbers(userId, network, numbers) {
 }
 
 /** Forget the own login's numbers (the link was ended). */
-function forgetOwnNumbers(userId, network) { noteOwnNumbers(userId, network, []); }
+function forgetOwnNumbers(userId, network) { noteOwnNumbers(userId, network, []); noteOwnAccounts(userId, network, []); }
+
+/**
+ * stage 7a: noteOwnAccounts(userId, network, ids) — after every whoami of the person's own link on a network with fixed
+ * account ids (Signal: the ACI of the login): their keyed hashes (user_bridge_accounts), for "eigenes Signal". Never
+ * throws, never logs an id.
+ */
+function noteOwnAccounts(userId, network, ids) {
+  try {
+    if (!userRow(userId) || !BRIDGE_NETS.includes(network)) return;
+    const hashes = [...new Set((ids || []).filter((x) => typeof x === 'string' && x && x.length <= 128).map((x) => hashAccount(network, x)))];
+    const db = getDb();
+    db.transaction(() => {
+      for (const h of selfAccounts(userId, network)) if (!hashes.includes(h)) db.prepare('DELETE FROM user_bridge_accounts WHERE user_id = ? AND network = ? AND account_hash = ?').run(userId, network, h);
+      for (const h of hashes) {
+        db.prepare(`INSERT INTO user_bridge_accounts (user_id, network, account_hash) VALUES (?, ?, ?)
+          ON CONFLICT(user_id, network, account_hash) DO UPDATE SET seen_at = datetime('now')`).run(userId, network, h);
+      }
+    })();
+  } catch (err) { logger.warn({ err: err.message }, 'profile: own accounts not noted'); }
+}
 
 // ─── Recognition (gc.bridges.matchAccounts) ──────────────────────
 
@@ -655,19 +720,22 @@ function inChunks(list, size, fn) { for (let i = 0; i < list.length; i += size) 
  * would name two accounts. Numbers and hashes stay here; what goes out is the pairing only.
  */
 function matchContacts(viewerId, network, pairs) {
+  // stage 7a: a pair names a number ({ contactId, number }) or a fixed account id ({ contactId, account }, Signal's ACI)
   const byHash = new Map();
+  const accountHashes = new Set();
   for (const x of Array.isArray(pairs) ? pairs : []) {
     if (!x || typeof x.contactId !== 'string') continue;
-    const n = normalizeNumber(x.number);
-    if (!n) continue;
-    const h = hashNumber(n);
+    let h = null;
+    if (typeof x.account === 'string' && x.account && x.account.length <= 128 && BRIDGE_NETS.includes(network)) { h = hashAccount(network, x.account); accountHashes.add(h); }
+    else { const n = normalizeNumber(x.number); if (n) h = hashNumber(n); }
+    if (!h) continue;
     if (!byHash.has(h)) byHash.set(h, new Set());
     byHash.get(h).add(x.contactId);
   }
   if (!byHash.size) return [];
   const db = getDb();
   const owners = new Map(); // hash → Set(userId) over every account, whatever its consent
-  const own = new Map(); // hash → userId with that own login on this network
+  const own = new Map(); // hash → userId with that own login on this network (its number or its account id)
   const prof = new Map(); // hash → { userId, state, use }
   const users = new Map();
   const add = (h, uid) => { if (!owners.has(h)) owners.set(h, new Set()); owners.get(h).add(uid); };
@@ -681,15 +749,21 @@ function matchContacts(viewerId, network, pairs) {
       add(r.number_hash, r.user_id);
       prof.set(r.number_hash, { userId: r.user_id, state: r.state, use: r.use_for_recognition === 1 });
     }
+    for (const r of db.prepare(`SELECT user_id, account_hash FROM user_bridge_accounts WHERE network = ? AND account_hash IN (${q})`).all(network, ...hs)) {
+      add(r.account_hash, r.user_id);
+      own.set(r.account_hash, r.user_id);
+    }
   });
   const ids = new Set();
   for (const s of owners.values()) for (const u of s) ids.add(u);
+  const col = REC_COL[network] || null;
   inChunks([...ids], 400, (list) => {
-    for (const r of db.prepare(`SELECT id, enabled, recognize_by_whatsapp, recognize_by_phone FROM users WHERE id IN (${list.map(() => '?').join(',')})`).all(...list)) users.set(r.id, r);
+    for (const r of db.prepare(`SELECT id, enabled, recognize_by_phone, ${col || '0'} AS own_consent FROM users WHERE id IN (${list.map(() => '?').join(',')})`).all(...list)) users.set(r.id, r);
   });
   const phonesOn = phonesEnabled();
   const onlyConfirmed = confirmedOnly();
-  const rank = (m) => (m.strength === 'strong' ? 2 : 1) + (m.via === 'own_whatsapp' ? 0.5 : 0);
+  const viaOwn = `own_${network}`;
+  const rank = (m) => (m.strength === 'strong' ? 2 : 1) + (m.via === viaOwn ? 0.5 : 0);
   const perContact = new Map(); // contactId → { users: Set, best }
   for (const [h, contacts] of byHash) {
     const who = owners.get(h);
@@ -698,8 +772,9 @@ function matchContacts(viewerId, network, pairs) {
     const u = users.get(uid);
     if (uid === viewerId || !u || u.enabled !== 1) continue;
     let m = null;
-    if (own.get(h) === uid && u.recognize_by_whatsapp === 1) m = { userId: uid, strength: 'strong', via: 'own_whatsapp' };
-    const p = prof.get(h);
+    // the account's own linked login on this network: its number, or (Signal) its account id — with its consent
+    if (own.get(h) === uid && col && u.own_consent === 1) m = { userId: uid, strength: 'strong', via: viaOwn };
+    const p = accountHashes.has(h) ? null : prof.get(h);
     if (!m && phonesOn && p && p.userId === uid && p.use && u.recognize_by_phone === 1) {
       if (CONFIRMED.has(p.state)) m = { userId: uid, strength: 'strong', via: 'profile_phone' };
       else if (!onlyConfirmed) m = { userId: uid, strength: 'medium', via: 'profile_phone' };
@@ -770,7 +845,7 @@ function adminView(userId, adminId) {
       duplicate: list.some((p) => p.duplicate),
       list,
     },
-    recognition: { byWhatsapp: u.recognize_by_whatsapp === 1, byPhone: u.recognize_by_phone === 1 },
+    recognition: { byWhatsapp: u.recognize_by_whatsapp === 1, byPhone: u.recognize_by_phone === 1, bySignal: u.recognize_by_signal === 1, byTelegram: u.recognize_by_telegram === 1 },
     directory: directoryOf(u.id),
   };
 }
@@ -883,6 +958,8 @@ async function exportFor(userId, ctx = {}) {
     recognition: {
       byWhatsapp: u.recognize_by_whatsapp === 1, byWhatsappAnsweredAt: u.recognize_by_whatsapp_at || null,
       byPhone: u.recognize_by_phone === 1, byPhoneAnsweredAt: u.recognize_by_phone_at || null,
+      bySignal: u.recognize_by_signal === 1, bySignalAnsweredAt: u.recognize_by_signal_at || null,
+      byTelegram: u.recognize_by_telegram === 1, byTelegramAnsweredAt: u.recognize_by_telegram_at || null,
     },
     groups,
     devices,
@@ -898,7 +975,7 @@ module.exports = {
   phonesEnabled, confirmedOnly, getSettings, setSettings,
   normalizeNumber, ownView, update, addPhone, updatePhone, removePhone,
   addEmail, resendCode, confirmEmail, removeEmail,
-  noteOwnNumbers, forgetOwnNumbers, matchContacts,
+  noteOwnNumbers, noteOwnAccounts, forgetOwnNumbers, matchContacts,
   adminView, adminConfirmPhone, adminRemovePhone,
   viewFor, exportFor, emitChanged, directoryOf, sameFamily,
   _hashNumber: hashNumber,

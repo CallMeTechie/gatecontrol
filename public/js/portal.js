@@ -1672,6 +1672,11 @@
     box.appendChild(el('h2', { class: 'pt-h2', id: 'pt-h-recog' }, T('myprofile.recognition')));
     box.appendChild(el('p', { class: 'pt-card-lead' }, T('myprofile.recognition_lead')));
     box.appendChild(sw('pt-pf-rec-wa', T('myprofile.rec.whatsapp'), r.whatsappLinked ? T('myprofile.rec.wa_linked') : T('myprofile.rec.wa_not_linked'), r.byWhatsapp, 'byWhatsapp'));
+    // stage 7a: one line per further linked service (shown while it is linked or the consent is on)
+    var sg = r.networks && r.networks.signal;
+    if (sg && (sg.linked || sg.allowed)) {
+      box.appendChild(sw('pt-pf-rec-sg', T('myprofile.rec.signal'), sg.linked ? T('myprofile.rec.sg_linked') : T('myprofile.rec.sg_not_linked'), sg.allowed, 'bySignal'));
+    }
     if (p.features && p.features.phones) {
       box.appendChild(sw('pt-pf-rec-phone', T('myprofile.rec.phones'), T('myprofile.rec.phones_sub', { n: r.phonesForRecognition, total: p.phones.length }), r.byPhone, 'byPhone'));
     }

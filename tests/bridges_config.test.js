@@ -72,7 +72,7 @@ function parseYaml(text) {
 
 describe('pinned images and the release docker-compose.yml', () => {
   it('every image is pinned by version and digest', () => {
-    assert.deepEqual(Object.keys(images.IMAGES), ['hs', 'whatsapp', 'whatsapp-relay', 'core-relay']);
+    assert.deepEqual(Object.keys(images.IMAGES), ['hs', 'whatsapp', 'whatsapp-relay', 'signal', 'signal-relay', 'telegram', 'telegram-relay', 'core-relay']);
     for (const [name, i] of Object.entries(images.IMAGES)) {
       assert.match(i.digest, /^sha256:[0-9a-f]{64}$/, name);
       assert.match(i.tag, /^v?\d+(\.\d+)+$/, `${name}: a version, never latest`);
@@ -430,7 +430,7 @@ describe('the service with stage 2', () => {
     assert.deepEqual(p.services.hs, { running: true, restarts: 0, oomKilled: false, memMb: 71, memPeakMb: 80, limitMb: 384, writtenKb: 512 });
     assert.deepEqual(p.services.whatsapp, { running: true, restarts: 2, oomKilled: true, memMb: null, memPeakMb: null, limitMb: 512, writtenKb: 9 });
     assert.ok(!('other' in p.services));
-    assert.deepEqual(p.sockets, { hs: true, whatsapp: false });
+    assert.deepEqual(p.sockets, { hs: true, whatsapp: false, signal: false });
     assert.ok(!JSON.stringify(bridges.status()).includes('SECRET'));
     fs.writeFileSync(probeFile(), '{"probed_at":"x"}');
     assert.equal(bridges.status().host.probe, null);

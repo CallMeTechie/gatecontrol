@@ -78,7 +78,7 @@ describe('the kind of a chat', () => {
   it('a WhatsApp group (no room type, …@g.us) is a group; only admins write → readOnly; the bot stays a notice', async () => {
     const room = '!grp:gc.internal';
     const { chat } = await open(room, [bridgeState(GROUP_ID), nameState('Verein'), powerState(0, 50)]);
-    assert.deepEqual({ ...chat.chat, id: 'x' }, { id: 'x', kind: 'group', name: 'Verein', avatar: null, channel: false, readOnly: true });
+    assert.deepEqual({ ...chat.chat, id: 'x' }, { id: 'x', kind: 'group', name: 'Verein', avatar: null, channel: false, readOnly: true, timer: null });
     const row = db.prepare('SELECT kind, channel, read_only FROM bridge_rooms WHERE room_id = ?').get(room);
     assert.deepEqual({ ...row }, { kind: 'group', channel: 0, read_only: 1 });
     // the admins open the group to everybody: the plugin learns it
@@ -104,7 +104,7 @@ describe('a channel', () => {
     const room = '!chn:gc.internal';
     hs.file('pv1', { data: Buffer.from('jpeg'), mime: 'image/jpeg' });
     const { chat } = await open(room, [bridgeState(CHANNEL_ID), nameState('Sicherheit kompakt'), powerState(0, 50)]);
-    assert.deepEqual({ ...chat.chat, id: 'x' }, { id: 'x', kind: 'group', name: 'Sicherheit kompakt', avatar: null, channel: true, readOnly: true });
+    assert.deepEqual({ ...chat.chat, id: 'x' }, { id: 'x', kind: 'group', name: 'Sicherheit kompakt', avatar: null, channel: true, readOnly: true, timer: null });
     const post = msg(room, BOT, '*Jetzt patchen:* Update für X200 https://sicher.example/x200', {
       format: 'org.matrix.custom.html',
       formatted_body: '<strong>Jetzt patchen:</strong> Update für <em>X200</em><br>https://sicher.example/x200',

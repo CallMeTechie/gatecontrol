@@ -71,6 +71,16 @@
 //   images           (stage 5) the pins of images.js go to update.sh with every config file ("bridges_images"): a
 //                    GateControl release with a new pin updates the containers at the next run of the script, without
 //                    a new docker-compose.yml on the host. Nothing unpinned is ever pulled.
+//   signal           (stage 7a, gc.bridges version 10) a second bridge: mautrix-signal as a linked device of the
+//                    person's own Signal (QR code only). What differs per network stands in NET: the login flows
+//                    offered, the update.sh marker it needs (10: bridge_repo knows it, the probe blanks its ids), the
+//                    most days of history (Signal: once at the link, at most 30), whether its logins and contacts carry
+//                    a fixed account id (Signal: the ACI, a UUID) — that id is compared for "Erkennen" (profile
+//                    noteOwnAccounts / matchContacts), never passed on. The bridges' own login texts never leave this
+//                    module (Signal's last one names the number and the account id): stepOut writes our own.
+//                    recognition.get / set per network (whatsapp, signal, telegram). One switch for all bridges that
+//                    convert animated stickers (configure({ animatedStickers }), off = a still picture) — Telegram (7b)
+//                    is the first that does.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -86,7 +96,20 @@ const appservice = require('./appservice');
 const eventsMod = require('./events');
 const backupMod = require('./backup');
 
-const NETWORKS = Object.freeze(['whatsapp']);
+const NETWORKS = Object.freeze(['whatsapp', 'signal']);
+// stage 7a: what differs per network (see the head of this file)
+//   script       the update.sh marker the bridge needs — a bridge whose marker the host does not have yet is not asked for
+//   flows        the login flows offered (the bridge's own ids); others are refused before the bridge is asked
+//   historyDays  the most days of history this bridge brings (null: what the person chose)
+//   phoneConfirms the phone asks at the link whether it hands over the history (Signal's transfer archive)
+//   accountIds   a login and a contact carry a fixed account id at the service (Signal: the ACI)
+const NET = Object.freeze({
+  whatsapp: Object.freeze({ script: 8, flows: Object.freeze(['phone', 'qr']), historyDays: null, phoneConfirms: false, accountIds: false }),
+  signal: Object.freeze({ script: 10, flows: Object.freeze(['qr']), historyDays: 30, phoneConfirms: true, accountIds: true }),
+});
+// the networks of the consent "Erkennen" (the user profile keeps one per network; Telegram follows with stage 7b)
+const RECOGNITION_NETWORKS = Object.freeze(['whatsapp', 'signal', 'telegram']);
+const UUID_RE = /^(PNI:|pni_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_NAME = config.SERVER_NAME;
 const SCRIPT = 8; // update.sh marker that knows the profile "bruecken" with relays (also the server's own: bruecken-core-relay), the configuration revision, the probe — and (8) the pinned images, snapshots and their restore
 const HOST_STATES = ['running', 'starting', 'failed', 'stopped'];
@@ -123,7 +146,20 @@ function getConfig() {
   const networks = {};
   for (const n of NETWORKS) networks[n] = !!(nets && typeof nets === 'object' && nets[n] === true);
   // stage 5: older messages at a new link — on unless an administrator switched it off
-  return { enabled: settings.get('bridges.enabled', '0') === '1', location: 'server', networks, history: settings.get('bridges.history', '1') !== '0' };
+  return { enabled: settings.get('bridges.enabled', '0') === '1', location: 'server', networks, history: settings.get('bridges.history', '1') !== '0',
+    // stage 7a: convert animated stickers (off: a still picture) — for the bridges that convert (Telegram, 7b)
+    animatedStickers: settings.get('bridges.stickers_animated', '0') === '1' };
+}
+
+/** The update.sh marker the host runs (null: unknown — the script never reported). */
+function hostScript() {
+  try { const st = require('../autoUpdate').getStatus(); const v = st && st.update_sh ? Number(st.update_sh.host_version) : NaN; return Number.isSafeInteger(v) ? v : null; }
+  catch { return null; }
+}
+/** stage 7a: a network the host's update.sh is too old for (it would not know the bridge's image or blank its ids). */
+function scriptTooOld(network, host = hostScript()) {
+  const need = NET[network] ? NET[network].script : SCRIPT;
+  return need > SCRIPT && (host == null || host < need);
 }
 
 /** The bridges update.sh should run right now ([] = none). Read at boot too — never throws. */
@@ -131,7 +167,9 @@ function wanted() {
   try {
     if (!previewOn()) return [];
     const cfg = getConfig();
-    return cfg.enabled ? NETWORKS.filter((n) => cfg.networks[n]) : [];
+    if (!cfg.enabled) return [];
+    const host = hostScript();
+    return NETWORKS.filter((n) => cfg.networks[n] && !scriptTooOld(n, host));
   } catch { return []; }
 }
 
@@ -195,7 +233,8 @@ function wish() {
   // stage 5: the images this GateControl pins, and what to do about snapshots
   const imgs = ['hs', 'core-relay', ...names.flatMap((n) => [n, `${n}-relay`])].filter((k) => images.IMAGES[k]).map((k) => `${k}=${images.ref(k)}`).join(',');
   const bk = backupMod.wish();
-  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: getConfig().history }).rev, images: imgs, ...bk }; }
+  const cfg = getConfig();
+  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: cfg.history, animatedStickers: cfg.animatedStickers }).rev, images: imgs, ...bk }; }
   catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null, images: imgs, ...bk }; }
 }
 
@@ -220,10 +259,12 @@ function hostStatus() {
   const services = {};
   for (const name of ['hs', ...NETWORKS]) {
     const s = ok && file.services && typeof file.services === 'object' ? file.services[name] : null;
-    if (!s || typeof s !== 'object') { services[name] = { running: false, memMb: null, limitMb: null, version: null, outdated: null }; continue; }
+    if (!s || typeof s !== 'object') { services[name] = { running: false, memMb: null, limitMb: null, version: null, outdated: null, present: null }; continue; }
     // the image the container really runs, against the pin of this GateControl (images.js)
     const img = s.running === true ? images.compare(name, s.image) : { version: null, outdated: null };
-    services[name] = { running: s.running === true, memMb: num(s.mem_mb, 65536), limitMb: num(s.limit_mb, 65536), version: ver(s.version) || img.version, outdated: img.outdated };
+    // marker 10: false — the docker-compose.yml on the host has no service for this bridge (an older file)
+    services[name] = { running: s.running === true, memMb: num(s.mem_mb, 65536), limitMb: num(s.limit_mb, 65536), version: ver(s.version) || img.version, outdated: img.outdated,
+      present: s.present === false ? false : true };
   }
   return {
     state: ok && HOST_STATES.includes(file.state) ? file.state : null,
@@ -276,7 +317,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 9 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 10 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -294,9 +335,19 @@ function status() {
       // docker-compose.yml on the host is older (or newer) than the server
       // clientOutdated (stage 5): the messenger itself turned the bridge away as too old (WhatsApp "405 client outdated")
       // — only a newer pin helps, that is a GateControl update
+      // stage 7a (version 10): what this network offers and what it still waits for —
+      //   needs 'script'  the host's update.sh is older than the bridge needs (it is not started until it updated itself)
+      //   needs 'compose' the docker-compose.yml on the host has no service for it (an older file: replace it once)
+      const tooOld = cfg.enabled && cfg.networks[id] && scriptTooOld(id, host.script.host);
+      if (tooOld) state = 'starting';
+      const needs = tooOld ? 'script' : (cfg.enabled && cfg.networks[id] && s.present === false ? 'compose' : null);
+      if (needs === 'compose') state = 'failed';
       return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version,
-        clientOutdated: !!(clientOutdated.get(id) && Date.now() - clientOutdated.get(id) < 86400000) };
+        clientOutdated: !!(clientOutdated.get(id) && Date.now() - clientOutdated.get(id) < 86400000),
+        flows: [...NET[id].flows], history: { maxDays: NET[id].historyDays, phoneConfirms: NET[id].phoneConfirms }, needs, scriptNeeded: NET[id].script };
     }),
+    // stage 7a: one switch for every bridge that converts animated stickers (off: a still picture, PNG)
+    stickers: { animated: cfg.animatedStickers },
     host: {
       state: cfg.enabled ? host.state : 'stopped', error: cfg.enabled ? host.error : null, checkedAt: host.checkedAt,
       cron: host.cron, script: host.script,
@@ -316,7 +367,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 9,
+    version: 10,
   };
 }
 
@@ -339,9 +390,11 @@ function configure(patch, ctx) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new BridgesError('ERR_INVALID', 'patch: an object');
-  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
+  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime', 'animatedStickers'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
   const cur = getConfig();
-  const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history };
+  const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history, animatedStickers: cur.animatedStickers };
+  // stage 7a: animated stickers converted (on) or as a still picture (off)
+  if (p.animatedStickers !== undefined) { if (typeof p.animatedStickers !== 'boolean') throw new BridgesError('ERR_INVALID', 'animatedStickers: a boolean'); next.animatedStickers = p.animatedStickers; }
   // stage 5: older messages allowed at all; a snapshot now; the time of the nightly one
   if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw new BridgesError('ERR_INVALID', 'history: a boolean'); next.history = p.history; }
   if (p.backupTime !== undefined) { try { backupMod.setBackupTime(p.backupTime); } catch { throw new BridgesError('ERR_INVALID', 'backupTime: HH:MM'); } }
@@ -361,12 +414,17 @@ function configure(patch, ctx) {
   settings.set('bridges.networks', JSON.stringify(next.networks));
   settings.set('bridges.enabled', next.enabled ? '1' : '0');
   settings.set('bridges.history', next.history ? '1' : '0');
+  settings.set('bridges.stickers_animated', next.animatedStickers ? '1' : '0');
   if (p.backupNow === true && !backupMod.requested()) backupMod.request('now');
   require('../autoUpdate').syncConfigFile();
   // the listener for the homeserver's events follows the switch
   start().catch((err) => logger.warn({ err: err.message }, 'bridges: listener not started'));
   if (next.history !== cur.history) {
     try { require('../activity').log('bridges_changed', `Messenger-Brücken: älterer Verlauf ${next.history ? 'erlaubt' : 'abgeschaltet'}`, { source: 'admin', severity: 'info', details: { history: next.history, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
+    catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
+  }
+  if (next.animatedStickers !== cur.animatedStickers) {
+    try { require('../activity').log('bridges_changed', `Messenger-Brücken: animierte Sticker ${next.animatedStickers ? 'werden umgewandelt' : 'als Standbild'}`, { source: 'admin', severity: 'info', details: { animatedStickers: next.animatedStickers, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
     catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
   }
   if (next.enabled !== cur.enabled || NETWORKS.some((n) => next.networks[n] !== cur.networks[n])) {
@@ -423,7 +481,11 @@ function noteLinked(userId, network, step) {
 }
 
 async function loginStep(userId, network, processId, stepId, kind, input, opts) {
-  return stepOut(userId, network, noteLinked(userId, network, await loginStepRaw(userId, network, processId, stepId, kind, input, opts)));
+  const r = noteLinked(userId, network, await loginStepRaw(userId, network, processId, stepId, kind, input, opts));
+  // stage 7a: a new link — the profile learns its number and account id at once (selfIds → noteOwn), not only at the
+  // next look at the logins
+  if (r && r.step && r.step.type === 'complete') { selfCache.delete(`${userId}:${network}`); selfIds(userId, network).catch(() => {}); }
+  return stepOut(userId, network, r);
 }
 
 async function loginStepRaw(userId, network, processId, stepId, kind, input, { pollMs = 15000 } = {}) {
@@ -466,9 +528,12 @@ async function ensureAccount(userId) {
 }
 
 const login = {
-  flows: (userId, network) => clientFor(userId, network).flows(),
+  // stage 7a: only the flows GateControl offers for this network (Signal: the QR code — never another one a newer bridge
+  // might add without us knowing what it asks for)
+  flows: async (userId, network) => (await clientFor(userId, network).flows()).filter((f) => NET[network].flows.includes(f.id)),
   start: async (userId, network, flowId) => {
     const c = clientFor(userId, network);
+    if (!NET[network].flows.includes(flowId)) throw new BridgesError('ERR_INVALID', 'this login flow is not offered for this network', 'flow');
     await ensureAccount(userId);
     return stepOut(userId, network, noteLinked(userId, network, await c.start(flowId)));
   },
@@ -491,18 +556,37 @@ function loginRef(userId, network, raw) {
   const k = crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:login-refs').digest();
   return 'l' + crypto.createHmac('sha256', k).update(`${userId}\0${network}\0${raw}`).digest('base64url').slice(0, 22);
 }
-/** A login step as a plugin gets it: a completed one names the login by its reference. */
+/**
+ * stage 7a: our own words for a login step instead of the bridge's (English, and the last one names the person's number
+ * and account id — mautrix-signal login.go "Successfully logged in as <number> / <ACI>", mautrix-whatsapp the number).
+ * Per network and step type; a plugin shows its own texts anyway, these are the neutral fallback.
+ */
+const STEP_TEXTS = {
+  whatsapp: { display_and_wait: 'Scan the code in WhatsApp › Linked devices, or enter the pairing code there.', user_input: 'Enter your WhatsApp phone number with the country code.', complete: 'WhatsApp is linked.' },
+  signal: { display_and_wait: 'Scan the code in Signal › Settings › Linked devices › Link new device.', user_input: '', complete: 'Signal is linked.' },
+};
+/** A login step as a plugin gets it: a completed one names the login by its reference; the texts are ours. */
 function stepOut(userId, network, r) {
-  if (r && r.step && r.step.type === 'complete' && r.step.loginId) return { ...r, step: { ...r.step, loginId: loginRef(userId, network, r.step.loginId) } };
-  return r;
+  if (!r || !r.step) return r;
+  const step = { ...r.step, instructions: (STEP_TEXTS[network] && STEP_TEXTS[network][r.step.type]) || '' };
+  // the fields keep their ids and types; their names and descriptions are the bridge's words — not passed on
+  if (Array.isArray(step.fields)) step.fields = step.fields.map((f) => ({ ...f, name: '', description: '' }));
+  if (step.type === 'complete') step.loginId = step.loginId ? loginRef(userId, network, step.loginId) : null;
+  return { ...r, step };
 }
 
 async function logins(userId, network) {
   const w = await clientFor(userId, network).whoami();
   noteLogins(network, w.logins);
   noteOwn(userId, network, w.logins);
-  // never the number of the login (phone)
-  return w.logins.map(({ phone, ...l }) => ({ network, ...l, id: loginRef(userId, network, l.id) }));
+  // never the number of the login (phone); stage 7a: never a fixed account id as its name either (Signal names a
+  // login without a number by its ACI) — the name is the person's own number at the service, or nothing
+  return w.logins.map(({ phone, ...l }) => ({ network, ...l, name: loginName(network, l.name), id: loginRef(userId, network, l.id) }));
+}
+function loginName(network, name) {
+  const n = typeof name === 'string' ? name : '';
+  if (NET[network] && NET[network].accountIds) return numberOf(n) || '';
+  return n;
 }
 
 // ─── The own number (the user profile, docs/feature-user-profile.md) ─
@@ -512,12 +596,23 @@ function loginNumber(l) {
   if (!l) return null;
   return numberOf(l.phone || '') || (/^[1-9][0-9]{6,14}$/.test(String(l.id || '')) ? numberOf('+' + l.id) : null) || numberOf(String(l.name || ''));
 }
-/** After every whoami: the numbers of the person's own logins go to the profile (keyed hashes only — services/profile). */
+/**
+ * After every whoami: the numbers of the person's own logins go to the profile (keyed hashes only — services/profile);
+ * stage 7a: on a network with fixed account ids (Signal's ACI) the ids too (noteOwnAccounts, keyed hashes as well).
+ */
 function noteOwn(userId, network, list) {
   try {
-    const nums = (list || []).filter((l) => l && l.state !== 'logged_out').map(loginNumber).filter(Boolean);
-    require('../profile').noteOwnNumbers(userId, network, nums);
+    const live = (list || []).filter((l) => l && l.state !== 'logged_out');
+    const profile = require('../profile');
+    profile.noteOwnNumbers(userId, network, live.map(loginNumber).filter(Boolean));
+    if (NET[network] && NET[network].accountIds) profile.noteOwnAccounts(userId, network, live.map((l) => accountOf(network, l.id)).filter(Boolean));
   } catch (err) { logger.debug({ err: err.message }, 'bridges: own number not noted'); }
+}
+/** stage 7a: the fixed account id of a login or a contact at a service (Signal: the ACI, lower case), else null. */
+function accountOf(network, id) {
+  if (!NET[network] || !NET[network].accountIds) return null;
+  const v = String(id || '');
+  return UUID_RE.test(v) && !/^(PNI:|pni_)/i.test(v) ? v.toLowerCase() : null;
 }
 /**
  * refreshOwnNumbers(userId, network) — before the profile is shown: ask the bridge (kept 10 minutes, see selfIds) when
@@ -573,11 +668,17 @@ function historyPeople() {
   try { m = JSON.parse(settings.get('bridges.history_people', '{}')); } catch { m = null; }
   return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
 }
-/** The days of history a person wants: 0 none, -1 everything, n the last n days — 0 while an administrator forbids it. */
-function historyOf(userId) {
+/**
+ * The days of history a person wants: 0 none, -1 everything, n the last n days — 0 while an administrator forbids it.
+ * stage 7a: a network may bring less (Signal: at most 30 days of its transfer archive, also for "everything").
+ */
+function historyOf(userId, network = null) {
   if (!getConfig().history) return 0;
   const v = historyPeople()[String(userId)];
-  return HISTORY_OPTIONS.includes(v) ? v : HISTORY_DEFAULT;
+  const days = HISTORY_OPTIONS.includes(v) ? v : HISTORY_DEFAULT;
+  const cap = network && NET[network] ? NET[network].historyDays : null;
+  if (cap && days !== 0 && (days < 0 || days > cap)) return cap;
+  return days;
 }
 
 const history = {
@@ -1165,6 +1266,9 @@ async function matchAccounts(userId, network) {
     if (!ev || !x.mxid) continue;
     const contactId = ev.contactRef(network, x.mxid);
     for (const number of x.numbers) pairs.push({ contactId, number });
+    // stage 7a: the contact's fixed account id (Signal: the ACI — the bridge's id, or the ghost's localpart)
+    const account = accountOf(network, x.id) || accountOf(network, ghostLocal(network, x.mxid));
+    if (account) pairs.push({ contactId, account });
   }
   return { matches: require('../profile').matchContacts(userId, network, pairs) };
 }
@@ -1176,16 +1280,18 @@ async function matchAccounts(userId, network) {
  * the profile service keeps the answer with its time and writes the activity log. Only `whatsapp` (the one network whose
  * own login the server compares). Inside a request (set: a changing request) of that person — hostApi checks that.
  */
+const RECOGNITION_KEY = { whatsapp: 'byWhatsapp', signal: 'bySignal', telegram: 'byTelegram' };
 const recognition = {
   get: (userId, network = 'whatsapp') => {
-    if (network !== 'whatsapp') throw new BridgesError('ERR_INVALID', 'recognition: whatsapp only');
+    if (!RECOGNITION_NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', `recognition: one of ${RECOGNITION_NETWORKS.join(', ')}`);
     const r = require('../profile').ownView(userId).recognition;
-    return { asked: !!r.whatsappAnswered, allowed: !!r.byWhatsapp, linked: !!r.whatsappLinked || linkedAt(userId, network) > 0 };
+    const n = (r.networks && r.networks[network]) || {};
+    return { asked: !!n.answered, allowed: !!n.allowed, linked: !!n.linked || linkedAt(userId, network) > 0 };
   },
   set: (userId, allowed, ctx = {}, network = 'whatsapp') => {
-    if (network !== 'whatsapp') throw new BridgesError('ERR_INVALID', 'recognition: whatsapp only');
+    if (!RECOGNITION_NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', `recognition: one of ${RECOGNITION_NETWORKS.join(', ')}`);
     if (typeof allowed !== 'boolean') throw new BridgesError('ERR_INVALID', 'allowed: true or false');
-    require('../profile').update(userId, { recognition: { byWhatsapp: allowed } }, ctx);
+    require('../profile').update(userId, { recognition: { [RECOGNITION_KEY[network]]: allowed } }, ctx);
     return recognition.get(userId, network);
   },
 };
@@ -1233,8 +1339,14 @@ function _reset() {
   Object.assign(cleanup, { deleted: 0, lastAt: null, error: null, running: false });
 }
 
+/** The localpart of a ghost of this network without its prefix (@signal_<id>:gc.internal → <id>), else null. */
+function ghostLocal(network, mxid) {
+  const m = new RegExp(`^@${network}_([A-Za-z0-9._=/+-]{1,200}):`).exec(String(mxid || ''));
+  return m ? m[1] : null;
+}
+
 module.exports = {
-  NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
+  NETWORKS, NET, RECOGNITION_NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
   start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, recognition, refreshOwnNumbers, _openContactRef: openContactRef,

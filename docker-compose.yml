@@ -217,6 +217,165 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # Signal (stage 7a): a linked device of the person's own Signal, like Signal
+  # Desktop (QR code only). Same rules as WhatsApp; its own relay and socket.
+  bruecken-signal:
+    image: dock.mau.dev/mautrix/signal:v0.2610.0@sha256:39afa721aa69472b2e91c75bd7d81a739e47f7e480fc0ff5ac8247af28eb2d0a
+    container_name: bruecken-signal
+    profiles: ["bruecken"]
+    # The program itself, not the image's docker-run.sh (that one chowns /data
+    # and edits the configuration): GateControl's configuration, read-only,
+    # never rewritten (--no-update).
+    command: ["/usr/bin/mautrix-signal", "--config", "/etc/bruecken/config.yaml", "--no-update"]
+    working_dir: /data
+    depends_on:
+      - bruecken-hs
+      - bruecken-signal-relay
+    networks:
+      - bruecken-aussen
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/signal/config:/etc/bruecken:ro
+      - ${GC_BRIDGES_DIR:-./data/bridges}/signal/data:/data
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/run:/run/bruecken-hs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 384m
+    stop_grace_period: 1m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/bruecken/signal.sock"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bruecken-signal-relay:
+    image: alpine/socat:1.8.1.3@sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba
+    container_name: bruecken-signal-relay
+    profiles: ["bruecken"]
+    command: ["TCP-LISTEN:29320,fork,reuseaddr", "UNIX-CONNECT:/run/bruecken/signal.sock"]
+    networks:
+      - bruecken-intern
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: "0.25"
+    mem_limit: 32m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "socat", "-u", "OPEN:/dev/null", "TCP:127.0.0.1:29320,connect-timeout=3"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Telegram (stage 7b, in this file already so that it is replaced only once):
+  # GateControl starts it only after an administrator registered GateControl
+  # with Telegram (application id); until then it never runs.
+  bruecken-telegram:
+    image: dock.mau.dev/mautrix/telegram:v0.2610.0@sha256:ed3f3b39289fae425a875311d8875729271c24f88ba03209bd1bfbaf31e6c78f
+    container_name: bruecken-telegram
+    profiles: ["bruecken"]
+    # The program itself, not the image's docker-run.sh (that one chowns /data
+    # and edits the configuration): GateControl's configuration, read-only,
+    # never rewritten (--no-update).
+    command: ["/usr/bin/mautrix-telegram", "--config", "/etc/bruecken/config.yaml", "--no-update"]
+    working_dir: /data
+    depends_on:
+      - bruecken-hs
+      - bruecken-telegram-relay
+    networks:
+      - bruecken-aussen
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/telegram/config:/etc/bruecken:ro
+      - ${GC_BRIDGES_DIR:-./data/bridges}/telegram/data:/data
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/run:/run/bruecken-hs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 512m
+    stop_grace_period: 1m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/bruecken/telegram.sock"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bruecken-telegram-relay:
+    image: alpine/socat:1.8.1.3@sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba
+    container_name: bruecken-telegram-relay
+    profiles: ["bruecken"]
+    command: ["TCP-LISTEN:29321,fork,reuseaddr", "UNIX-CONNECT:/run/bruecken/telegram.sock"]
+    networks:
+      - bruecken-intern
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: "0.25"
+    mem_limit: 32m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "socat", "-u", "OPEN:/dev/null", "TCP:127.0.0.1:29321,connect-timeout=3"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   # The same for GateControl itself: the homeserver pushes the events of the
   # people's rooms to the server, which listens on a Unix socket in ./data
   # (run/core.sock). Without this container no message of a bridged chat

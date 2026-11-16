@@ -325,7 +325,7 @@ function makeEdge() {
 }
 
 // gc.bridges (permissions.bridges, docs/plugins.md "Messenger bridges"): the bridges to outside messengers that run
-// next to the server (services/bridges). The plugin names a network ('whatsapp') and a person by user id — never an
+// next to the server (services/bridges). The plugin names a network ('whatsapp', 'signal') and a person by user id — never an
 // address, a token or a Matrix id. Everything about a person's link only while that person's request is in flight.
 // a file streamed from / to the homeserver and the virus scan (hostApi.callTimeout: 200 s)
 const BRIDGE_FILE_MS = 210000;
@@ -343,11 +343,13 @@ function makeBridges() {
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup;
      *  6: contacts, matchNumbers, createDmByRef; 7: channels — chat.channel / chat.readOnly, sender.channel, marks and
-     *  preview of a text; 8: matchAccounts (the user profile); 9: recognition — the consent to be recognised by the own WhatsApp) */
-    version: 9,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
+     *  preview of a text; 8: matchAccounts (the user profile); 9: recognition — the consent to be recognised by the own WhatsApp;
+     *  10: Signal — the network 'signal', networks[].flows / history / needs, status().stickers, configure({ animatedStickers }),
+     *  chat.timer, message.action, message.viewOnce, recognition per network, matchAccounts via own_<network>) */
+    version: 10,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated } } */
     status: () => hostCall('bridges.status', {}),
-    /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
+    /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean }) → status() — inside a changing request of an administrator */
     configure: (patch) => hostCall('bridges.configure', { patch }),
     login,
     /** logins(userId, network) → [{ network, id (a reference — HMAC per person; never the bridge’s id, which is the number), name, state: connected | connecting | logged_out | error | unknown, since, error }] */
@@ -412,11 +414,11 @@ function makeBridges() {
     /** createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } } — the direct chat with a contact of contacts() / matchNumbers(); inside a changing request of that person */
     createDmByRef: (userId, network, ref) => hostCall('bridges.createDmByRef', { userId, network, ref }),
     // ── since version 8: accounts among the contacts (docs/plugins.md "Messenger bridges", "Accounts") ──
-    /** matchAccounts(userId, network) → { matches: [{ contactId, userId, strength: 'strong' | 'medium', via: 'own_whatsapp' | 'profile_phone' }] } — inside a request of that person */
+    /** matchAccounts(userId, network) → { matches: [{ contactId, userId, strength: 'strong' | 'medium', via: 'own_whatsapp' | 'own_signal' | 'profile_phone' }] } — inside a request of that person */
     matchAccounts: (userId, network) => hostCall('bridges.matchAccounts', { userId, network }),
     // ── since version 9: the consent to be recognised by the own WhatsApp (docs/plugins.md "Messenger bridges", "Accounts") ──
     recognition: Object.freeze({
-      /** get(userId, network = 'whatsapp') → { asked, allowed, linked } — inside a request of that person */
+      /** get(userId, network = 'whatsapp' | 'signal' | 'telegram') → { asked, allowed, linked } — inside a request of that person */
       get: (userId, network) => hostCall('bridges.recognition.get', { userId, network: network == null ? 'whatsapp' : network }),
       /** set(userId, allowed, network = 'whatsapp') → get() — inside a changing request of that person */
       set: (userId, allowed, network) => hostCall('bridges.recognition.set', { userId, allowed, network: network == null ? 'whatsapp' : network }),

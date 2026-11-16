@@ -77,9 +77,16 @@
 # volume up at the next update (ensure_guacd's `up -d guacd` recreates guacd
 # when the compose file changed); until then GateControl records SSH only
 # and says so.
+# Marker 10 (stage 7a of the bridges, Signal): bridge_repo knows Signal and
+# Telegram (and their relays) — a pin for them is taken only from
+# dock.mau.dev/mautrix/signal / …/telegram; probe_redact blanks Signal account
+# ids (UUIDs), group ids and drops lines with sgnl://linkdevice, the transfer
+# archive, tg://login tokens and t.me links. bruecken-signal and
+# bruecken-telegram start only when docker-compose.yml has them (the new
+# release file) and the server asks for them.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 9
+# gc-update-sh: 10
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -367,6 +374,7 @@ BRIDGES_IMAGES="$COMPOSE_DIR/.bruecken-images.yml"
 BRIDGES_BACKUP="$DATA_DIR/.bridges-backup.json"
 BRIDGES_RESTORE="$DATA_DIR/.bridges-restore.json"
 BRIDGES_BACKUP_DONE="$COMPOSE_DIR/.bruecken-backup-done"
+BRIDGES_MISSING=""   # marker 10: wanted bridges the docker-compose.yml lacks (sync_bridges)
 # docker-compose.yml mounts the bridges' folders from here (default ./data/bridges):
 # the data directory may be somewhere else (see above).
 export GC_BRIDGES_DIR="$DATA_DIR/bridges"
@@ -375,6 +383,18 @@ bridges_wanted() { # the wanted bridges, one per line (strict charset: the names
   [ -f "$CONFIG_FILE" ] || return 0
   tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges"[[:space:]]*:[[:space:]]*"\([a-z,]*\)".*/\1/p' \
     | tr ',' '\n' | grep -E '^[a-z]{2,16}$' | sort -u || true
+}
+# marker 10: a wanted bridge the docker-compose.yml does not know yet (Signal, Telegram in an older file) is left out
+# — the others run; the state file says "<name>":{"present":false} and the server shows "replace docker-compose.yml"
+bridges_wanted_split() { # $1=present|missing → the wanted bridges the compose file has (or lacks), one per line
+  local n svc want
+  want="$(bridges_wanted)"
+  [ -n "$want" ] || return 0
+  svc="$(bridges_services)"
+  for n in $want; do
+    if printf '%s\n' "$svc" | grep -qx "bruecken-$n"; then [ "$1" = present ] && echo "$n"; else [ "$1" = missing ] && echo "$n"; fi
+  done
+  return 0
 }
 bridges_rev() { # the revision of the containers' configuration the server wrote ("" = unknown)
   [ -f "$CONFIG_FILE" ] || return 0
@@ -388,7 +408,9 @@ bridge_repo() { # $1=name → the only repository its image may come from
   case "$1" in
     hs) echo 'ghcr.io/matrix-construct/tuwunel' ;;
     whatsapp) echo 'dock.mau.dev/mautrix/whatsapp' ;;
-    core-relay|whatsapp-relay) echo 'alpine/socat' ;;
+    signal) echo 'dock.mau.dev/mautrix/signal' ;;
+    telegram) echo 'dock.mau.dev/mautrix/telegram' ;;
+    core-relay|whatsapp-relay|signal-relay|telegram-relay) echo 'alpine/socat' ;;
     *) return 1 ;;
   esac
 }
@@ -446,6 +468,7 @@ bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or
   shift 2
   body="\"hs\":$(bridge_json bruecken-hs)"
   for n in "$@"; do body="$body,\"$n\":$(bridge_json "bruecken-$n")"; done
+  for n in $BRIDGES_MISSING; do body="$body,\"$n\":{\"present\":false,\"running\":false}"; done
   # the server's own relay: missing in an older docker-compose.yml
   if bridges_services | grep -qx 'bruecken-core-relay'; then
     body="$body,\"core-relay\":{\"present\":true,\"running\":$(bridge_running bruecken-core-relay && echo true || echo false)}"
@@ -549,7 +572,13 @@ bridges_restore_maybe() { # $@=wanted bridges — put a snapshot back the server
 sync_bridges() {
   # Every run: bring the bridges in line with the switch in the messenger's settings.
   local want svc names n cfg up=1 stamp old force=""
-  want="$(bridges_wanted)"
+  want="$(bridges_wanted_split present)"
+  BRIDGES_MISSING="$(bridges_wanted_split missing | tr '\n' ' ')"
+  if [ -n "$BRIDGES_MISSING" ]; then log "bridges: docker-compose.yml has no service for:$(printf ' %s' $BRIDGES_MISSING) — replace it with the release file"; fi
+  if [ -z "$want" ] && [ -n "$BRIDGES_MISSING" ]; then
+    # shellcheck disable=SC2086
+    bridges_state failed compose_missing; return 0
+  fi
   if [ -n "$want" ]; then
     svc="$(bridges_services)"
     names="bruecken-hs"
@@ -629,16 +658,19 @@ sync_bridges() {
 # $DATA_DIR/.bridges-probe.json (the messenger's settings show the numbers; the log lines are only in the
 # file) and a summary on the terminal. Reads and measures only — it changes no setting.
 probe_redact() { # stdin → the same lines, without what belongs to nobody but the person
-  # Whole lines go: linking (QR and pairing data, wa.me links), calls of the provisioning API, raw events and
-  # request bodies. In the rest: Matrix addresses, WhatsApp ids (JID/LID), id fields, keys and tokens (Base64 and
-  # the like, 20 characters and more) and runs of digits are blanked.
-  grep -Eiv 'wa\.me|linked_devices|/_matrix/provision|provisioning|event_data|pairing|(^|[^a-z])qr([^a-z]|$)|req(uest)?_?body|"body"' \
+  # Whole lines go: linking (QR and pairing data, wa.me links; Signal's sgnl://linkdevice and its transfer archive;
+  # Telegram's tg://login tokens and t.me links), calls of the provisioning API, raw events and request bodies. In the
+  # rest: Matrix addresses, WhatsApp ids (JID/LID), Signal account ids (UUIDs, also PNI:…), id fields, keys and tokens
+  # (Base64 and the like, 20 characters and more — Signal's group ids too) and runs of digits (Telegram's numeric ids,
+  # phone numbers) are blanked.
+  grep -Eiv 'wa\.me|linked_devices|/_matrix/provision|provisioning|event_data|pairing|(^|[^a-z])qr([^a-z]|$)|req(uest)?_?body|"body"|sgnl:|linkdevice|link_device|transfer.?archive|ephemeral.?backup|tg:|t\.me/|telegram\.me/|login.?token|2fa|password' \
     | sed -E \
+      -e 's/(PNI:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[uuid]/g' \
       -e 's/@[A-Za-z0-9._=\/+-]+:[A-Za-z0-9.-]+/[@]/g' \
       -e 's/[A-Za-z0-9._:+-]+@(s\.whatsapp\.net|lid|g\.us|c\.us|broadcast|newsletter|hosted|hosted\.lid)/[jid]/g' \
-      -e 's/(user_mxid|user_id|user_login_id|login_id|portal_id|portal_receiver|sender_id|chat_id|room_id|event_id|message_id|ghost_id|jid|lid|phone|identifier)(["=: ]+)[^ ,"}]+/\1\2[...]/g' \
+      -e 's/(user_mxid|user_id|user_login_id|login_id|portal_id|portal_receiver|sender_id|chat_id|room_id|event_id|message_id|ghost_id|jid|lid|phone|identifier|aci|pni|service_id|recipient_id|group_id|e164|number|username|peer_id|channel_id|access_hash)(["=: ]+)[^ ,"}]+/\1\2[...]/g' \
       -e 's/[!$][A-Za-z0-9._=\/+-]{8,}(:[A-Za-z0-9.-]+)?/[id]/g' \
-      -e 's/[A-Za-z0-9+=_-]{20,}/[...]/g' \
+      -e 's/[A-Za-z0-9+\/=_-]{20,}/[...]/g' \
       -e 's/\+[0-9][0-9 ()\/-]{5,}[0-9]/[#]/g' \
       -e 's/([0-9]{2,} ){2,}[0-9]{2,}/[#]/g' \
       -e 's/[0-9]{5,}/[#]/g' || true
@@ -663,8 +695,8 @@ bridges_probe() {
   local window="${1:-60}" want names="" svc n c i result="ok" st er body="" socks="" logs="" disk=""
   case "$window" in ''|*[!0-9]*) window=60 ;; esac
   if [ "$window" -lt 10 ] || [ "$window" -gt 900 ]; then window=60; fi
-  want="$(bridges_wanted)"
-  if [ -z "$want" ]; then
+  want="$(bridges_wanted_split present)"
+  if [ -z "$(bridges_wanted)" ]; then
     result="not_wanted"
     echo "The bridges are not switched on (Messenger › Übersicht › Brücken; the server needs GC_BRIDGES_PREVIEW=1)."
   else
