@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.285.0] — 2026-11-16
+
+### Features
+- Fernzugriff Stufe 3 – SSH-Terminal mit tmux und Aufzeichnung (gc.remote Version 3) (#501)
+
+---
+
 ## [1.284.0] — 2026-11-16
 
 ### Features
