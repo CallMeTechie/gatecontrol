@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.296.0] — 2026-11-17
+
+### Features
+- Standort über WhatsApp und Telegram senden (gc.bridges Version 14) (#515)
+
+---
+
 ## [1.295.1] — 2026-11-17
 
 ### Fixes
