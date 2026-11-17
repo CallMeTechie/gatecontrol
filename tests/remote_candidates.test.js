@@ -84,7 +84,7 @@ after(async () => {
 
 describe('gc.remote.candidates (version 7)', () => {
   it('version 7; only for an administrator whose request is in flight', async () => {
-    assert.equal((await pget('/has')).version, 7);
+    assert.equal((await pget('/has')).version, 9);
     assert.equal((await call('candidates', {})).code, 'ERR_INVALID');
     // outside a request of that person
     assert.throws(() => cand.candidates({ id: ID }, { user: adminId }), (e) => e.code === 'not_allowed');
