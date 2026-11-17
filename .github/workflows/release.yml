@@ -125,30 +125,33 @@ jobs:
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
           echo "Version: $CURRENT → $NEW ($BUMP)"
 
-      - name: Check if tag already exists
-        id: check_tag
+      - name: Check release state
+        id: state
         env:
           TAG: ${{ steps.bump.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Already released: a version bump landed after this commit (a re-run,
-          # or a later merge released it together with its own change).
-          if git log --format=%s "${GITHUB_SHA}..HEAD" | grep -q '^chore: bump version'; then
-            echo "Commit already released by a later version bump"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          elif git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          # release: normal run. resume: a version bump after this commit and
+          # its tag exist but no GitHub release (a re-run after a failure behind
+          # the tag push) -> build the image and the release for that tag.
+          # skip: already released. Logic in scripts/release-state.js
+          # (tests/release_state.test.js).
+          node scripts/release-state.js "$TAG"
+
+      - name: Check out the existing tag (resume)
+        if: steps.state.outputs.mode == 'resume'
+        env:
+          TAG: ${{ steps.state.outputs.tag }}
+        run: git checkout --detach "refs/tags/$TAG"
 
       - name: Update version in package.json
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode == 'release'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new }}
         run: npm version "$NEW_VERSION" --no-git-tag-version
 
       - name: Update CHANGELOG.md
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode == 'release'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
@@ -162,7 +165,7 @@ jobs:
             "$NEW_VERSION" "$(date +%Y-%m-%d)" "$(echo "$COMMIT_MSG" | head -1)"
 
       - name: Commit version bump
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode == 'release'
         env:
           TAG: ${{ steps.bump.outputs.tag }}
           NEW_VERSION: ${{ steps.bump.outputs.new }}
@@ -189,18 +192,18 @@ jobs:
 
       # ─── GHCR: Build & Push ───────────────────────────
       - name: Set image name
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         env:
           # no build record (*.dockerbuild) as an Actions artifact: it only
           # fills the Actions storage, the job summary stays
@@ -212,28 +215,31 @@ jobs:
           # not a build arg: it stays out of the image and the build metadata.
           secrets: |
             npm_token=${{ secrets.GH_PACKAGES_TOKEN }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump.outputs.new }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # :latest only when no newer version exists (a resumed older tag must not roll it back)
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.state.outputs.version }}
+            ${{ steps.state.outputs.latest == 'true' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
           # update.sh reads this label to name a rolled-back release in the dashboard.
-          labels: org.opencontainers.image.version=${{ steps.bump.outputs.new }}
+          labels: org.opencontainers.image.version=${{ steps.state.outputs.version }}
 
       # ─── Release: Offline-Paket ───────────────────────
       - name: Build image for offline package
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         env:
           DOCKER_BUILDKIT: '1'
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: docker build --secret id=npm_token,env=NODE_AUTH_TOKEN -t gatecontrol:latest .
 
       - name: Export image
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         run: docker save gatecontrol:latest | gzip > gatecontrol-image.tar.gz
 
       - name: Create GitHub Release
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.state.outputs.mode != 'skip'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
-          tag_name: ${{ steps.bump.outputs.tag }}
-          name: GateControl ${{ steps.bump.outputs.tag }}
+          tag_name: ${{ steps.state.outputs.tag }}
+          name: GateControl ${{ steps.state.outputs.tag }}
           generate_release_notes: true
           files: |
             gatecontrol-image.tar.gz
