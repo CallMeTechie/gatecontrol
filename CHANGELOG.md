@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.297.1] — 2026-11-17
+
+### Fixes
+- Image und Release nach Fehlschlag hinter dem Tag-Push nachholen (#518)
+
+---
+
 ## [1.297.0] — 2026-11-17
 
 ### Features
