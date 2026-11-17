@@ -195,6 +195,20 @@ gateways with their networks and the routes. Nothing new on the gateway and in t
 * **`wake({ watch: 'nw-<id>' }, { user })`** — wakes a device of the network watch without the plugin ever seeing its
   MAC (only for an administrator in a request).
 
+## Schlüssel, tmux beenden, Linux-Gerät mit Agent (gc.remote version 9, the plugin „Fernzugriff“ 1.8)
+
+* **„Schlüssel automatisch einrichten“** — `hostKeys.scan` (the fingerprint without a login), `installKey` (one login
+  with the administrator's password, GateControl's key line into `authorized_keys` of the account or of root through
+  sudo, a test with the key, the key into the vault and the stored password out), `testKey` (after copying the line by
+  hand) and `removeKey` (the own line out again, with the key). Details in plugins.md "GateControl's key onto a device".
+* **tmux** — `tmux.list({ windows: true })` gives the session ids and their windows (index, name, active, panes, the
+  running command); `tmux.kill` ends a session or closes a window by its id after listing anew (`tmux_gone`,
+  `tmux_changed`). The plugin decides who may: everyone who may use the device, administrators always.
+* **Device codes for the Linux agent** — `enrollment.create` makes a normal device code (`services/clientEnrollment.js`)
+  for an administrator in a request, for himself or another person, followed by a ticket (`client_enrollment_codes.ticket`,
+  migration 157): `status` tells waiting / redeemed (peer, VPN address, handshake, token device, platform) / expired /
+  revoked, `revoke` kills a waiting code („Neuer Code“).
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime
@@ -224,6 +238,11 @@ is not affected.
   person; no key or password ever reaches a log, a recording's metadata or an app.
 * Recordings only with the hint; playback only through a ticket for the person
   the plugin names (administrators and the owner), every viewing logged.
+* Keys (version 9): the host key is checked or confirmed before a password is sent; the password (and sudo's) lives
+  in memory for the one call — never in the vault, a log, an error, an answer or a command line; script and key line go
+  over stdin; the line is restricted (`from=`, no forwarding) and marked `gatecontrol:<target id>`, other lines stay;
+  at most 5 attempts per target in 10 minutes. tmux is ended by id only (`$n`, `@n`), after checking it is still the
+  same session or window.
 * Candidates (version 7): only for an administrator in a request, never a MAC, an owner or presence of the
   network watch; a scan is a handful of ports of one target, never a sweep.
 * Screen (stage 5): the sending side of a ticket only for the phone's own app

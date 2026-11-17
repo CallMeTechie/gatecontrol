@@ -40,6 +40,8 @@ const logger = require('../utils/logger');
 const { validatePeerName } = require('../utils/validate');
 
 const CODE_TTL_MS = 10 * 60 * 1000;
+// a code issued for a ticket of a plugin (gc.remote.enrollment, services/remote/enrollment.js) stays readable this long
+const TICKET_KEEP_MS = 24 * 60 * 60 * 1000;
 const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
 
 // Scopes the app can use. Admin scopes (peers, routes, settings, …) and
@@ -78,6 +80,11 @@ function normalizeCode(raw) {
   return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}`;
 }
 
+/** Expired codes go; a code of a plugin's ticket stays readable for TICKET_KEEP_MS (its status: redeemed, expired, revoked). */
+function purgeExpired(db, now = Date.now()) {
+  db.prepare('DELETE FROM client_enrollment_codes WHERE expires_at <= ? AND (ticket IS NULL OR created_at <= ?)').run(now, now - TICKET_KEEP_MS);
+}
+
 function _error(code, message) {
   const err = new Error(message || code);
   err.code = code;
@@ -112,10 +119,12 @@ function _bindingActive(tokenRow) {
  *   scopes   optional subset of ENROLLABLE_SCOPES (default DEFAULT_SCOPES)
  *   machineBinding  bind the token to the device fingerprint on redeem
  *                   (effective when machine binding is licensed + enabled)
+ *   ticket   internal (gc.remote.enrollment): { id, pluginId } — the plugin follows the code by it;
+ *            logSource then names the plugin in the activity log
  * Returns { code, expiresAt, scopes, peerId, userId } — cleartext code once.
  */
 function createCode({ peerId = null, userId, scopes, machineBinding = false,
-  name = null, expiresAt = null, splitTunnelOverride = null } = {}) {
+  name = null, expiresAt = null, splitTunnelOverride = null, ticket = null, logSource = 'admin' } = {}) {
   const db = getDb();
   let peer = null;
   if (peerId != null) {
@@ -144,7 +153,7 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false,
 
   const resolvedScopes = resolveScopes(scopes, ownerId);
 
-  db.prepare('DELETE FROM client_enrollment_codes WHERE expires_at <= ?').run(Date.now());
+  purgeExpired(db);
   if (peer) {
     // Single active code per peer — regenerate revokes the previous one.
     db.prepare('DELETE FROM client_enrollment_codes WHERE peer_id = ? AND consumed_at IS NULL').run(peer.id);
@@ -159,11 +168,14 @@ function createCode({ peerId = null, userId, scopes, machineBinding = false,
   `).run(_hashCode(code), peer ? peer.id : null, ownerId, JSON.stringify(resolvedScopes),
     machineBinding ? 1 : 0, codeExpiresAt, tokenName, expiresAt || null,
     splitTunnelOverride ? JSON.stringify(splitTunnelOverride) : null);
+  if (ticket) {
+    db.prepare('UPDATE client_enrollment_codes SET ticket = ?, ticket_plugin = ? WHERE code_hash = ?').run(ticket.id, ticket.pluginId, _hashCode(code));
+  }
 
   try {
     activity.log('client_enrollment_created',
       peer ? `App setup code created for peer "${peer.name}"` : 'App setup code created for a new device',
-      { source: 'admin', severity: 'info', details: { peerId: peer ? peer.id : null, userId: ownerId, scopes: resolvedScopes, expiresAt: codeExpiresAt } });
+      { source: logSource, severity: 'info', details: { peerId: peer ? peer.id : null, userId: ownerId, scopes: resolvedScopes, expiresAt: codeExpiresAt, ...(ticket ? { plugin: ticket.pluginId } : {}) } });
   } catch (err) { logger.warn({ err: err.message }, 'activity log write failed (client_enrollment_created)'); }
 
   return { code, expiresAt: codeExpiresAt, scopes: resolvedScopes, peerId: peer ? peer.id : null, userId: ownerId };
@@ -194,7 +206,7 @@ function createTokenCode({ name, scopes, userId = null, peerId = null, expiresAt
     if (isNaN(d.getTime()) || d <= new Date()) throw _error('expiry_in_past');
   }
 
-  db.prepare('DELETE FROM client_enrollment_codes WHERE expires_at <= ?').run(Date.now());
+  purgeExpired(db);
   const code = _generateCode();
   const codeExpiresAt = Date.now() + CODE_TTL_MS;
   db.prepare(`
@@ -240,6 +252,12 @@ function _uniquePeerName(hostname) {
     name = `${baseName.substring(0, 63 - tail.length)}${tail}`;
   }
   return name;
+}
+
+/** The platform a client sent, as kept on the code: lower case, letters, digits, . _ - only, ≤ 20. */
+function _platformOf(platform) {
+  const p = String(platform || '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 20);
+  return p || null;
 }
 
 function _isAndroid(platform) {
@@ -325,7 +343,8 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
         splitTunnelOverride: row.split_tunnel_override || null,
       }, sourceIp);
       createdTokenId = created.token.id;
-      db.prepare('UPDATE client_enrollment_codes SET token_id = ? WHERE code_hash = ?').run(created.token.id, codeHash);
+      db.prepare('UPDATE client_enrollment_codes SET token_id = ?, redeemed_peer_id = ?, redeemed_platform = ? WHERE code_hash = ?')
+        .run(created.token.id, boundPeer ? boundPeer.id : null, _platformOf(platform), codeHash);
       if (bindingWanted) tokens.bindMachineFingerprint(created.token.id, fp);
       const tokenConfig = boundPeer ? await peers.getClientConfig(boundPeer.id) : null;
 
@@ -376,7 +395,8 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     }, sourceIp);
     createdTokenId = created.token.id;
     db.prepare('UPDATE api_tokens SET enrolled = 1 WHERE id = ?').run(created.token.id);
-    db.prepare('UPDATE client_enrollment_codes SET token_id = ? WHERE code_hash = ?').run(created.token.id, codeHash);
+    db.prepare('UPDATE client_enrollment_codes SET token_id = ?, redeemed_peer_id = ?, redeemed_platform = ? WHERE code_hash = ?')
+      .run(created.token.id, peer.id, _platformOf(platform), codeHash);
 
     if (bindingWanted) tokens.bindMachineFingerprint(created.token.id, fp);
 
@@ -420,7 +440,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     if (createdTokenId != null) {
       try {
         db.prepare('DELETE FROM api_tokens WHERE id = ?').run(createdTokenId);
-        db.prepare('UPDATE client_enrollment_codes SET token_id = NULL WHERE code_hash = ?').run(codeHash);
+        db.prepare('UPDATE client_enrollment_codes SET token_id = NULL, redeemed_peer_id = NULL, redeemed_platform = NULL WHERE code_hash = ?').run(codeHash);
       } catch (cleanupErr) { logger.warn({ err: cleanupErr.message, tokenId: createdTokenId }, 'enrollment rollback: removing token failed'); }
     }
     if (createdPeerId != null) {
@@ -438,8 +458,11 @@ module.exports = {
   redeemCode,
   normalizeCode,
   resolveScopes,
+  purgeExpired,
+  hashCode: _hashCode,
   defaultScopesFor,
   ENROLLABLE_SCOPES,
   DEFAULT_SCOPES,
   CODE_TTL_MS,
+  TICKET_KEEP_MS,
 };

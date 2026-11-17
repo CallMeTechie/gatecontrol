@@ -4309,6 +4309,25 @@ const migrations = [
       UPDATE bridge_rooms SET channel = NULL WHERE network = 'whatsapp' AND kind = 'direct';`,
     detect: (db) => hasColumn(db, 'bridge_rooms', 'status'),
   },
+  {
+    version: 157,
+    name: 'client_enrollment_tickets',
+    // gc.remote version 9 (services/remote/enrollment.js): a plugin (the "Fernzugriff" of an administrator) issues a
+    // device code for the Linux agent and follows it by a ticket — waiting, redeemed, expired, revoked:
+    //   ticket            'ce_' + 32 hex, the plugin's handle of the code (NULL for codes of the admin UI and the app)
+    //   ticket_plugin     the plugin that issued it — only it reads and revokes the ticket
+    //   revoked_at        ms; the code is dead (enrollment.revoke: „Neuer Code“, „Code zurückziehen“)
+    //   redeemed_peer_id  the peer the redeem took or created (peer_id stays the one named at issue, NULL = new)
+    //   redeemed_platform the platform the redeeming client sent
+    sql: `
+      ALTER TABLE client_enrollment_codes ADD COLUMN ticket TEXT;
+      ALTER TABLE client_enrollment_codes ADD COLUMN ticket_plugin TEXT;
+      ALTER TABLE client_enrollment_codes ADD COLUMN revoked_at INTEGER;
+      ALTER TABLE client_enrollment_codes ADD COLUMN redeemed_peer_id INTEGER;
+      ALTER TABLE client_enrollment_codes ADD COLUMN redeemed_platform TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_client_enrollment_codes_ticket ON client_enrollment_codes(ticket) WHERE ticket IS NOT NULL;`,
+    detect: (db) => hasColumn(db, 'client_enrollment_codes', 'redeemed_platform'),
+  },
 ];
 
 module.exports = { migrations };
