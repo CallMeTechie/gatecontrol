@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.297.0] — 2026-11-17
+
+### Features
+- Schlüssel automatisch einrichten, tmux beenden, Agent-Codes (gc.remote Version 9) (#517)
+
+---
+
 ## [1.296.0] — 2026-11-17
 
 ### Features
