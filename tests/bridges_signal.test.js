@@ -354,6 +354,18 @@ describe('the service with Signal', () => {
       assert.doesNotMatch(JSON.stringify([g, d, p]), new RegExp(`${GROUP_ID.slice(0, 12)}|${ACI_KIM}`));
     });
 
+    it('version 14: no place over Signal (its bridge would send a map link as text) — ERR_INVALID / unsupported, nothing sent', async () => {
+      const d = await open('!sloc:gc.internal', [bridgeState(ACI_KIM, true)]);
+      const before = hs.sent.length;
+      await assert.rejects(asPerson(annaId, true, () => call('bridges.send', { userId: annaId, network: 'signal', chatId: d.chat.id, message: { txnId: 'sg-loc-0001', location: { lat: 48.137154, lon: 11.576124 } } })),
+        (e) => e.code === 'ERR_INVALID' && e.reason === 'unsupported');
+      assert.equal(hs.sent.length, before);
+      assert.equal(bridges.status().networks.find((x) => x.id === 'signal').location, false);
+      // a text still goes
+      await asPerson(annaId, true, () => call('bridges.send', { userId: annaId, network: 'signal', chatId: d.chat.id, message: { txnId: 'sg-txt-0001', text: 'Bin gleich da' } }));
+      assert.equal(hs.sent.length, before + 1);
+    });
+
     it('disappearing messages: the chat\'s timer, its change as a notice with an action; the bridge deletes the messages itself', async () => {
       const room = '!stimer:gc.internal';
       const c = await open(room, [bridgeState(ACI_KIM, true), timerState('after_read', 604800000)]);

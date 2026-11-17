@@ -351,9 +351,10 @@ function makeBridges() {
      *  12: WhatsApp status — chat.status (the room of the contacts' status updates, readOnly), read(…, { status: true }),
      *  send / react / redact there refused with reason status_room; 13: old media from the phone — status().mediaRequests
      *  { mode, options, dailyAt, timeZone }, configure({ mediaRequests: 'off' | 'daily' | 'now' }), message.oldMedia
-     *  { kind, name, request }, edit.media (the file the phone sent later) and edit.oldMedia { request: 'failed' }) */
-    version: 13,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy }, mediaRequests: { mode, options, dailyAt, timeZone } } */
+     *  { kind, name, request }, edit.media (the file the phone sent later) and edit.oldMedia { request: 'failed' });
+     *  14: a place over a bridge — send(…, { txnId, location: { lat, lon, label? }, replyTo? }), networks[].location) */
+    version: 14,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs, location }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy }, mediaRequests: { mode, options, dailyAt, timeZone } } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean, telegram?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean, mediaRequests?: 'off' | 'daily' | 'now', telegramApp?: { apiId, apiHash } | null }) → status() — inside a changing request of an administrator; the Telegram application id is kept encrypted and never returned */
     configure: (patch) => hostCall('bridges.configure', { patch }),
@@ -376,6 +377,8 @@ function makeBridges() {
     /**
      * send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id } — inside a changing request of that person;
      * since version 4 a file: { txnId, text? (caption), replyTo?, media: { mediaId, kind: image | video | audio | voice | file, name?, w?, h?, durationMs?, waveform? } }
+     * since version 14 a place: { txnId, location: { lat, lon, label? }, replyTo? } — only where status().networks[].location
+     * is true (WhatsApp, Telegram); elsewhere ERR_INVALID with reason 'unsupported'
      */
     send: (userId, network, chatId, message) => hostCall('bridges.send', { userId, network, chatId, message }, message && message.media != null ? BRIDGE_FILE_MS : undefined),
     /** react(userId, network, chatId, { txnId, target, emoji }) → { id } */

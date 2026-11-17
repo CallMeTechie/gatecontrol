@@ -157,7 +157,7 @@ describe('the service with Telegram', () => {
 
   it('without the application id: not started, needs "app", nobody can link', async () => {
     const st = bridges.status();
-    assert.equal(st.version, 13);
+    assert.equal(st.version, 14);
     const tg = st.networks.find((n) => n.id === 'telegram');
     assert.equal(tg.needs, 'app');
     assert.equal(tg.state, 'stopped');
@@ -408,6 +408,17 @@ describe('the service with Telegram', () => {
       const evs = await pulled();
       assert.deepEqual(evs, [], 'nothing of it');
       assert.equal(db.prepare('SELECT state FROM bridge_rooms WHERE room_id = ?').get(room).state, 'left');
+    });
+
+    it('version 14: a place goes to Telegram as m.location — the label as the MSC3488 description (the text beside the geo point)', async () => {
+      const room = '!tgloc:gc.internal';
+      const d = await open(room, [bridgeState(`user:${TG_KIM}`, true)]);
+      const before = hs.sent.length;
+      await ctx.run(PLUGIN.id, annaId, true, () => call('bridges.send', { userId: annaId, network: 'telegram', chatId: d.chat.id, message: { txnId: 'tg-loc-0001', location: { lat: 50.73743, lon: 7.098207, label: 'Treffpunkt Hofgarten' }, replyTo: '$tg1' } }));
+      assert.equal(hs.sent.length, before + 1);
+      assert.deepEqual(hs.sent.at(-1).content, { msgtype: 'm.location', body: 'Treffpunkt Hofgarten', geo_uri: 'geo:50.73743,7.098207',
+        'org.matrix.msc3488.location': { uri: 'geo:50.73743,7.098207', description: 'Treffpunkt Hofgarten' }, 'm.relates_to': { 'm.in_reply_to': { event_id: '$tg1' } } });
+      assert.equal(bridges.status().networks.find((x) => x.id === 'telegram').location, true);
     });
 
     it('a file too large for the homeserver, media the bridge cannot carry: our hint, not its English text or the file\'s name', async () => {

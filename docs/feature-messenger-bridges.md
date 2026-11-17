@@ -875,6 +875,33 @@ ignore both fields (and an edit without text); they show the message as "not sho
 „… – wird später vom Handy geladen“ (daily) / „… – wird geladen“ (now) / „… – kam vom Handy nicht; öffne sie in WhatsApp“
 (failed); the edit with the file turns it into the file (fetched like any other, with the virus scan).
 
+## Location (gc.bridges version 14)
+
+`send(userId, network, chatId, { txnId, location: { lat, lon, label? }, replyTo? })` sends a place as Matrix
+`m.location`:
+
+```json
+{ "msgtype": "m.location", "body": "<label or Standort>", "geo_uri": "geo:<lat>,<lon>",
+  "org.matrix.msc3488.location": { "uri": "geo:<lat>,<lon>", "description": "<label, only when given>" },
+  "m.relates_to": { "m.in_reply_to": { "event_id": "<replyTo>" } } }
+```
+
+What the pinned bridges (v0.2610.0) read of it:
+
+* **mautrix-whatsapp** (`pkg/msgconv/from-matrix.go`, `parseGeoURI`): `geo_uri` (prefix `geo:`, two numbers, anything
+  after `;` ignored) → a `LocationMessage` with `DegreesLatitude` / `DegreesLongitude`; `body` becomes its `Comment`; a
+  reply is its `ContextInfo` like a text's.
+* **mautrix-telegram** (`pkg/connector/handlematrix.go`, `ParseGeoURI`): `geo_uri` → `InputMediaGeoPoint`; the text
+  beside it is `org.matrix.msc3488.location.description` (empty without a label — `body` is not read); a reply as for
+  a text.
+* **mautrix-signal** (`pkg/msgconv/from-matrix.go`) writes only a text with a map link (`location_format`) — no place.
+  Signal is therefore not offered: `NET.signal.location` is `false`, `send` refuses with `ERR_INVALID` / `unsupported`.
+
+`status().networks[].location` says per network whether `send` takes a place (`whatsapp`, `telegram`: `true`; `signal`:
+`false`). The coordinates are numbers, rounded to 6 decimals (about 10 cm), never written in exponent form; the label
+(≤ 200 characters) loses control characters. A place arriving from a bridge is unchanged (`media.kind: 'location'`,
+`media.geo { lat, lon }`).
+
 ## Stages
 
 | # | Content |
@@ -885,7 +912,7 @@ ignore both fields (and an edit without text); they show the message as "not sho
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
-| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`); WhatsApp status in the status row (see "WhatsApp-Status"; gc.bridges version 12); old media from the phone (see "Old media from the phone"; gc.bridges version 13) |
+| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`); WhatsApp status in the status row (see "WhatsApp-Status"; gc.bridges version 12); old media from the phone (see "Old media from the phone"; gc.bridges version 13); a place over WhatsApp and Telegram (see "Location"; gc.bridges version 14) |
 
 ## Files
 
