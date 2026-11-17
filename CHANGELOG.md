@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.295.1] — 2026-11-17
+
+### Fixes
+- Ziele über einen Gateway-Pool – Listener sofort beim Gateway, Prüfen über das aktive Gateway (#514)
+
+---
+
 ## [1.295.0] — 2026-11-16
 
 ### Features
