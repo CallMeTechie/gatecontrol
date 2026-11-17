@@ -329,7 +329,8 @@ async function installKey(plugin, target, args) {
     ok: false, steps: null, account: o.account, user: accountUser, path: null, from: [], fingerprint: null, hostKey: null, publicKey: null, line: null,
     credential: o.credential, attemptsLeft: null,
   };
-  const answer = (code, at, extra = {}) => {
+  // codes and texts go in one object, not as arguments of their own (a code like 'sudo_password' is no password)
+  const answer = ({ code = null, at = null, extra = {} } = {}) => {
     res.steps = [steps.connect, steps.hostkey, steps.install, steps.test];
     if (code) res.error = { code, step: at };
     else res.ok = true;
@@ -341,7 +342,7 @@ async function installKey(plugin, target, args) {
   if (secret && secret.privateKey && secret.publicKey) {
     pair = { privateKey: secret.privateKey, passphrase: secret.passphrase || null, publicKey: secret.publicKey };
   } else if (secret && secret.privateKey && !o.replaceOwnKey) {
-    return answer('own_key', null);
+    return answer({ code: 'own_key' });
   } else {
     const g = sshkeys.generateEd25519(comment);
     pair = { privateKey: g.privateKey, passphrase: null, publicKey: g.publicKey };
@@ -357,7 +358,7 @@ async function installKey(plugin, target, args) {
   };
 
   const rate = rateTake(plugin.id, t.id);
-  if (!rate.ok) return answer('rate_limited', null, { attemptsLeft: 0, retryAfter: rate.retryAfter });
+  if (!rate.ok) return answer({ code: 'rate_limited', extra: { attemptsLeft: 0, retryAfter: rate.retryAfter } });
   res.attemptsLeft = rate.left;
   const deadline = Date.now() + TOTAL_MS;
   const left = () => Math.max(1000, Math.min(STEP_MS, deadline - Date.now()));
@@ -393,7 +394,7 @@ async function installKey(plugin, target, args) {
     if (code.startsWith('host_key_')) {
       steps.connect.detail = 'not logged in, no password sent';
       Object.assign(steps.hostkey, { state: 'fail', ms: state.hostMs, detail: state.host });
-      return answer(code, 'hostkey');
+      return answer({ code, at: 'hostkey' });
     }
     if (state.host) Object.assign(steps.hostkey, { state: 'done', ms: state.hostMs, detail: state.host });
     steps.connect.state = 'fail';
@@ -403,10 +404,10 @@ async function installKey(plugin, target, args) {
       res.from = o.restrictFrom ? fromAddresses(ep, null) : [];
       res.line = keyLine(pair.publicKey, res.from, comment);
       store({});
-      return answer('password_auth_off', 'connect', { fromGuessed: o.restrictFrom });
+      return answer({ code: 'password_auth_off', at: 'connect', extra: { fromGuessed: o.restrictFrom } });
     }
     steps.connect.detail = code === 'auth_failed' ? `login as ${username} refused` : null;
-    return answer(['auth_failed', 'timeout'].includes(code) ? code : 'unreachable', 'connect');
+    return answer({ code: ['auth_failed', 'timeout'].includes(code) ? code : 'unreachable', at: 'connect' });
   }
   steps.connect.state = 'done';
   steps.connect.ms = Date.now() - t0;
@@ -416,37 +417,37 @@ async function installKey(plugin, target, args) {
 
   // 3: put the line in
   const t1 = Date.now();
-  const fail = (code, detail, at = 'install', since = t1) => {
+  const fail = ({ code, detail = null, at = 'install', since = t1 }) => {
     Object.assign(steps[at], { state: 'fail', ms: Date.now() - since, detail: detail == null ? null : scrub(detail, secrets) });
-    return answer(code, at);
+    return answer({ code, at });
   };
   const run = (script, maxBytes = 4096) => (o.account === 'root'
     ? execOnce(c, SUDO_RUN, { timeoutMs: left(), stderr: true, maxBytes, stdin: (state.sudoNeedsPw ? sudoPassword + '\n' : '') + MARKER + '\n' + script })
     : execOnce(c, 'sh -s', { timeoutMs: left(), stderr: true, maxBytes, stdin: script }));
   try {
     let probe;
-    try { probe = await execOnce(c, PROBE, { timeoutMs: left(), maxBytes: 4096 }); } catch (e) { return fail(e && e.code === 'timeout' ? 'timeout' : 'not_posix', null); }
+    try { probe = await execOnce(c, PROBE, { timeoutMs: left(), maxBytes: 4096 }); } catch (e) { return fail({ code: e && e.code === 'timeout' ? 'timeout' : 'not_posix' }); }
     const m = /^gcposix ?(\S*)\s*$/m.exec(probe.out || '');
     if (!m || probe.code !== 0) {
       res.from = o.restrictFrom ? fromAddresses(ep, null) : [];
       res.line = keyLine(pair.publicKey, res.from, comment);
       store({});
       Object.assign(res, { fromGuessed: o.restrictFrom });
-      return fail('not_posix', 'no POSIX shell (sh) on the target');
+      return fail({ code: 'not_posix', detail: 'no POSIX shell (sh) on the target' });
     }
     res.from = o.restrictFrom ? fromAddresses(ep, m[1]) : [];
-    if (o.restrictFrom && !cleanIp(m[1]) && !res.from.length) return fail('write_failed', 'the source address is unknown ($SSH_CLIENT empty)');
+    if (o.restrictFrom && !cleanIp(m[1]) && !res.from.length) return fail({ code: 'write_failed', detail: 'the source address is unknown ($SSH_CLIENT empty)' });
     res.line = keyLine(pair.publicKey, res.from, comment);
     if (o.account === 'root') {
       const chk = await execOnce(c, SUDO_CHECK, { timeoutMs: left(), stderr: true, maxBytes: 1024 });
-      if (chk.code === 127) return fail('sudo_denied', 'sudo is not installed');
+      if (chk.code === 127) return fail({ code: 'sudo_denied', detail: 'sudo is not installed' });
       if (chk.code !== 0) {
-        if (/not in the sudoers|not allowed to|may not run/i.test(chk.err || '')) return fail('sudo_denied', chk.err);
+        if (/not in the sudoers|not allowed to|may not run/i.test(chk.err || '')) return fail({ code: 'sudo_denied', detail: chk.err });
         // a password is needed: check it on its own first, so a wrong one never meets the script
         const v = await execOnce(c, SUDO_VALIDATE, { timeoutMs: left(), stderr: true, maxBytes: 1024, stdin: sudoPassword + '\n' });
         if (v.code !== 0) {
-          if (/not in the sudoers|not allowed to|may not run/i.test(v.err || '')) return fail('sudo_denied', v.err);
-          return fail('sudo_password', 'sudo did not take the password');
+          if (/not in the sudoers|not allowed to|may not run/i.test(v.err || '')) return fail({ code: 'sudo_denied', detail: v.err });
+          return fail({ code: 'sudo_password', detail: 'sudo did not take the password' });
         }
         state.sudoNeedsPw = true;
       }
@@ -454,8 +455,8 @@ async function installKey(plugin, target, args) {
     const w = await run(keyScript(comment, res.line), 64 * 1024);
     const ok = w.code === 0 ? parseOk(w.out, comment) : null;
     if (!ok) {
-      if (o.account === 'root' && w.code === 1 && /sudo|password/i.test(w.err || '') && !/gcok/.test(w.out || '')) return fail('sudo_password', 'sudo did not take the password');
-      return fail('write_failed', w.err || (w.code === 90 ? 'the script did not reach the shell' : `exit ${w.code}`));
+      if (o.account === 'root' && w.code === 1 && /sudo|password/i.test(w.err || '') && !/gcok/.test(w.out || '')) return fail({ code: 'sudo_password', detail: 'sudo did not take the password' });
+      return fail({ code: 'write_failed', detail: w.err || (w.code === 90 ? 'the script did not reach the shell' : `exit ${w.code}`) });
     }
     res.path = ok.path;
     Object.assign(steps.install, { state: 'done', ms: Date.now() - t1, detail: ok.removed ? 'replaced the old line' : 'added' });
@@ -473,16 +474,16 @@ async function installKey(plugin, target, args) {
       } catch { rolledBack = false; }
       const why = e && e.code === 'auth_failed' ? 'the key was not accepted' : ((e && e.code) || 'failed');
       res.rolledBack = rolledBack;
-      return fail('key_test_failed', `${why}; ${rolledBack ? 'line removed again' : 'the line could not be removed'}`, 'test', t2);
+      return fail({ code: 'key_test_failed', detail: `${why}; ${rolledBack ? 'line removed again' : 'the line could not be removed'}`, at: 'test', since: t2 });
     } finally { if (tc) { try { tc.end(); } catch { /* closed */ } } }
     Object.assign(steps.test, { state: 'done', ms: Date.now() - t2, detail: `logged in as ${accountUser} with the key` });
   } catch (e) {
-    return fail(e && e.code === 'timeout' ? 'timeout' : 'write_failed', null);
+    return fail({ code: e && e.code === 'timeout' ? 'timeout' : 'write_failed' });
   } finally { try { c.end(); } catch { /* closed */ } }
 
   // 5: the vault: the key (and the account) of the device, the password gone unless kept
   store(o.keepPassword ? {} : { password: null });
-  return answer(null, null);
+  return answer();
 }
 
 // ─── gc.remote.testKey / removeKey ───
