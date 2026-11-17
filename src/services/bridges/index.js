@@ -101,6 +101,11 @@
 //                    The bridge's English notice about such a file never reaches a plugin: events.js makes it
 //                    message.oldMedia { kind, name, request }, and the bridge's later edit with the file an edit with
 //                    `media` (or oldMedia { request: 'failed' } when the phone could not send it).
+//   location         (gc.bridges version 14) send({ txnId, location: { lat, lon, label? }, replyTo? }): a place as Matrix
+//                    m.location (geo_uri + org.matrix.msc3488.location) — only where the bridge makes a real place of it
+//                    (NET.location: WhatsApp a LocationMessage, Telegram a geo point); Signal's bridge would send a map
+//                    link as text, so it is refused there (ERR_INVALID / unsupported). status().networks[].location says
+//                    which networks take one. What arrives from the bridges is unchanged (events.js: message.geo).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -125,11 +130,14 @@ const NETWORKS = Object.freeze(['whatsapp', 'signal', 'telegram']);
 //   phoneConfirms the phone asks at the link whether it hands over the history (Signal's transfer archive)
 //   accountIds   a login and a contact carry a fixed account id at the service (Signal: the ACI; Telegram: the user id)
 //   needsApp     (stage 7b) it starts only with the administrator's own application id (Telegram's api_id / api_hash)
+//   location     (version 14) the bridge sends an m.location as a place of its network (mautrix v0.2610.0, from-matrix.go /
+//                handlematrix.go): WhatsApp LocationMessage (comment = body), Telegram InputMediaGeoPoint (text = the
+//                msc3488 description); mautrix-signal only writes a map link as text — no place, so not offered
 const NET = Object.freeze({
-  whatsapp: Object.freeze({ script: 8, flows: Object.freeze(['phone', 'qr']), historyDays: null, phoneConfirms: false, accountIds: false, needsApp: false }),
-  signal: Object.freeze({ script: 10, flows: Object.freeze(['qr']), historyDays: 30, phoneConfirms: true, accountIds: true, needsApp: false }),
+  whatsapp: Object.freeze({ script: 8, flows: Object.freeze(['phone', 'qr']), historyDays: null, phoneConfirms: false, accountIds: false, needsApp: false, location: true }),
+  signal: Object.freeze({ script: 10, flows: Object.freeze(['qr']), historyDays: 30, phoneConfirms: true, accountIds: true, needsApp: false, location: false }),
   // stage 7b: QR code or number + code (+ password); never "bot" (a bot is no person) or "manual" (raw session data)
-  telegram: Object.freeze({ script: 10, flows: Object.freeze(['qr', 'phone']), historyDays: null, phoneConfirms: false, accountIds: true, needsApp: true }),
+  telegram: Object.freeze({ script: 10, flows: Object.freeze(['qr', 'phone']), historyDays: null, phoneConfirms: false, accountIds: true, needsApp: true, location: true }),
 });
 // the fixed account id of a login or a contact, per network (never passed on — compared as a keyed hash)
 const ACCOUNT_RE = Object.freeze({
@@ -452,7 +460,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 13 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 14 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -482,7 +490,9 @@ function status() {
       if (noApp) { needs = 'app'; state = cfg.enabled ? 'stopped' : 'off'; }
       return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version,
         clientOutdated: !!(clientOutdated.get(id) && Date.now() - clientOutdated.get(id) < 86400000),
-        flows: [...NET[id].flows], history: { maxDays: NET[id].historyDays, phoneConfirms: NET[id].phoneConfirms }, needs, scriptNeeded: NET[id].script };
+        flows: [...NET[id].flows], history: { maxDays: NET[id].historyDays, phoneConfirms: NET[id].phoneConfirms }, needs, scriptNeeded: NET[id].script,
+        // version 14: whether send() takes a { location } for this network
+        location: NET[id].location };
     }),
     // stage 7a: one switch for every bridge that converts animated stickers (off: a still picture, PNG)
     stickers: { animated: cfg.animatedStickers },
@@ -509,7 +519,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 13,
+    version: 14,
   };
 }
 
@@ -1076,6 +1086,35 @@ function fileContent(m, text, mxc, file) {
   return content;
 }
 
+const LABEL_MAX = 200;
+/** version 14: a place → the coordinates (6 decimals, about 10 cm) and the label (null: none). */
+function locationOf(v) {
+  const loc = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  const deg = (x, max) => (typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= max ? String(Number(x.toFixed(6)) || 0) : null);
+  const lat = loc ? deg(loc.lat, 90) : null;
+  const lon = loc ? deg(loc.lon, 180) : null;
+  if (lat == null || lon == null) throw new BridgesError('ERR_INVALID', 'location: { lat: -90…90, lon: -180…180, label? }');
+  let label = null;
+  if (loc.label != null) {
+    if (typeof loc.label !== 'string') throw new BridgesError('ERR_INVALID', `location.label: up to ${LABEL_MAX} characters`);
+    label = loc.label.replace(/[\0-\x1f\x7f]+/g, ' ').trim() || null;
+    if (label && label.length > LABEL_MAX) throw new BridgesError('ERR_INVALID', `location.label: up to ${LABEL_MAX} characters`);
+  }
+  return { lat, lon, label };
+}
+
+/**
+ * The content of a place (version 14): m.location with geo_uri and the extensible form of MSC3488. mautrix-whatsapp
+ * v0.2610.0 (pkg/msgconv/from-matrix.go) reads geo_uri and makes body the LocationMessage's comment; mautrix-telegram
+ * v0.2610.0 (pkg/connector/handlematrix.go) reads geo_uri and takes org.matrix.msc3488.location.description as the
+ * text beside the geo point (none without a label). Both parse "geo:<lat>,<lon>" and ignore anything after ";".
+ */
+function locationContent(loc) {
+  const uri = `geo:${loc.lat},${loc.lon}`;
+  return { msgtype: 'm.location', body: loc.label || 'Standort', geo_uri: uri,
+    'org.matrix.msc3488.location': { uri, ...(loc.label ? { description: loc.label } : {}) } };
+}
+
 /**
  * gc.bridges.send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id }
  * A text message; `replyTo` quotes a message, `edit` replaces the text of one of the person's own. The same txnId
@@ -1083,6 +1122,8 @@ function fileContent(m, text, mxc, file) {
  * Since version 4 a file: { txnId, text? (caption), replyTo?, media: { kind: image | video | audio | voice | file,
  * name?, w?, h?, durationMs?, waveform? } } with `file` from the host API: { key, length, mime, source() } — the
  * plugin's stored file, already checked (its own, servable).
+ * Since version 14 a place: { txnId, location: { lat, lon, label? }, replyTo? } — only for a network whose bridge makes
+ * a place of it (status().networks[].location; else ERR_INVALID / unsupported); no text, media or edit with it.
  */
 async function send(userId, network, chatId, msg, file = null) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
@@ -1091,6 +1132,13 @@ async function send(userId, network, chatId, msg, file = null) {
   if (!m) throw new BridgesError('ERR_INVALID', 'message: an object');
   const text = typeof m.text === 'string' ? m.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '') : '';
   const txnId = txnOf(m.txnId);
+  if (m.location != null) {
+    if (!NET[network].location) throw new BridgesError('ERR_INVALID', 'this bridge sends no location', 'unsupported');
+    if (m.media != null || m.edit != null || text.trim()) throw new BridgesError('ERR_INVALID', 'location: no text, media or edit with it');
+    const content = locationContent(locationOf(m.location));
+    if (m.replyTo != null) content['m.relates_to'] = { 'm.in_reply_to': { event_id: eventId(m.replyTo, 'replyTo') } };
+    return { id: await hs.send(target, mxid, row.room_id, 'm.room.message', txnId, content) };
+  }
   if (m.media != null) {
     const md = m.media && typeof m.media === 'object' && !Array.isArray(m.media) ? m.media : null;
     if (!md || !SEND_KINDS[md.kind] || !file || m.edit != null) throw new BridgesError('ERR_INVALID', 'media: { kind: image | video | audio | voice | file } with a file');

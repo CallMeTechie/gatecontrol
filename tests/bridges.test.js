@@ -125,7 +125,7 @@ describe('the service', () => {
     assert.equal(st.host.state, 'running');
     assert.deepEqual(st.host.homeserver, { running: true, memMb: 61, limitMb: 384, version: '1.2.0', outdated: false, wantVersion: '1.9.4' });
     assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0', clientOutdated: false,
-      flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, needs: null, scriptNeeded: 8 });
+      flows: ['phone', 'qr'], history: { maxDays: null, phoneConfirms: false }, needs: null, scriptNeeded: 8, location: true });
     assert.equal(st.host.limitsProvisional, true, 'no measured memory need yet');
     assert.equal(st.host.probe, null);
     assert.equal(st.host.script.needed, 8);

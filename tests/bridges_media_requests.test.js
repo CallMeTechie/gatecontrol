@@ -120,7 +120,7 @@ describe('the configuration of the WhatsApp bridge', () => {
 describe('the administrator\'s switch', () => {
   it('off by default; daily and now are kept, written into the bridge\'s file and named in status()', () => {
     const st = bridges.status();
-    assert.equal(st.version, 13);
+    assert.equal(st.version, 14);
     assert.deepEqual(st.mediaRequests, { mode: 'off', options: ['off', 'daily', 'now'], dailyAt: '11:10', timeZone: st.history.timeZone });
     const file = path.join(bridges.dir(), 'whatsapp/config/config.yaml');
     bridges.configure({ mediaRequests: 'daily' }, { actor: { id: 1, name: 'admin' } });

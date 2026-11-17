@@ -485,6 +485,36 @@ describe('gc.bridges version 3 (host API)', () => {
     assert.equal(hs.sent.length, 3);
   });
 
+  it('version 14: a place as m.location (geo_uri + MSC3488), with a reply like a text; nothing else with it', async () => {
+    const room = '!loc1:gc.internal';
+    const chat = await annaAndKim(room);
+    const args = { userId: annaId, network: 'whatsapp', chatId: chat };
+    const st = bridges.status();
+    assert.equal(st.version, 14);
+    assert.deepEqual(st.networks.map((x) => [x.id, x.location]), [['whatsapp', true], ['signal', false], ['telegram', true]]);
+    const r = await asPerson(annaId, true, () => call('bridges.send', { ...args, message: { txnId: 'loc-000001', location: { lat: 52.5200081234, lon: 13.404954, label: ' Café am\nMarkt ' } } }));
+    assert.match(r.id, /^\$sent/);
+    assert.deepEqual(hs.sent[0], { roomId: room, userId: anna(), type: 'm.room.message', txnId: 'loc-000001', eventId: r.id, content: {
+      msgtype: 'm.location', body: 'Café am Markt', geo_uri: 'geo:52.520008,13.404954',
+      'org.matrix.msc3488.location': { uri: 'geo:52.520008,13.404954', description: 'Café am Markt' },
+    } });
+    // without a label: "Standort", no description (Telegram would show it as the text); a reply quotes like a text
+    await asPerson(annaId, true, () => call('bridges.send', { ...args, message: { txnId: 'loc-000002', location: { lat: -33.8688, lon: -0, label: '  ' }, replyTo: '$e7' } }));
+    assert.deepEqual(hs.sent[1].content, { msgtype: 'm.location', body: 'Standort', geo_uri: 'geo:-33.8688,0',
+      'org.matrix.msc3488.location': { uri: 'geo:-33.8688,0' }, 'm.relates_to': { 'm.in_reply_to': { event_id: '$e7' } } });
+    // the same txnId: sent once
+    await asPerson(annaId, true, () => call('bridges.send', { ...args, message: { txnId: 'loc-000002', location: { lat: -33.8688, lon: 0 } } }));
+    assert.equal(hs.sent.length, 2);
+    for (const location of [{}, { lat: 91, lon: 0 }, { lat: 0, lon: 180.5 }, { lat: '52.5', lon: 13.4 }, { lat: NaN, lon: 1 }, { lat: 1 }, [1, 2], 'geo:1,2', { lat: 1, lon: 2, label: 7 }, { lat: 1, lon: 2, label: 'x'.repeat(201) }]) {
+      await assert.rejects(asPerson(annaId, true, () => call('bridges.send', { ...args, message: { txnId: 'loc-000009', location } })), (e) => e.code === 'ERR_INVALID', JSON.stringify(location));
+    }
+    for (const extra of [{ text: 'Hier!' }, { edit: r.id }, { media: { kind: 'image' } }, { replyTo: '../x' }]) {
+      // the service itself (the host API would look for the file of `media` first)
+      await assert.rejects(bridges.send(annaId, 'whatsapp', chat, { txnId: 'loc-000009', location: { lat: 1, lon: 2 }, ...extra }), (e) => e.code === 'ERR_INVALID', JSON.stringify(extra));
+    }
+    assert.equal(hs.sent.length, 2);
+  });
+
   it('reacts, takes back, deletes, marks as read and shows typing — as that person', async () => {
     const room = '!h2:gc.internal';
     const chat = await annaAndKim(room);
