@@ -229,3 +229,58 @@ describe('listenPort auto and wake by the watch (version 7)', () => {
     } finally { gateways.notifyWol = orig; }
   });
 });
+
+describe('a listener of a failover pool (Fernzugriff 1.7.2: a home with two gateways)', () => {
+  const GW2 = 91; // the second gateway of „Heim“, the reserve
+  const health = () => require('../src/services/gatewayHealth');
+
+  it('the members get the new listener at once; probe and wake go through the member serving the pool', async () => {
+    gateway(GW2, 'Zuhause-2', { subnets: ['192.168.178.0/24'] });
+    db.prepare('INSERT INTO gateway_pool_members (pool_id, peer_id, priority) VALUES (?, ?, 1000)').run(poolId, GW2);
+    const pushed = [];
+    const asked = [];
+    const woken = [];
+    const orig = { push: gateways.notifyConfigChanged, probe: gateways.probeGatewayTarget, wol: gateways.notifyWol, snap: health().getSnapshot };
+    gateways.notifyConfigChanged = async (peerId) => { pushed.push(peerId); };
+    gateways.probeGatewayTarget = async (peerId, host, port) => { asked.push([peerId, host, port]); return { probed_target: true, probe_result: false, probe_latency_ms: 9 }; };
+    gateways.notifyWol = async (peerId, x) => { woken.push([peerId, x.mac, x.lan_host]); return { ok: true }; };
+    let snap = { [GW]: { alive: true }, [GW2]: { alive: true } };
+    health().getSnapshot = () => snap;
+    try {
+      const l = await call('listener', { key: 'dev-100010', gateway: { poolId }, host: '192.168.178.89', port: 22, listenPort: 'auto' });
+      assert.equal(l.ok, true, JSON.stringify(l));
+      assert.deepEqual(l.result.gateway, { poolId });
+      // before: no push for a pool route — the gateways only saw it at their next poll (300 s), the session met a closed door
+      assert.deepEqual([...new Set(pushed)].sort(), [GW, GW2]);
+
+      // the probe asks the gateway Caddy uses (the first live member), never the server's own port (1 ms, always open)
+      const target = { id: 'dev-100010', name: 'develop', listener: 'dev-100010', mac: '3c:7c:3f:12:9a:10' };
+      const p = await call('probe', target);
+      assert.equal(p.ok, true, JSON.stringify(p));
+      assert.deepEqual(p.result, { online: false, responseTime: 9, via: 'gateway' });
+      assert.deepEqual(asked, [[GW, '192.168.178.89', 22]]);
+      snap = { [GW]: { alive: false }, [GW2]: { alive: true } };
+      await call('probe', target);
+      assert.deepEqual(asked[1], [GW2, '192.168.178.89', 22], 'after a failover: the reserve');
+      assert.equal((await call('wake', target)).result.via, 'gateway');
+      assert.deepEqual(woken, [[GW2, '3c:7c:3f:12:9a:10', '192.168.178.89']]);
+
+      // no member alive: offline without asking anyone, no broadcast into the server's own network
+      snap = { [GW]: { alive: false }, [GW2]: { alive: false } };
+      assert.deepEqual((await call('probe', target)).result, { online: false, responseTime: null, via: 'gateway' });
+      assert.equal(asked.length, 2);
+      targets._resetForTest();
+      assert.equal((await call('wake', target)).code, 'ERR_REMOTE_GATEWAY_OFFLINE');
+
+      // removed: the members drop the listener at once as well
+      pushed.length = 0;
+      await call('listener.remove', { key: 'dev-100010' });
+      assert.deepEqual([...new Set(pushed)].sort(), [GW, GW2]);
+    } finally {
+      Object.assign(gateways, { notifyConfigChanged: orig.push, probeGatewayTarget: orig.probe, notifyWol: orig.wol });
+      health().getSnapshot = orig.snap;
+      targets._resetForTest();
+      db.prepare('DELETE FROM gateway_pool_members WHERE peer_id = ?').run(GW2);
+    }
+  });
+});

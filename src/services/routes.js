@@ -28,6 +28,33 @@ function validateTargetExclusivity(data) {
   }
 }
 
+// ─── Gateway push ───────────────────────────────────────
+
+/**
+ * The gateways whose config holds a gateway route (gateways.getGatewayConfig): its pinned gateway, or every member
+ * of its failover pool. A route of a pool is in each member's config — without a push the members only see it on
+ * their next poll (GC_POLL_INTERVAL_S, 300 s), and until then a new L4 listener of a pool leads nowhere.
+ */
+function gatewayPeersOf(route, into = new Set()) {
+  if (!route || route.target_kind !== 'gateway') return into;
+  if (route.target_peer_id) into.add(Number(route.target_peer_id));
+  if (route.target_pool_id) {
+    try {
+      for (const m of require('./gatewayPool').listMembers(route.target_pool_id)) into.add(Number(m.peer_id));
+    } catch (err) { logger.debug({ err: err.message, poolId: route.target_pool_id }, 'pool members not read for the gateway push'); }
+  }
+  return into;
+}
+
+/** Best-effort push of a config change to these gateways (each re-polls anyway). */
+function notifyGateways(peerIds) {
+  if (!peerIds || peerIds.size === 0) return;
+  try {
+    const gateways = require('./gateways');
+    for (const pid of peerIds) gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
+  } catch { /* module load guard */ }
+}
+
 // ─── Domain availability ────────────────────────────────
 //
 // A domain may be shared between an HTTP route and L4 routes for the same
@@ -578,12 +605,9 @@ async function create(data, opts = {}) {
 
   logger.info({ routeId, domain }, 'Route created');
 
-  // Fire-and-forget push-notification for gateway peers
-  if (!opts.skipSync && targetKind === 'gateway' && targetPeerId) {
-    try {
-      const gateways = require('./gateways');
-      gateways.notifyConfigChanged(targetPeerId).catch((err) => { logger.debug({ err: err.message, peerId: targetPeerId }, 'gateway config push failed (gateway re-polls anyway)'); });
-    } catch { /* fallback when module load fails */ }
+  // Fire-and-forget push-notification for gateway peers (the pinned one, or every member of the pool)
+  if (!opts.skipSync && targetKind === 'gateway') {
+    notifyGateways(gatewayPeersOf({ target_kind: targetKind, target_peer_id: targetPeerId, target_pool_id: targetPoolId }));
   }
 
   // Give the route a host (join the host of its fqdn or create one).
@@ -1104,23 +1128,9 @@ async function update(id, data) {
     });
   }
 
-  // Fire-and-forget push-notification for gateway peers (current + previous)
+  // Fire-and-forget push-notification for gateway peers (current + previous, pools with all their members)
   const finalRoute = getById(id);
-  const touchedGwPeers = new Set();
-  if (finalRoute && finalRoute.target_kind === 'gateway' && finalRoute.target_peer_id) {
-    touchedGwPeers.add(finalRoute.target_peer_id);
-  }
-  if (route.target_kind === 'gateway' && route.target_peer_id) {
-    touchedGwPeers.add(route.target_peer_id);
-  }
-  if (touchedGwPeers.size > 0) {
-    try {
-      const gateways = require('./gateways');
-      for (const pid of touchedGwPeers) {
-        gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
-      }
-    } catch { /* module load guard */ }
-  }
+  notifyGateways(gatewayPeersOf(route, gatewayPeersOf(finalRoute)));
 
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route update failed'); }
 
@@ -1186,6 +1196,8 @@ async function remove(id) {
   });
 
   logger.info({ routeId: id, domain: route.domain }, 'Route deleted');
+  // the gateways drop the route (an L4 listener closes) now instead of at their next poll
+  notifyGateways(gatewayPeersOf(route));
   try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after route delete failed'); }
   publishRoutesEvent(refs);
 }
@@ -1210,12 +1222,7 @@ async function toggle(id) {
   // the toggle immediately instead of waiting for the next 300 s poll.
   // Without this, re-enabling a route leaves the companion answering
   // "No route for domain ..." until the next polling cycle.
-  if (route.target_kind === 'gateway' && route.target_peer_id) {
-    try {
-      const gateways = require('./gateways');
-      gateways.notifyConfigChanged(route.target_peer_id).catch((err) => { logger.debug({ err: err.message, peerId: route.target_peer_id }, 'gateway config push failed (gateway re-polls anyway)'); });
-    } catch { /* fallback when module load fails */ }
-  }
+  notifyGateways(gatewayPeersOf(route));
 
   activity.log(
     newState ? 'route_enabled' : 'route_disabled',
@@ -1473,14 +1480,9 @@ async function bulkUpdate(input) {
   // Companions see enabled (their config lists enabled gateway routes only).
   const gwPeers = new Set();
   for (const p of todo) {
-    if (p.row.target_kind === 'gateway' && p.row.target_peer_id && p.next.enabled !== (p.row.enabled ? 1 : 0)) gwPeers.add(p.row.target_peer_id);
+    if (p.next.enabled !== (p.row.enabled ? 1 : 0)) gatewayPeersOf(p.row, gwPeers);
   }
-  if (gwPeers.size > 0) {
-    try {
-      const gateways = require('./gateways');
-      for (const pid of gwPeers) gateways.notifyConfigChanged(pid).catch((err) => { logger.debug({ err: err.message, peerId: pid }, 'gateway config push failed (gateway re-polls anyway)'); });
-    } catch { /* module load guard */ }
-  }
+  notifyGateways(gwPeers);
   if (todo.some((p) => p.next.enabled !== (p.row.enabled ? 1 : 0) || p.next.external_enabled !== (p.row.external_enabled ? 1 : 0))) {
     try { dns.rebuildNow(); } catch (err) { logger.warn({ err: err?.message ?? String(err) }, 'DNS rebuild after bulk update failed'); }
   }
@@ -1545,6 +1547,7 @@ function userIdsColumn(v) {
 
 module.exports = {
   assertDomainAvailable,
+  gatewayPeersOf,
   cleanupEmptyBundles,
   toApiRows,
   getAll,

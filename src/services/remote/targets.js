@@ -267,6 +267,21 @@ function gateways() {
 // ─── Resolution ──────────────────────────────────
 
 /**
+ * The member of a failover pool that carries its traffic now (the one Caddy hands a pool listener's connections
+ * to, caddyConfig.resolveRouteUpstreams) → peerId | null (no member alive, the pool is off). Before the first
+ * tick of the health check the alive flags of gateway_meta stand in, as for the Caddy config.
+ */
+function poolPeer(poolId) {
+  const pool = require('../gatewayPool');
+  let snap = {};
+  try { snap = require('../gatewayHealth').getSnapshot() || {}; } catch { snap = {}; }
+  if (Object.keys(snap).length === 0) {
+    for (const r of db().prepare('SELECT peer_id, alive FROM gateway_meta').all()) snap[r.peer_id] = { alive: r.alive === 1 };
+  }
+  try { return pool.resolveActivePeer(poolId, snap) || null; } catch { return null; }
+}
+
+/**
  * Where guacd connects for a normalised target → { host, port, gatewayPeerId, lanHost, lanPort, listener }.
  * Throws TargetError (not_found: unknown listener, listener_off: its route is switched off).
  */
@@ -275,8 +290,10 @@ async function endpoint(plugin, t) {
     const l = listenerRow(plugin.id, t.listener);
     if (!l) throw new TargetError('not_found', 'no such listener of this plugin');
     if (l.route.enabled !== 1) throw new TargetError('listener_off', 'the listener is switched off');
-    return { host: hubIp(), port: Number(l.route.l4_listen_port), gatewayPeerId: l.route.target_peer_id || null,
-      lanHost: l.route.target_lan_host, lanPort: Number(l.route.target_lan_port), listener: t.listener };
+    // a listener of a failover pool: its gateway is the member serving the pool now (probe and wake go through it)
+    const poolId = l.route.target_peer_id ? null : (l.route.target_pool_id || null);
+    return { host: hubIp(), port: Number(l.route.l4_listen_port), gatewayPeerId: l.route.target_peer_id || (poolId ? poolPeer(poolId) : null),
+      poolId, lanHost: l.route.target_lan_host, lanPort: Number(l.route.target_lan_port), listener: t.listener };
   }
   if (t.gatewayPeerId) {
     // a LAN target of a gateway without a listener: guacd cannot reach it, only probe / wake go through the gateway
@@ -290,6 +307,9 @@ async function probe(plugin, target) {
   const t = normalise(target);
   const ep = await endpoint(plugin, t);
   const monitor = require('../rdpMonitor');
+  // a pool without a live member: Caddy has no listener for it — and the server's own port says nothing about the
+  // device anyway (it answers in a millisecond whatever is behind it)
+  if (ep.poolId && !ep.gatewayPeerId) return { online: false, responseTime: null, via: 'gateway' };
   if (ep.gatewayPeerId && ep.lanHost) {
     if (!require('../gatewayFeatures').gatewayPeer(ep.gatewayPeerId)) throw new TargetError('not_found', 'gateway not found');
     let resp = null;
@@ -360,7 +380,9 @@ async function wake(plugin, target, opts) {
   if (t.listener) {
     const l = listenerRow(plugin.id, t.listener);
     if (!l) throw new TargetError('not_found', 'no such listener of this plugin');
-    peerId = l.route.target_peer_id || null;
+    peerId = l.route.target_peer_id || (l.route.target_pool_id ? poolPeer(l.route.target_pool_id) : null);
+    // a pool without a live member: the server's own broadcast would land in the wrong network
+    if (!peerId && l.route.target_pool_id) throw new TargetError('gateway_offline', 'no gateway of the pool is online');
     lanHost = l.route.target_lan_host;
   }
   if (peerId) {
@@ -410,7 +432,7 @@ function _setLookupForTest(fn) { if (process.env.NODE_ENV === 'test') lookupFn =
 function _resetForTest() { if (process.env.NODE_ENV === 'test') { wakeLast.clear(); lookupFn = null; } }
 
 module.exports = {
-  TargetError, normalise, endpoint, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, gateways, probe, wake, hubIp,
+  TargetError, normalise, endpoint, poolPeer, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, gateways, probe, wake, hubIp,
   tokenAddress, hubAddress, peerAddress, adminInRequest, autoListenPort,
   _setLookupForTest, _resetForTest,
 };
