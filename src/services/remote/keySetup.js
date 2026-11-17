@@ -68,9 +68,9 @@ function rateTake(pluginId, targetId, now = Date.now()) {
 
 /** Text of the device for an answer: no control characters, no secret, short. */
 function scrub(text, secrets) {
-  let s = String(text || '');
-  for (const x of secrets) if (typeof x === 'string' && x.length) s = s.split(x).join('***');
-  s = s.replace(CTRL_RE, ' ').replace(/\s+/g, ' ').trim();
+  const s = String(text || '').replace(CTRL_RE, ' ').replace(/\s+/g, ' ').trim();
+  // a message that echoes a secret is dropped as a whole — nothing of the answer is ever made from a password
+  if (secrets.some((x) => typeof x === 'string' && x.length && (s.includes(x) || String(text || '').includes(x)))) return 'the message of the device was withheld';
   return s.slice(0, 200) || null;
 }
 

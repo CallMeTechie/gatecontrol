@@ -610,8 +610,9 @@ describe('the script', () => {
     assert.match(s, /restorecon/);
   });
 
-  it('scrub takes secrets and control characters out', () => {
-    assert.equal(keySetup.scrub(`sudo: ${KIM_PW}\x1b[31m wrong`, [KIM_PW]), 'sudo: *** [31m wrong');
+  it('scrub: control characters out, a message with a secret withheld as a whole', () => {
+    assert.equal(keySetup.scrub('sudo:\x1b[31m  wrong\n', [KIM_PW]), 'sudo: [31m wrong');
+    assert.equal(keySetup.scrub(`sudo: ${KIM_PW} wrong`, [KIM_PW, null]), 'the message of the device was withheld');
   });
 });
 
