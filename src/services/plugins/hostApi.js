@@ -1958,7 +1958,7 @@ async function camerasCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
-// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 7) ───
+// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 9) ───
 //
 // gc.remote.session() / end() / sessions() / vault.put|remove|info|list() /
 // probe() / wake() / listener() / listener.remove() / listeners() / gateways() /
@@ -1966,7 +1966,9 @@ async function camerasCall(plugin, op, args) {
 // recordings.available|list|stream|remove() /
 // vault.generate() / tmux.list() / hostKeys.pin|list|remove() (version 3) /
 // screen() (version 4; mode control version 5; a PC as sender version 6) /
-// candidates() / scan(), listener listenPort 'auto', wake by target.watch (version 7) — docs/plugins.md "Remote access".
+// candidates() / scan(), listener listenPort 'auto', wake by target.watch (version 7) /
+// hostKeys.scan() / installKey() / testKey() / removeKey() / tmux.list windows / tmux.kill() / enrollment.* (version 9)
+// — docs/plugins.md "Remote access".
 // The plugin names person and target; the core owns guacd, the session page,
 // the tunnel and the secrets (a plugin only ever holds vault handles). Who may
 // connect where is the plugin's to check before each call — the host checks
@@ -2190,6 +2192,9 @@ function callTimeout(api, args) {
   // gc.mail: a connect within its timeoutMs, big messages and SMTP sends longer (mail/index.js)
   if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
   if (api === 'http.fetchImage') return 20000;
+  // gc.remote.installKey: log in, sudo, write, test — within 40 s (keySetup.TOTAL_MS) and the login before it
+  if (api === 'remote.installKey') return 70000;
+  if (api === 'remote.testKey' || api === 'remote.removeKey' || api === 'remote.tmux.kill' || api === 'remote.tmux.list') return 45000;
   // gc.bridges: a file streamed from / to the homeserver (≤ 2 min), then the virus scan (≤ 15 s)
   if (api === 'bridges.media.fetch' || (api === 'bridges.send' && args && args.message && args.message.media != null)) return BRIDGE_FILE_TIMEOUT_MS;
   // gc.bridges.health: one question to the bridge per person (≤ 20 s each) — a plugin asks for a few at a time
@@ -2672,6 +2677,9 @@ async function handle(plugin, api, args, ctx) {
     // version 4 (stage 5: the screen relay of the phones)
     case 'remote.screen':
     case 'remote.candidates': case 'remote.scan':
+    // version 9 (GateControl's key onto a device, tmux windows and kill, device codes of the Linux agent)
+    case 'remote.hostKeys.scan': case 'remote.installKey': case 'remote.testKey': case 'remote.removeKey': case 'remote.tmux.kill':
+    case 'remote.enrollment.create': case 'remote.enrollment.status': case 'remote.enrollment.revoke':
       return remoteCall(plugin, api.slice('remote.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);

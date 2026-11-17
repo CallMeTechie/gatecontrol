@@ -669,11 +669,13 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
-// gc.remote (permissions.remote, version 7, docs/plugins.md "Remote access"): sessions to devices on a page of
+// gc.remote (permissions.remote, version 9, docs/plugins.md "Remote access"): sessions to devices on a page of
 // the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
 // L4 listeners through the gateways, the SSH terminal of the core with tmux and pinned host keys, recordings,
 // the screen relay of phones (version 4; mode control version 5) and PCs (mouse and keyboard, version 6), the targets of
-// „Gerät hinzufügen“ (candidates, scan, listenPort 'auto', wake by the network watch — version 7) and the hook remoteSession
+// „Gerät hinzufügen“ (candidates, scan, listenPort 'auto', wake by the network watch — version 7), GateControl's key onto a
+// device (hostKeys.scan, installKey, testKey, removeKey), tmux windows and kill, device codes of the Linux agent
+// (enrollment.*) — version 9 — and the hook remoteSession
 const remoteHandlers = [];
 
 function makeRemote() {
@@ -682,7 +684,7 @@ function makeRemote() {
   /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
   listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
   return Object.freeze({
-    version: 7,
+    version: 9,
     /** session({ user, target, protocol: rdp|vnc|ssh|telnet, engine?: guac|term, mode?: view|control, record?, credential?, options?: { …, tmux? }, ttlS? }) → { ref, url, expiresAt, mode, protocol, engine, record, from } */
     session: (opts) => hostCall('remote.session', o(opts), 30000),
     /** screen({ viewer, sender: { user, device }, target: { id, name? }, mode?: 'view'|'control' (control: version 5), ttlS? }) → { ref, url, expiresAt, senderRef, senderExpiresAt, mode, protocol: 'screen', engine: 'screen', record } (version 4) */
@@ -704,8 +706,11 @@ function makeRemote() {
       generate: (opts) => hostCall('remote.vault.generate', o(opts)),
     }),
     tmux: Object.freeze({
-      /** list(target, { credential }) → [{ name, windows, attached, created, activity, attachable }] — needs a pinned host key (version 3) */
-      list: (target, opts) => hostCall('remote.tmux.list', { ...o(opts), target: o(target) }, 30000),
+      /** list(target, { credential, windows? }) → [{ name, windows, attached, created, activity, attachable }] — needs a pinned host key (version 3);
+       *  windows: true (version 9) → each also { id: '$n', windows: [{ id: '@n', index, name, active, panes, command }], windowCount } */
+      list: (target, opts) => hostCall('remote.tmux.list', { ...o(opts), target: o(target) }, 60000),
+      /** kill(target, { credential, session: { id: '$n', name, created }, window?: { id: '@n', index } }) → { killed: session|window, session, window, sessionEnded } (version 9) */
+      kill: (target, opts) => hostCall('remote.tmux.kill', { ...o(opts), target: o(target) }, 60000),
     }),
     hostKeys: Object.freeze({
       /** pin({ targetId, alg, sha256 }) → { targetId, alg, sha256, source, pinnedBy, pinnedAt } (version 3) */
@@ -714,6 +719,26 @@ function makeRemote() {
       list: () => hostCall('remote.hostKeys.list', {}),
       /** remove(targetId) → { removed } — the next connection asks the person again */
       remove: (targetId) => hostCall('remote.hostKeys.remove', { targetId }),
+      /** scan(target) → { alg, sha256, pinned, matches? } — the host key without logging in (version 9) */
+      scan: (target) => hostCall('remote.hostKeys.scan', { target: o(target) }, 60000),
+    }),
+    /**
+     * installKey(target, { credential?, login: { username?, password? }, account?: 'self'|'root', sudoPassword?, hostKey?: { confirm },
+     *   restrictFrom?, replaceOwnKey?, keepPassword? }) → { ok, steps, account, user, path, from, fingerprint, hostKey, publicKey, line,
+     *   credential, attemptsLeft, error?: { code, step } } — GateControl's key into authorized_keys of the device (version 9)
+     */
+    installKey: (target, opts) => hostCall('remote.installKey', { ...o(opts), target: o(target) }, 75000),
+    /** testKey(target, { credential }) → { ok, steps, attemptsLeft, error? } — a login with the key only (version 9) */
+    testKey: (target, opts) => hostCall('remote.testKey', { ...o(opts), target: o(target) }, 60000),
+    /** removeKey(target, { credential }) → { removedRemote: true, found, path } | { removedRemote: false, reason } (version 9) */
+    removeKey: (target, opts) => hostCall('remote.removeKey', { ...o(opts), target: o(target) }, 60000),
+    enrollment: Object.freeze({
+      /** create({ actorId, userId?, name? }) → { ticket, code, expiresAt, url } — a device code for the Linux agent, only for an administrator in a request (version 9) */
+      create: (opts) => hostCall('remote.enrollment.create', o(opts)),
+      /** status(ticket) → { state: waiting|redeemed|expired|revoked, peerId, peerName, vpnIp, handshakeAt, tokenDeviceId, platform, expiresAt } */
+      status: (ticket) => hostCall('remote.enrollment.status', { ticket }),
+      /** revoke(ticket) → { revoked, state } */
+      revoke: (ticket) => hostCall('remote.enrollment.revoke', { ticket }),
     }),
     /** probe(target) → { online, responseTime, via: direct|gateway } */
     probe: (target) => hostCall('remote.probe', { target: o(target) }, 30000),

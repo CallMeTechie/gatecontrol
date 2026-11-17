@@ -36,6 +36,16 @@ const CALLS = {
   // version 7 (Gerät hinzufügen)
   candidates: (gc, a) => gc.remote.candidates(a),
   scan: (gc, a) => gc.remote.scan(a.target, a.ports),
+  // version 9 (Schlüssel automatisch einrichten, tmux windows / kill, codes of the Linux agent)
+  'tmux.listWindows': (gc, a) => gc.remote.tmux.list(a.target, { credential: a.credential, windows: true }),
+  'tmux.kill': (gc, a) => gc.remote.tmux.kill(a.target, { credential: a.credential, session: a.session, window: a.window }),
+  'hostKeys.scan': (gc, a) => gc.remote.hostKeys.scan(a.target),
+  installKey: (gc, a) => gc.remote.installKey(a.target, a.opts),
+  testKey: (gc, a) => gc.remote.testKey(a.target, { credential: a.credential }),
+  removeKey: (gc, a) => gc.remote.removeKey(a.target, { credential: a.credential }),
+  'enrollment.create': (gc, a) => gc.remote.enrollment.create(a),
+  'enrollment.status': (gc, a) => gc.remote.enrollment.status(a.ticket),
+  'enrollment.revoke': (gc, a) => gc.remote.enrollment.revoke(a.ticket),
 };
 
 let chain = Promise.resolve();

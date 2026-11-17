@@ -124,28 +124,39 @@ function put(pluginId, input, { source = null } = {}) {
 }
 
 /**
- * gc.remote.vault.generate({ kind: 'ed25519', label?, username?, handle? }) → metadata + publicKey
- * A new SSH key pair made in the core: the private key goes into the vault (a new entry, or the
- * entry `handle` — its old key and passphrase are replaced, username and password stay), the
- * plugin gets the public key to show for authorized_keys. Never the private key.
+ * gc.remote.vault.generate({ kind: 'ed25519', label?, username?, handle?, comment? }) → metadata + publicKey
+ * A new SSH key pair made in the core: the private key goes into the vault (a new entry, or the entry `handle` — its old key and
+ * passphrase are replaced, username and password stay), the plugin gets the public key to show for authorized_keys. Never the
+ * private key. Version 9: `comment` — the comment of the key line (default: the label), e.g. `gatecontrol:dev-12`.
  */
 function generate(pluginId, input) {
   const o = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const kind = o.kind == null ? 'ed25519' : String(o.kind);
   if (kind !== 'ed25519') throw new VaultError('invalid', 'kind: ed25519');
   if (o.username != null && (typeof o.username !== 'string' || o.username.length > FIELDS.username)) throw new VaultError('invalid', 'username: a string');
+  if (o.comment != null && (typeof o.comment !== 'string' || o.comment.length > 80)) throw new VaultError('invalid', 'comment: a string of at most 80 characters');
   const label = o.label === undefined ? undefined : labelOf(o.label);
-  const pair = require('./sshkeys').generateEd25519(label || 'gatecontrol');
-  const entry = { privateKey: pair.privateKey, passphrase: null };
-  if (o.username) entry.username = o.username;
+  const pair = require('./sshkeys').generateEd25519(o.comment || label || 'gatecontrol');
+  return storeKeyPair(pluginId, { handle: o.handle, label, username: o.username || undefined, privateKey: pair.privateKey, publicKey: pair.publicKey, fingerprint: pair.fingerprint });
+}
+
+/**
+ * CORE ONLY — a key pair into an entry (new, or `handle`): privateKey and publicKey replace the old key and its passphrase.
+ * `username`: set when given; `password: null` clears the password (gc.remote.installKey after it worked).
+ * → metadata + fingerprint
+ */
+function storeKeyPair(pluginId, { handle, label, username, password, privateKey, passphrase = null, publicKey, fingerprint }) {
+  const entry = { privateKey, passphrase: passphrase || null };
+  if (username) entry.username = username;
+  if (password === null) entry.password = null;
   if (label !== undefined) entry.label = label;
-  if (o.handle != null) entry.handle = o.handle;
+  if (handle != null) entry.handle = handle;
   const meta = put(pluginId, entry);
   const row = rowOf(pluginId, meta.handle);
   const secret = decryptRow(row) || {};
-  secret.publicKey = pair.publicKey;
+  secret.publicKey = publicKey;
   db().prepare('UPDATE remote_vault SET secret_enc = ?, updated_at = ? WHERE handle = ?').run(encrypt(JSON.stringify(secret)), new Date().toISOString(), meta.handle);
-  return { ...metaOf(db().prepare('SELECT * FROM remote_vault WHERE handle = ?').get(meta.handle), secret), fingerprint: pair.fingerprint };
+  return { ...metaOf(db().prepare('SELECT * FROM remote_vault WHERE handle = ?').get(meta.handle), secret), fingerprint };
 }
 
 /** gc.remote.vault.remove(handle) → { removed } */
@@ -209,4 +220,4 @@ function restoreBackup(rows) {
   return n;
 }
 
-module.exports = { put, generate, remove, info, list, resolve, forget, exportBackup, restoreBackup, isHandle, VaultError, FIELDS, HANDLE_RE };
+module.exports = { put, generate, storeKeyPair, remove, info, list, resolve, forget, exportBackup, restoreBackup, isHandle, VaultError, FIELDS, HANDLE_RE };

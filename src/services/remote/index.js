@@ -1,6 +1,6 @@
 'use strict';
 
-// gc.remote, version 6 — the core part of the plugin "Fernzugriff"
+// gc.remote, version 9 — the core part of the plugin "Fernzugriff"
 // (gatecontrol-remote; docs/plugins.md "Remote access"). A plugin process has
 // no network of its own and its frames have connect-src 'none', so the core
 // keeps the transport (guacd, the tunnels, the session page, the key vault,
@@ -17,6 +17,8 @@
 //   sshkeys.js     ed25519 pairs for gc.remote.vault.generate, fingerprints
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
 //   candidates.js  gc.remote.candidates / scan — what „Gerät hinzufügen“ offers (version 7)
+//   keySetup.js    gc.remote.hostKeys.scan / installKey / testKey / removeKey — GateControl's key onto a device (version 9)
+//   enrollment.js  gc.remote.enrollment.* — device codes of the Linux agent, followed by a ticket (version 9)
 
 // 2: hubAddress, peerAddress, `from` in the answer of session (stage 2: the Windows switch)
 // 3: engine term (SSH terminal of the core), tmux.list, hostKeys.*, vault.generate, recordings for real (stage 3)
@@ -25,7 +27,9 @@
 // 6: the relay takes a Windows PC as sender: hello input 'desktop', mouse and keyboard input, displays (stage 7)
 // 7: candidates (the targets an administrator can pick), scan (several ports at once), listener listenPort 'auto',
 //    wake by a device of the network watch (target.watch) — the new „Gerät hinzufügen“ of the plugin
-const VERSION = 7;
+// 8: (with 9, never released alone) hostKeys.scan, installKey, testKey, removeKey — „Schlüssel automatisch einrichten“
+// 9: tmux.list with windows, tmux.kill, enrollment.create / status / revoke — „Linux-Gerät mit Agent“ of the plugin
+const VERSION = 9;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
@@ -35,6 +39,8 @@ const term = require('./term');
 const hostKeys = require('./hostKeys');
 const screen = require('./screen');
 const candidates = require('./candidates');
+const keySetup = require('./keySetup');
+const enrollment = require('./enrollment');
 
 // error code of a service → host API code (plain codes stay generic)
 const GENERIC = { invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND' };
@@ -42,7 +48,7 @@ function hostCode(code) {
   return GENERIC[code] || ('ERR_REMOTE_' + String(code || 'failed').toUpperCase());
 }
 
-const KNOWN = [sessions.SessionError, vault.VaultError, targets.TargetError, recordings.RecordingError, term.TermError, hostKeys.HostKeyError, screen.ScreenError];
+const KNOWN = [sessions.SessionError, vault.VaultError, targets.TargetError, recordings.RecordingError, term.TermError, hostKeys.HostKeyError, screen.ScreenError, enrollment.EnrollmentError];
 
 /**
  * One gc.remote call (hostApi.js remoteCall — the permission is checked there).
@@ -78,6 +84,15 @@ async function call(plugin, op, args) {
     case 'screen': return sessions.createScreen(plugin, a);
     case 'candidates': return candidates.candidates(plugin, a);
     case 'scan': return candidates.scan(plugin, a.target, a.ports);
+    // version 9
+    case 'hostKeys.scan': return keySetup.scan(plugin, a.target);
+    case 'installKey': return keySetup.installKey(plugin, a.target, a);
+    case 'testKey': return keySetup.testKey(plugin, a.target, a);
+    case 'removeKey': return keySetup.removeKey(plugin, a.target, a);
+    case 'tmux.kill': return term.tmuxKill(plugin, a.target, a);
+    case 'enrollment.create': return enrollment.create(plugin, a);
+    case 'enrollment.status': return enrollment.status(plugin, a.ticket);
+    case 'enrollment.revoke': return enrollment.revoke(plugin, a.ticket);
     default: {
       const e = new Error('unknown host API');
       e.code = 'unknown_api';

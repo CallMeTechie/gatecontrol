@@ -119,8 +119,9 @@ function ssh2() { return require('ssh2'); }
 /**
  * An SSH connection → Promise<Client> (ready). verify(fp) → Promise<boolean> decides on the host key.
  * Errors: TermError auth_failed | unreachable | timeout | host_key_* (set by verify via o.reject).
+ * Version 9 (keySetup.js): `authHandler` — ssh2's, to decide on the methods the target offers; `readyTimeout` in ms.
  */
-function connectSsh({ host, port, secret, verify, onClient }) {
+function connectSsh({ host, port, secret, verify, onClient, authHandler, readyTimeout }) {
   return new Promise((resolve, reject) => {
     const { Client } = ssh2();
     const { fingerprint } = require('./sshkeys');
@@ -147,13 +148,14 @@ function connectSsh({ host, port, secret, verify, onClient }) {
     });
     const opts = {
       host, port: Number(port) || 22, username: String(secret.username || ''),
-      readyTimeout: CONNECT_MS, keepaliveInterval: 15000, keepaliveCountMax: 3, tryKeyboard: !!secret.password,
+      readyTimeout: Number.isInteger(readyTimeout) && readyTimeout > 0 ? readyTimeout : CONNECT_MS, keepaliveInterval: 15000, keepaliveCountMax: 3, tryKeyboard: !!secret.password,
       hostVerifier: (key, cb) => {
         const fp = fingerprint(key);
         Promise.resolve().then(() => verify(fp)).then((ok) => { cb(ok === true); }, (e) => { hostFail = e; cb(false); });
         return undefined;
       },
     };
+    if (typeof authHandler === 'function') opts.authHandler = authHandler;
     if (secret.password) opts.password = String(secret.password);
     if (secret.privateKey) {
       opts.privateKey = String(secret.privateKey);
@@ -166,17 +168,34 @@ function connectSsh({ host, port, secret, verify, onClient }) {
   });
 }
 
-/** Run one command without a terminal → { code, out } (out capped). */
-function execOnce(c, cmd, { maxBytes = 256 * 1024, timeoutMs = 15000 } = {}) {
+/**
+ * Run one command without a terminal → { code, out } (out capped). Version 9: `stdin` (string | Buffer) is written to
+ * the command and closed (a script for `sh -s`, the password for `sudo -S` — never on the command line), `stderr: true`
+ * also keeps the error output (`err`, ≤ 4 KiB) — the caller must not log it as it is.
+ */
+function execOnce(c, cmd, { maxBytes = 256 * 1024, timeoutMs = 15000, stdin = null, stderr = false } = {}) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new TermError('timeout', 'the command did not finish')), timeoutMs);
-    c.exec(cmd, (err, stream) => {
+    let stream = null;
+    const timer = setTimeout(() => {
+      try { if (stream) stream.close(); } catch { /* closed */ }
+      reject(new TermError('timeout', 'the command did not finish'));
+    }, timeoutMs);
+    c.exec(cmd, (err, s) => {
       if (err) { clearTimeout(timer); reject(new TermError('exec_failed', 'command refused')); return; }
+      stream = s;
       const parts = [];
+      const errParts = [];
       let n = 0;
-      stream.on('data', (d) => { if (n < maxBytes) { parts.push(d); n += d.length; } });
-      stream.stderr.on('data', () => { /* not kept: tmux's "no server running" */ });
-      stream.on('close', (code) => { clearTimeout(timer); resolve({ code: code == null ? null : code, out: Buffer.concat(parts).toString('utf8').slice(0, maxBytes) }); });
+      let e = 0;
+      s.on('data', (d) => { if (n < maxBytes) { parts.push(d); n += d.length; } });
+      s.stderr.on('data', (d) => { if (stderr && e < 4096) { errParts.push(d); e += d.length; } /* else not kept: tmux's "no server running" */ });
+      s.on('close', (code) => {
+        clearTimeout(timer);
+        const r = { code: code == null ? null : code, out: Buffer.concat(parts).toString('utf8').slice(0, maxBytes) };
+        if (stderr) r.err = Buffer.concat(errParts).toString('utf8').slice(0, 4096);
+        resolve(r);
+      });
+      if (stdin != null) { try { s.end(stdin); } catch { /* closed */ } }
     });
   });
 }
@@ -221,13 +240,62 @@ function secretOf(pluginId, credential) {
   return s;
 }
 
-/**
- * gc.remote.tmux.list(target, { credential }) → [{ name, windows, attached, created, activity, attachable }]
- * Only to a target whose host key is pinned (no person to confirm one here): ERR_REMOTE_HOST_KEY_UNPINNED.
- * Without tmux on the target: ERR_REMOTE_TMUX_UNAVAILABLE. No tmux server running: [].
- */
-async function tmuxList(plugin, target, a) {
-  const o = a && typeof a === 'object' ? a : {};
+// Version 9: the ids of tmux — a session `$3`, a window `@7` — name a target in a command, never a name (no quoting
+// problems, no prefix match of `-t name`); only exactly these shapes reach a command line.
+const TMUX_SESSION_ID_RE = /^\$\d{1,6}$/;
+const TMUX_WINDOW_ID_RE = /^@\d{1,6}$/;
+const TMUX_LIST_IDS = "tmux ls -F '#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_created}\t#{session_activity}\t#{session_id}'";
+const TMUX_WINDOWS = "tmux list-windows -a -F '#{session_id}\t#{window_id}\t#{window_index}\t#{window_active}\t#{window_panes}\t#{pane_current_command}\t#{window_name}'";
+
+/** The lines of `tmux list-windows -a -F TMUX_WINDOWS` → Map session id → [{ id, index, name, active, panes, command }] */
+function parseTmuxWindows(out) {
+  const num = (v) => { const n = Number(v); return Number.isSafeInteger(n) && n >= 0 ? n : null; };
+  const bySession = new Map();
+  let total = 0;
+  for (const line of String(out || '').split('\n')) {
+    if (!line.trim()) continue;
+    const f = line.split('\t');
+    if (f.length < 7) continue;
+    const sid = f[0];
+    const wid = f[1];
+    if (!TMUX_SESSION_ID_RE.test(sid) || !TMUX_WINDOW_ID_RE.test(wid)) continue;
+    // a window name may hold a tab: everything after the sixth field is the name
+    const name = f.slice(6).join('\t').replace(CTRL_RE, '').slice(0, 64);
+    const command = f[5].replace(CTRL_RE, '').slice(0, 64) || null;
+    if (!bySession.has(sid)) bySession.set(sid, []);
+    const list = bySession.get(sid);
+    if (list.length >= 100) continue;
+    list.push({ id: wid, index: num(f[2]), name, active: f[3] === '1', panes: num(f[4]), command });
+    if (++total >= 2000) break;
+  }
+  for (const list of bySession.values()) list.sort((x, y) => (x.index ?? 0) - (y.index ?? 0));
+  return bySession;
+}
+
+/** The sessions with their ids and windows from the lines of TMUX_LIST_IDS and TMUX_WINDOWS → [{ …session, id, windowList }] */
+function parseTmuxListWindows(lsOut, winOut) {
+  const num = (v) => { const n = Number(v); return Number.isSafeInteger(n) && n >= 0 ? n : null; };
+  const isoOf = (v) => { const n = num(v); return n ? new Date(n * 1000).toISOString() : null; };
+  const windows = parseTmuxWindows(winOut);
+  const list = [];
+  for (const line of String(lsOut || '').split('\n')) {
+    if (!line.trim()) continue;
+    const f = line.split('\t');
+    if (f.length < 6) continue;
+    // the numbers and the id are the last five fields: a session name with a tab cannot shift them
+    const k = f.length - 5;
+    const id = f[k + 4].trim();
+    if (!TMUX_SESSION_ID_RE.test(id)) continue;
+    const name = f.slice(0, k).join('\t').replace(CTRL_RE, '').slice(0, 64);
+    if (!name) continue;
+    list.push({ name, windows: num(f[k]), attached: num(f[k + 1]) || 0, created: isoOf(f[k + 2]), activity: isoOf(f[k + 3]), attachable: TMUX_NAME_RE.test(name), id, windowList: windows.get(id) || [] });
+    if (list.length >= 200) break;
+  }
+  return list;
+}
+
+/** An SSH connection for tmux to a target whose host key is pinned → { c, t } (the caller ends c). */
+async function tmuxConnect(plugin, target, o) {
   const t = require('./targets').normalise(target);
   const ep = await pluginTarget(plugin, t);
   if (!ep.host) throw new TermError('listener_required', 'a LAN target of a gateway needs a listener (gc.remote.listener)');
@@ -241,11 +309,95 @@ async function tmuxList(plugin, target, a) {
       throw new TermError(r === 'mismatch' ? 'host_key_mismatch' : 'host_key_unpinned', r === 'mismatch' ? 'the host key changed' : 'no host key pinned yet — connect once in the terminal');
     },
   });
+  return { c, t };
+}
+
+/** The sessions on an open connection → [session] (with ids and windows when `windows`). */
+async function tmuxSessions(c, windows) {
+  const r = await execOnce(c, windows ? TMUX_LIST_IDS : TMUX_LIST);
+  if (r.code === 127) throw new TermError('tmux_unavailable', 'tmux is not installed on the target');
+  if (r.code !== 0) return [];
+  if (!windows) return parseTmuxList(r.out);
+  const w = await execOnce(c, TMUX_WINDOWS);
+  return parseTmuxListWindows(r.out, w.code === 0 ? w.out : '');
+}
+
+/** The answer form with windows: `windows` is the list of windows then, the number moves to `windowCount`. */
+function viewWithWindows(s) {
+  const { windowList, ...rest } = s;
+  return { ...rest, windows: windowList, windowCount: s.windows };
+}
+
+/**
+ * gc.remote.tmux.list(target, { credential, windows? }) → [{ name, windows, attached, created, activity, attachable }]
+ * Only to a target whose host key is pinned (no person to confirm one here): ERR_REMOTE_HOST_KEY_UNPINNED.
+ * Without tmux on the target: ERR_REMOTE_TMUX_UNAVAILABLE. No tmux server running: [].
+ * Version 9, `windows: true`: each session also { id: '$n', windows: [{ id: '@n', index, name, active, panes, command }],
+ * windowCount } — a second `tmux list-windows -a` in the same connection.
+ */
+async function tmuxList(plugin, target, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  const { c } = await tmuxConnect(plugin, target, o);
   try {
-    const r = await execOnce(c, TMUX_LIST);
-    if (r.code === 127) throw new TermError('tmux_unavailable', 'tmux is not installed on the target');
-    if (r.code !== 0) return [];
-    return parseTmuxList(r.out);
+    const list = await tmuxSessions(c, o.windows === true);
+    return o.windows === true ? list.map(viewWithWindows) : list;
+  } finally { try { c.end(); } catch { /* closed */ } }
+}
+
+function isoOrNull(v) {
+  if (v == null || v === '') return null;
+  const d = new Date(typeof v === 'number' ? v * 1000 : String(v));
+  return Number.isNaN(d.getTime()) ? undefined : new Date(Math.floor(d.getTime() / 1000) * 1000).toISOString();
+}
+
+/**
+ * gc.remote.tmux.kill(target, { credential, session: { id, name, created }, window?: { id, index } }) (version 9)
+ * → { killed: 'session' | 'window', session: '$n', window: '@n' | null, sessionEnded }
+ * Lists anew in the same connection and checks that the session (id, name, created) and the window (id, index) are
+ * still the ones the person saw: gone → ERR_REMOTE_TMUX_GONE, something else under the id (tmux restarted) →
+ * ERR_REMOTE_TMUX_CHANGED — nothing is killed then. The target is the id only (`$n`, `@n`).
+ */
+async function tmuxKill(plugin, target, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  const sess = o.session && typeof o.session === 'object' ? o.session : null;
+  if (!sess || typeof sess.id !== 'string' || !TMUX_SESSION_ID_RE.test(sess.id)) throw new TermError('invalid', 'session.id: $<number>');
+  if (typeof sess.name !== 'string' || !sess.name || sess.name.length > 64) throw new TermError('invalid', 'session.name: as listed');
+  const created = isoOrNull(sess.created);
+  if (created === undefined) throw new TermError('invalid', 'session.created: as listed (ISO) or null');
+  let win = null;
+  if (o.window != null) {
+    if (typeof o.window !== 'object' || typeof o.window.id !== 'string' || !TMUX_WINDOW_ID_RE.test(o.window.id)) throw new TermError('invalid', 'window.id: @<number>');
+    const idx = o.window.index == null ? null : Number(o.window.index);
+    if (idx !== null && (!Number.isSafeInteger(idx) || idx < 0)) throw new TermError('invalid', 'window.index: a number');
+    win = { id: o.window.id, index: idx };
+  }
+  const { c } = await tmuxConnect(plugin, target, o);
+  try {
+    const list = await tmuxSessions(c, true);
+    const s = list.find((x) => x.id === sess.id);
+    if (!s) throw new TermError('tmux_gone', 'the session is gone');
+    if (s.name !== sess.name || (s.created || null) !== created) throw new TermError('tmux_changed', 'another session runs under this id now');
+    if (win) {
+      const w = s.windowList.find((x) => x.id === win.id);
+      if (!w) throw new TermError('tmux_gone', 'the window is gone');
+      if (win.index !== null && w.index !== win.index) throw new TermError('tmux_changed', 'another window runs under this id now');
+    }
+    // the id checked above (^\$\d+$ / ^@\d+$), single-quoted all the same
+    const cmd = win ? `tmux kill-window -t '${win.id}'` : `tmux kill-session -t '${s.id}'`;
+    const r = await execOnce(c, cmd, { maxBytes: 1024 });
+    if (r.code !== 0) {
+      // gone in between (the last window closed by itself): say so, the list is reloaded
+      const again = await tmuxSessions(c, true);
+      const still = again.find((x) => x.id === s.id);
+      if (!still || (win && !still.windowList.some((x) => x.id === win.id))) throw new TermError('tmux_gone', 'the session is gone');
+      throw new TermError('tmux_failed', 'tmux did not end it');
+    }
+    let sessionEnded = !win;
+    if (win) {
+      const after = await tmuxSessions(c, true);
+      sessionEnded = !after.some((x) => x.id === s.id);
+    }
+    return { killed: win ? 'window' : 'session', session: s.id, window: win ? win.id : null, sessionEnded };
   } finally { try { c.end(); } catch { /* closed */ } }
 }
 
@@ -431,5 +583,6 @@ function run(ws, ticket, { via = 'browser', clientIp = null } = {}) {
 function _resetForTest() { if (process.env.NODE_ENV === 'test') tokens.clear(); }
 
 module.exports = {
-  PROTOCOL, WS_PATH, TMUX_NAME_RE, TermError, mintToken, takeToken, tokenOfProtocols, cleanTmux, tmuxCommand, parseTmuxList, tmuxList, run, connectSsh, execOnce, _resetForTest,
+  PROTOCOL, WS_PATH, TMUX_NAME_RE, TMUX_SESSION_ID_RE, TMUX_WINDOW_ID_RE, TermError, mintToken, takeToken, tokenOfProtocols, cleanTmux, tmuxCommand,
+  parseTmuxList, parseTmuxWindows, parseTmuxListWindows, tmuxList, tmuxKill, run, connectSsh, execOnce, secretOf, _resetForTest,
 };
