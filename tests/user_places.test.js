@@ -7,6 +7,8 @@
 //   * the endpoints under /api/v1/me, /api/v1/portal/me and /api/v1/client/me — own places only; "?shared=1" and the
 //     levels self / family / all; DELETE 409 IN_USE with usedBy, ?force=1
 //   * gc.places (permissions.places): list / get / resolve / markUsed / reportUsage / importFor, refused without
+//   * gc.places version 2: create / update / remove for the owner only, the rules and codes of the endpoints, the
+//     events, search (stand-in transport), reportUsage with count 0 for a place no longer visible, v1 unchanged
 //   * the address search with a stand-in transport: rounding, User-Agent, cache, one request at a time, limits
 //   * "Meine Daten" and the settings of the administrator
 // Made-up names and addresses only.
@@ -433,6 +435,218 @@ describe('gc.places (permissions.places)', () => {
     for (let i = 0; i < 99; i++) ins.run(u, `Ort ${i}`, `ort ${i}`);
     const r = await call('places.importFor', { userId: u, places: [{ sourceRef: 'a', name: 'A', lat: 50, lon: 8 }, { sourceRef: 'b', name: 'B', lat: 50, lon: 8 }], source: 'notizen' });
     assert.deepEqual([Object.keys(r.map), r.skipped], [['a'], [{ sourceRef: 'b', reason: 'limit' }]]);
+  });
+});
+
+describe('gc.places version 2', () => {
+  let origList, rtOrig, streamOrig, calls, written;
+  const registry = () => require('../src/services/plugins/registry');
+  const rt = () => require('../src/services/plugins/runtime');
+  const stream = () => require('../src/services/notify/stream');
+  const call = (api, args, plugin = WITH) => hostApi.handle(plugin, api, args);
+  const tick = () => new Promise((r) => setImmediate(r));
+  let watched;
+  before(() => {
+    origList = registry().list;
+    rtOrig = { info: rt().info, call: rt().call };
+    streamOrig = { list: stream().list, write: stream().writeEvent };
+    registry().list = () => ['gatecontrol-notizen', 'gatecontrol-messenger'].map((id) => ({ id, enabled: true, manifest: { name: { de: id, en: id }, permissions: { places: true } } }));
+    rt().info = () => ({ state: 'running' });
+    rt().call = (id, hook, payload) => { if (payload.userId === watched && id === 'gatecontrol-notizen') calls.push({ id, hook, payload }); return Promise.resolve({}); };
+  });
+  after(() => {
+    registry().list = origList; rt().info = rtOrig.info; rt().call = rtOrig.call;
+    stream().list = streamOrig.list; stream().writeEvent = streamOrig.write;
+  });
+  beforeEach(() => {
+    calls = []; written = [];
+    stream().list = () => [{ tokenId: 911, userId: watched, closed: false }];
+    stream().writeEvent = (conn, ev, data) => { written.push({ tokenId: conn.tokenId, ev, data }); return true; };
+  });
+
+  it('the version and the methods in the plugin process', () => {
+    const src = require('node:fs').readFileSync(require.resolve('../src/services/plugins/child/bootstrap.js'), 'utf8');
+    const part = src.slice(src.indexOf('function makePlaces()'), src.indexOf('function makeGc('));
+    assert.match(part, /version: 2,/);
+    for (const m of ['list', 'get', 'resolve', 'markUsed', 'reportUsage', 'importFor', 'create', 'update', 'remove', 'search']) {
+      assert.match(part, new RegExp(`\\b${m}: \\(`), m);
+    }
+  });
+
+  it('refused without the permission — the new methods too', async () => {
+    for (const api of ['places.create', 'places.update', 'places.remove', 'places.search']) {
+      await assert.rejects(call(api, { userId: 1, id: 1, place: place('X'), patch: {}, q: 'Abcweg' }, PLUGIN({ users: true })), (e) => e.code === 'ERR_PLACES_DENIED', api);
+    }
+  });
+
+  it('create: the rules of POST profile/places, for the owner; the events', async () => {
+    const u = H.makeUser('pl-v2-create');
+    watched = u;
+    const p = await call('places.create', { userId: u, place: place('Bäckerei Sonnenschein', { icon: 'shop', radiusM: 80, address: 'Mühlenweg 7, Beispielhausen' }) });
+    assert.deepEqual([p.name, p.icon, p.radiusM, p.address, p.visibility, p.source, p.ownerId, p.own, p.ref], ['Bäckerei Sonnenschein', 'shop', 80, 'Mühlenweg 7, Beispielhausen', 'self', 'manual', u, true, `profile:${p.id}`]);
+    await tick();
+    assert.deepEqual(calls.map((c) => c.payload), [{ userId: u, ids: [p.id], deleted: false }]);
+    assert.deepEqual(written, [{ tokenId: 911, ev: 'control', data: { type: 'places', ids: [p.id], deleted: false } }]);
+    const log = db.prepare("SELECT details FROM activity_log WHERE event_type = 'place_added' AND json_extract(details, '$.placeId') = ?").get(p.id);
+    assert.equal(JSON.parse(log.details).plugin, 'gatecontrol-notizen');
+    assert.doesNotMatch(log.details, /Sonnenschein|Mühlenweg/);
+    const codeOf = async (args) => { try { await call('places.create', args); } catch (e) { return [e.code, e.field || null]; } return null; };
+    assert.deepEqual(await codeOf({ userId: u, place: place('bäckerei sonnenschein') }), ['ERR_DUPLICATE', 'name']);
+    assert.deepEqual(await codeOf({ userId: u, place: { name: 'Ohne Punkt' } }), ['ERR_INVALID', 'lat']);
+    assert.deepEqual(await codeOf({ userId: u, place: { name: 'Nullinsel', lat: 0, lon: 0 } }), ['ERR_INVALID', 'lat']);
+    assert.deepEqual(await codeOf({ userId: u, place: { name: 'Zu weit', lat: 91, lon: 8 } }), ['ERR_INVALID', 'lat']);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Klein', { radiusM: 49 }) }), ['ERR_INVALID', 'radiusM']);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Groß', { radiusM: 2001 }) }), ['ERR_INVALID', 'radiusM']);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Symbol', { icon: 'rocket' }) }), ['ERR_INVALID', 'icon']);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Sicht', { visibility: 'world' }) }), ['ERR_INVALID', 'visibility']);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Herkunft', { source: 'notizen' }) }), ['ERR_INVALID', 'source']);
+    assert.deepEqual(await codeOf({ userId: u, place: null }), ['ERR_INVALID', 'body']);
+    assert.deepEqual(await codeOf({ userId: 'abc', place: place('A') }), ['ERR_INVALID', null]);
+    assert.deepEqual(await codeOf({ userId: 99999999, place: place('A') }), ['ERR_NOT_FOUND', null]);
+    const ins = db.prepare('INSERT INTO user_places (user_id, name, name_lc, lat, lon) VALUES (?, ?, ?, 50.1, 8.6)');
+    for (let i = 0; i < places.MAX_PLACES - 1; i++) ins.run(u, `Füller ${i}`, `füller ${i}`);
+    assert.deepEqual(await codeOf({ userId: u, place: place('Einer zu viel') }), ['ERR_LIMIT', null]);
+  });
+
+  it('update: the owner\'s place only, the rules of PATCH; the events', async () => {
+    const u = H.makeUser('pl-v2-upd');
+    const other = H.makeUser('pl-v2-upd-other');
+    family(u, other);
+    const p = places.create(u, place('Gartenhaus', { visibility: 'family' }));
+    places.create(u, place('Werkstatt'));
+    watched = u;
+    await tick(); calls = []; written = [];
+    const r = await call('places.update', { userId: u, id: p.id, patch: { name: 'Gartenlaube', radiusM: 300, lat: 50.2, lon: 8.75, address: null } });
+    assert.deepEqual([r.id, r.name, r.radiusM, r.lat, r.lon, r.address, r.own, r.ownerId], [p.id, 'Gartenlaube', 300, 50.2, 8.75, null, true, u]);
+    await tick();
+    assert.deepEqual(calls.map((c) => c.payload), [{ userId: u, ids: [p.id], deleted: false }]);
+    assert.deepEqual(written.map((w) => w.data), [{ type: 'places', ids: [p.id], deleted: false }]);
+    // somebody else — also a family member who sees it — gets ERR_NOT_FOUND, nothing changes
+    await assert.rejects(call('places.update', { userId: other, id: p.id, patch: { name: 'Meins' } }), (e) => e.code === 'ERR_NOT_FOUND');
+    await assert.rejects(call('places.update', { userId: u, id: 99999999, patch: { name: 'Nichts' } }), (e) => e.code === 'ERR_NOT_FOUND');
+    assert.equal(places.getOwn(u, p.id).name, 'Gartenlaube');
+    const codeOf = async (patch) => { try { await call('places.update', { userId: u, id: p.id, patch }); } catch (e) { return [e.code, e.field || null]; } return null; };
+    assert.deepEqual(await codeOf({ name: 'WERKSTATT' }), ['ERR_DUPLICATE', 'name']);
+    assert.deepEqual(await codeOf({ lat: 50.3 }), ['ERR_INVALID', 'lon']);
+    assert.deepEqual(await codeOf({ lat: 0, lon: 0 }), ['ERR_INVALID', 'lat']);
+    assert.deepEqual(await codeOf({ radiusM: 10 }), ['ERR_INVALID', 'radiusM']);
+    assert.deepEqual(await codeOf({ icon: 'rocket' }), ['ERR_INVALID', 'icon']);
+    assert.deepEqual(await codeOf({ visibility: 'nobody' }), ['ERR_INVALID', 'visibility']);
+    assert.deepEqual(await codeOf({ favorite: true }), ['ERR_INVALID', 'favorite']);
+    assert.deepEqual(await codeOf('Gartenlaube'), ['ERR_INVALID', 'body']);
+    // the same name in other letters is no conflict with itself; an empty patch changes nothing and sends nothing
+    assert.equal((await call('places.update', { userId: u, id: p.id, patch: { name: 'GARTENLAUBE' } })).name, 'GARTENLAUBE');
+    await tick(); calls = []; written = [];
+    await call('places.update', { userId: u, id: p.id, patch: {} });
+    await tick();
+    assert.deepEqual([calls.length, written.length], [0, 0]);
+  });
+
+  it('remove: the owner\'s place only; IN_USE with usedBy unless force; placesChanged with deleted', async () => {
+    const u = H.makeUser('pl-v2-del');
+    const other = H.makeUser('pl-v2-del-other');
+    const p = places.create(u, place('Sportplatz', { visibility: 'all' }));
+    const q = places.create(u, place('Leer'));
+    watched = u;
+    await tick(); calls = []; written = [];
+    await assert.rejects(call('places.remove', { userId: other, id: p.id }), (e) => e.code === 'ERR_NOT_FOUND');
+    await call('places.reportUsage', { userId: u, id: p.id, kind: 'task', count: 2 });
+    await assert.rejects(call('places.remove', { userId: u, id: p.id }), (e) => e.code === 'ERR_IN_USE'
+      && JSON.stringify(e.usedBy) === JSON.stringify([{ plugin: 'gatecontrol-notizen', pluginName: 'gatecontrol-notizen', kind: 'task', count: 2 }]));
+    await assert.rejects(call('places.remove', { userId: u, id: p.id, force: 'yes' }), (e) => e.code === 'ERR_IN_USE', 'force only as true');
+    assert.ok(places.getOwn(u, p.id));
+    assert.deepEqual(await call('places.remove', { userId: u, id: p.id, force: true }), { deleted: true, id: p.id });
+    assert.deepEqual(await call('places.remove', { userId: u, id: q.id }), { deleted: true, id: q.id });
+    await tick();
+    assert.deepEqual(calls.map((c) => c.payload), [{ userId: u, ids: [p.id], deleted: true }, { userId: u, ids: [q.id], deleted: true }]);
+    assert.deepEqual(written.map((w) => w.data), [{ type: 'places', ids: [p.id], deleted: true }, { type: 'places', ids: [q.id], deleted: true }]);
+    await assert.rejects(call('places.remove', { userId: u, id: p.id }), (e) => e.code === 'ERR_NOT_FOUND');
+    const log = db.prepare("SELECT details FROM activity_log WHERE event_type = 'place_removed' AND json_extract(details, '$.placeId') = ?").get(p.id);
+    assert.deepEqual([JSON.parse(log.details).plugin, JSON.parse(log.details).force], ['gatecontrol-notizen', true]);
+  });
+
+  it('the error fields travel to the plugin process (field, usedBy)', () => {
+    const src = require('node:fs').readFileSync(require.resolve('../src/services/plugins/runtime.js'), 'utf8');
+    assert.match(src, /\{ field: e\.field \}/);
+    assert.match(src, /\{ usedBy: e\.usedBy\.slice\(0, 50\) \}/);
+  });
+
+  it('reportUsage: count 0 for a place the person no longer sees (or that is gone) — never more', async () => {
+    const owner = H.makeUser('pl-v2-ru-owner');
+    const viewer = H.makeUser('pl-v2-ru-viewer');
+    const p = places.create(owner, place('Treffpunkt', { visibility: 'all' }));
+    await call('places.reportUsage', { userId: viewer, id: p.id, kind: 'reminder', count: 4 });
+    await call('places.reportUsage', { userId: owner, id: p.id, kind: 'task', count: 1 }, PLUGIN({ places: true }, 'gatecontrol-messenger'));
+    places.update(owner, p.id, { visibility: 'self' });
+    // more than 0: the place must be visible
+    await assert.rejects(call('places.reportUsage', { userId: viewer, id: p.id, kind: 'reminder', count: 3 }), (e) => e.code === 'ERR_NOT_FOUND');
+    // 0: always — removes only this plugin's row of that kind, tells nothing of the others
+    assert.deepEqual(await call('places.reportUsage', { userId: viewer, id: p.id, kind: 'reminder', count: 0 }), { usedBy: [] });
+    assert.deepEqual(places.getOwn(owner, p.id).usedBy.map((x) => [x.plugin, x.kind, x.count]), [['gatecontrol-messenger', 'task', 1]]);
+    // a place that is gone: 0 is fine, more is not
+    assert.deepEqual(await call('places.reportUsage', { userId: viewer, id: 99999999, kind: 'reminder', count: 0 }), { usedBy: [] });
+    await assert.rejects(call('places.reportUsage', { userId: viewer, id: 99999999, kind: 'reminder', count: 1 }), (e) => e.code === 'ERR_NOT_FOUND');
+    await assert.rejects(call('places.reportUsage', { userId: viewer, id: 'x', kind: 'reminder', count: 0 }), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(call('places.reportUsage', { userId: viewer, id: p.id, kind: 'Bad Kind', count: 0 }), (e) => e.code === 'ERR_INVALID');
+  });
+
+  it('search: the server\'s address search — setting, rounding, limit per person, cache', async () => {
+    const requests = [];
+    const settings = require('../src/services/settings');
+    search._reset({ pauseMs: 0 });
+    search._setTransport(async (url) => {
+      requests.push(url);
+      return { status: 200, body: Buffer.from(JSON.stringify([{ lat: '50.1105', lon: '8.6821', name: 'Musterbau Baumarkt', address: { road: 'Industriestraße', house_number: '20', city: 'Musterstadt' } }])) };
+    });
+    settings.set('profile.place_search', 'osm');
+    settings.set('profile.place_search_url', '');
+    try {
+      const u = H.makeUser('pl-v2-search');
+      const r = await call('places.search', { userId: u, q: 'Baumarkt', near: '50.112345,8.687654' });
+      assert.deepEqual(Object.keys(r).sort(), ['attribution', 'results']);
+      assert.equal(r.results[0].name, 'Musterbau Baumarkt');
+      assert.ok(Number.isInteger(r.results[0].distanceM));
+      assert.equal(r.attribution.text, '© OpenStreetMap');
+      assert.doesNotMatch(requests[0], /112345|687654/);
+      // the same words in the same cell: the cache, nothing goes out
+      await call('places.search', { userId: u, q: 'baumarkt', near: { lat: 50.114, lon: 8.686 } });
+      assert.equal(requests.length, 1);
+      const codeOf = async (args) => { try { await call('places.search', args); } catch (e) { return [e.code, e.field || null]; } return null; };
+      assert.deepEqual(await codeOf({ userId: u, q: 'ab' }), ['ERR_INVALID', 'q']);
+      assert.deepEqual(await codeOf({ userId: u, q: 'Abcweg', near: '0,0' }), ['ERR_INVALID', 'near']);
+      assert.deepEqual(await codeOf({ userId: u, q: 42 }), ['ERR_INVALID', null]);
+      assert.deepEqual(await codeOf({ userId: 99999999, q: 'Abcweg' }), ['ERR_NOT_FOUND', null]);
+      // the limit counts per person — shared with the endpoint
+      for (let i = 1; i < search.PER_HOUR; i++) await search.search({ q: `Gasse ${i}`, userId: u });
+      await assert.rejects(call('places.search', { userId: u, q: 'Noch eine Gasse' }), (e) => e.code === 'ERR_RATE_LIMIT' && e.retryAfterS > 0);
+      // another person still searches
+      assert.ok((await call('places.search', { userId: H.makeUser('pl-v2-search-2'), q: 'Noch eine Gasse' })).results);
+      search._reset({ pauseMs: 0 });
+      search._setTransport(async () => { throw new Error('down'); });
+      assert.deepEqual(await codeOf({ userId: u, q: 'Abcweg' }), ['ERR_UNAVAILABLE', null]);
+      settings.set('profile.place_search', 'off');
+      assert.deepEqual(await codeOf({ userId: u, q: 'Abcweg' }), ['ERR_SEARCH_OFF', null]);
+    } finally {
+      settings.set('profile.place_search', 'osm');
+      search._reset();
+      search._setTransport(null);
+    }
+  });
+
+  it('version 1 unchanged: list / get / resolve / markUsed / importFor answer as before', async () => {
+    const u = H.makeUser('pl-v2-compat');
+    const p = await call('places.create', { userId: u, place: place('Altbau') });
+    const listed = (await call('places.list', { userId: u })).find((x) => x.id === p.id);
+    const got = await call('places.get', { userId: u, id: p.id });
+    assert.deepEqual(listed, got);
+    assert.deepEqual(Object.keys(p).sort(), Object.keys(got).sort());
+    const resolved = await call('places.resolve', { ref: p.ref });
+    assert.deepEqual([resolved.id, resolved.ownerId, 'own' in resolved], [p.id, u, false]);
+    assert.deepEqual(Object.keys(await call('places.markUsed', { userId: u, id: p.id })).sort(), ['id', 'lastUsedAt']);
+    const imp = await call('places.importFor', { userId: u, places: [{ sourceRef: 'alt-1', name: 'Altbau', lat: 50.3, lon: 8.9 }], source: 'notizen' });
+    assert.equal(imp.map['alt-1'].created, true);
+    assert.equal(places.getOwn(u, imp.map['alt-1'].id).name, 'Altbau 2');
+    await assert.rejects(call('places.unknownThing', { userId: u }), (e) => e.code !== 'ERR_PLACES_DENIED');
   });
 });
 

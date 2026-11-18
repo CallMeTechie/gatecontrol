@@ -140,7 +140,7 @@ The server never learns where a person is: the apps check arriving and leaving t
 `placesChanged({ userId, ids, deleted })`, and the person's open app streams (`GET /api/v1/client/push`) the control event
 `{ "type": "places", "ids": [...], "deleted": false }` — the device that made the change excepted. Neither carries a
 name or a point. The activity log names the place's id only (`place_added`, `place_changed`, `place_removed`,
-`places_imported`).
+`places_imported`; a change by a plugin through `gc.places` version 2 also names the plugin).
 
 **Portal.** "Mein Profil › Meine Orte" (`#orte`, a card on "Mein Profil" leads there): the list left, the map right
 (Leaflet over the server's tile relay `/plugins/_shared/tiles/…`, loaded when the page opens). A click on the map starts

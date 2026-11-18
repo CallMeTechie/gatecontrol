@@ -252,6 +252,10 @@ class PluginProcess {
           ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}),
           // a host API error's reason (gc.print ERR_PRINT_FORMAT: why the file cannot be printed)
           ...(e && e.code && typeof e.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.reason) ? { reason: e.reason } : {}),
+          // the field of an ERR_INVALID / ERR_DUPLICATE (gc.places version 2: create / update / search)
+          ...(e && e.code && typeof e.field === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(e.field) ? { field: e.field } : {}),
+          // "Genutzt von" of an ERR_IN_USE (gc.places.remove without force, version 2)
+          ...(e && e.code === 'ERR_IN_USE' && Array.isArray(e.usedBy) ? { usedBy: e.usedBy.slice(0, 50) } : {}),
           // when to ask again (gc.bridges.resolve / createDm ERR_RATE_LIMIT, gc.bridges version 4)
           ...(e && e.code === 'ERR_RATE_LIMIT' && Number.isSafeInteger(e.retryAfterS) && e.retryAfterS > 0 ? { retryAfterS: Math.min(e.retryAfterS, 86400) } : {}) }))
       .finally(() => { this.hostCalls--; loopStall().endRequest(reqId); });
