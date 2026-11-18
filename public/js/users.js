@@ -2425,7 +2425,8 @@
   });
 
   // "Einstellungen" of the users (docs/feature-user-profile.md): phone
-  // numbers in the profile (on), recognition by confirmed numbers only (off).
+  // numbers in the profile (on), recognition by confirmed numbers only (off),
+  // the address search of "Meine Orte" (OpenStreetMap).
   async function openProfileSettings() {
     let cur;
     try { cur = (await call('GET', '/api/v1/users/settings/profile')).settings; } catch (err) { D.alert({ message: errMsg(err), danger: true }); return; }
@@ -2439,10 +2440,24 @@
     d.body.appendChild(el('p', { class: 'up-muted' }, T('us.settings.lead')));
     const phones = row('us-set-phones', T('us.settings.phones'), T('us.settings.phones_hint'), cur.phonesEnabled);
     const confirmed = row('us-set-confirmed', T('us.settings.confirmed_only'), T('us.settings.confirmed_only_hint'), cur.confirmedOnly);
+    // the address search of "Meine Orte" (services/placeSearch.js): OpenStreetMap (default), an own Nominatim, off
+    const search = el('select', { class: 'form-input', id: 'us-set-search' }, ['osm', 'own', 'off'].map((m) => el('option', { value: m, selected: cur.placeSearch === m }, T('us.settings.search_' + m))));
+    const searchUrl = el('input', { type: 'url', class: 'form-input', id: 'us-set-search-url', maxlength: 300, placeholder: 'https://nominatim.example.org', 'aria-label': T('us.settings.search_url'), value: cur.placeSearchUrl || '' });
+    const urlField = el('label', { class: 'us-field', hidden: cur.placeSearch !== 'own' }, [el('span', { class: 'us-label' }, T('us.settings.search_url')), searchUrl]);
+    search.addEventListener('change', () => { urlField.hidden = search.value !== 'own'; });
+    d.body.appendChild(el('div', { class: 'us-field us-settings-search' }, [
+      el('label', { class: 'us-label', for: 'us-set-search' }, T('us.settings.search')),
+      search,
+      el('span', { class: 'us-hint' }, T('us.settings.search_hint')),
+    ]));
+    d.body.appendChild(urlField);
     d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', on: { click: () => d.close(null) } }, T('common.cancel')));
     d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-primary', id: 'us-set-save', on: { click: async () => {
       try {
-        await call('PUT', '/api/v1/users/settings/profile', { phonesEnabled: phones.getAttribute('aria-checked') === 'true', confirmedOnly: confirmed.getAttribute('aria-checked') === 'true' });
+        await call('PUT', '/api/v1/users/settings/profile', {
+          phonesEnabled: phones.getAttribute('aria-checked') === 'true', confirmedOnly: confirmed.getAttribute('aria-checked') === 'true',
+          placeSearch: search.value, ...(search.value === 'own' ? { placeSearchUrl: searchUrl.value.trim() } : {}),
+        });
         toast(T('us.saved'));
         d.close(true);
       } catch (err) { D.alert({ message: errMsg(err), danger: true }); }

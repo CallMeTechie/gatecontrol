@@ -78,10 +78,30 @@ const invalid = (field, message) => new ProfileError('ERR_INVALID', message || `
 function phonesEnabled() { return settings.get('profile.phones_enabled', '1') !== '0'; }
 /** "Zum Erkennen nur bestätigte Nummern nutzen" (off): on drops the medium hint of unconfirmed numbers. */
 function confirmedOnly() { return settings.get('profile.match_confirmed_only', '0') === '1'; }
-function getSettings() { return { phonesEnabled: phonesEnabled(), confirmedOnly: confirmedOnly() }; }
+/** The address search of "Meine Orte" (services/placeSearch.js): 'osm' (default) | 'own' (placeSearchUrl) | 'off'. */
+function getSettings() {
+  const search = require('./placeSearch');
+  return { phonesEnabled: phonesEnabled(), confirmedOnly: confirmedOnly(), placeSearch: search.mode(), placeSearchUrl: search.ownUrl() || null };
+}
 function setSettings(patch, ctx = {}) {
   const p = patch && typeof patch === 'object' ? patch : {};
   const changed = [];
+  // the address search of "Meine Orte" is checked first: a wrong URL changes nothing
+  let search = null;
+  if (p.placeSearch !== undefined || p.placeSearchUrl !== undefined) {
+    const ps = require('./placeSearch');
+    const mode = p.placeSearch === undefined ? ps.mode() : p.placeSearch;
+    if (!ps.MODES.includes(mode)) throw invalid('placeSearch');
+    let url = ps.ownUrl() || null;
+    if (p.placeSearchUrl !== undefined) {
+      if (p.placeSearchUrl === null || p.placeSearchUrl === '') url = null;
+      else {
+        try { url = ps.normalizeUrl(p.placeSearchUrl); } catch { throw invalid('placeSearchUrl'); }
+      }
+    }
+    if (mode === 'own' && !url) throw invalid('placeSearchUrl', 'placeSearchUrl: needed for your own search service');
+    search = { mode, url };
+  }
   if (p.phonesEnabled !== undefined) {
     if (typeof p.phonesEnabled !== 'boolean') throw invalid('phonesEnabled');
     settings.set('profile.phones_enabled', p.phonesEnabled ? '1' : '0');
@@ -91,6 +111,11 @@ function setSettings(patch, ctx = {}) {
     if (typeof p.confirmedOnly !== 'boolean') throw invalid('confirmedOnly');
     settings.set('profile.match_confirmed_only', p.confirmedOnly ? '1' : '0');
     changed.push('confirmedOnly');
+  }
+  if (search) {
+    settings.set('profile.place_search', search.mode);
+    settings.set('profile.place_search_url', search.url || '');
+    changed.push('placeSearch');
   }
   if (changed.length) {
     activity.log('profile_settings_changed', 'Profile settings changed', {
@@ -1014,6 +1039,8 @@ async function exportFor(userId, ctx = {}) {
       bySignal: u.recognize_by_signal === 1, bySignalAnsweredAt: u.recognize_by_signal_at || null,
       byTelegram: u.recognize_by_telegram === 1, byTelegramAnsweredAt: u.recognize_by_telegram_at || null,
     },
+    // "Meine Orte" (services/places.js) with "Genutzt von"
+    places: require('./places').exportFor(u.id, { lang: ctx.lang }),
     groups,
     devices,
     plugins: await pluginParts(u.id),

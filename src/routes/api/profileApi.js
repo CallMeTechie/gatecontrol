@@ -21,11 +21,23 @@
  *   DELETE …/profile/emails/:id            → { ok, profile }
  *   GET    …/profile/export                the JSON file "Meine Daten" (Content-Disposition: attachment)
  *
- * Errors { ok: false, code, error[, field] }: 400 INVALID (field), 400 WRONG_CODE, 403 PHONES_OFF, 404 NOT_FOUND,
- * 409 LIMIT | DUPLICATE (field) | LOCKED (field, from the directory) | NO_MAIL, 410 CODE_EXPIRED, 429 RATE_LIMITED.
+ * "Meine Orte" (services/places.js, docs/feature-user-profile.md "Meine Orte"):
+ *   GET    …/profile/places[?shared=1]     { ok, places, family, limits, options, search[, shared] }
+ *   POST   …/profile/places                { name, lat, lon, icon?, radiusM?, address?, visibility? } → 201 { ok, place }
+ *   GET    …/profile/places/:id            { ok, place }
+ *   PATCH  …/profile/places/:id            the same fields, each optional (lat and lon together) → { ok, place }
+ *   DELETE …/profile/places/:id[?force=1]  → { ok, deleted: true, id } | 409 IN_USE { usedBy } without force
+ *   POST   …/profile/places/:id/used       → { ok, place } (lastUsedAt now)
+ *   GET    …/places/search?q=&near=lat,lon → { ok, results: [{ name, address, lat, lon, source, distanceM? }], attribution }
+ *
+ * Errors { ok: false, code, error[, field] }: 400 INVALID (field), 400 WRONG_CODE, 403 PHONES_OFF | SEARCH_OFF,
+ * 404 NOT_FOUND, 409 LIMIT | DUPLICATE (field) | LOCKED (field, from the directory) | NO_MAIL | IN_USE (usedBy),
+ * 410 CODE_EXPIRED, 429 RATE_LIMITED (retryAfter for the search), 503 SEARCH_UNAVAILABLE.
  */
 
 const profile = require('../../services/profile');
+const places = require('../../services/places');
+const placeSearch = require('../../services/placeSearch');
 const avatars = require('../../services/avatars');
 const logger = require('../../utils/logger');
 
@@ -40,15 +52,31 @@ const CODES = {
   ERR_NO_MAIL: [409, 'NO_MAIL', 'myprofile.err.no_mail'],
   ERR_CODE_EXPIRED: [410, 'CODE_EXPIRED', 'myprofile.err.code_expired'],
   ERR_RATE_LIMIT: [429, 'RATE_LIMITED', 'myprofile.err.rate_limited'],
+  // "Meine Orte"
+  ERR_IN_USE: [409, 'IN_USE', 'myprofile.places.err.in_use'],
+  ERR_SEARCH_OFF: [403, 'SEARCH_OFF', 'myprofile.places.err.search_off'],
+  ERR_UNAVAILABLE: [503, 'SEARCH_UNAVAILABLE', 'myprofile.places.err.search_unavailable'],
 };
 
 function sendError(req, res, err, what) {
   const m = err && CODES[err.code];
   if (m) {
-    const key = err.code === 'ERR_INVALID' && err.field ? `myprofile.err.invalid_${err.field}` : m[2];
-    let msg = req.t ? req.t(key) : m[1];
-    if (msg === key && req.t) msg = req.t(m[2]);
-    return res.status(m[0]).json({ ok: false, code: m[1], error: msg, ...(err.field ? { field: err.field } : {}) });
+    // "Meine Orte" and its search have texts of their own (myprofile.places.err.*), else the profile's
+    const pre = err.i18nPrefix || null;
+    const tries = [];
+    if (pre && err.code === 'ERR_INVALID' && err.field) tries.push(`${pre}invalid_${err.field}`);
+    if (pre) tries.push(`${pre}${m[1].toLowerCase()}`);
+    if (!pre && err.code === 'ERR_INVALID' && err.field) tries.push(`myprofile.err.invalid_${err.field}`);
+    tries.push(m[2]);
+    let msg = m[1];
+    if (req.t) {
+      for (const k of tries) { const v = req.t(k); if (v !== k) { msg = v; break; } }
+    }
+    if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
+    return res.status(m[0]).json({
+      ok: false, code: m[1], error: msg, ...(err.field ? { field: err.field } : {}),
+      ...(Array.isArray(err.usedBy) ? { usedBy: err.usedBy } : {}), ...(err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+    });
   }
   logger.error({ err: err && err.message }, `profile: ${what} failed`);
   return res.status(500).json({ ok: false, code: 'INTERNAL', error: req.t ? req.t('myprofile.err.failed') : 'failed' });
@@ -132,12 +160,58 @@ function handlers(userIdOf, opts) {
         return res.send(JSON.stringify(data, null, 2));
       } catch (err) { return sendError(req, res, err, 'export'); }
     },
+    // ── "Meine Orte" ──
+    listPlaces(req, res) {
+      res.set('Cache-Control', 'no-store');
+      try {
+        const uid = userIdOf(req);
+        const c = ctx(req);
+        const out = { ok: true, ...places.listOwn(uid, c), search: placeSearch.available() };
+        if (req.query && (req.query.shared === '1' || req.query.shared === 'true')) {
+          out.shared = places.visibleTo(uid, { lang: c.lang }).filter((p) => !p.own);
+        }
+        return res.json(out);
+      } catch (err) { return sendError(req, res, err, 'listing places'); }
+    },
+    getPlace(req, res) {
+      res.set('Cache-Control', 'no-store');
+      try { return res.json({ ok: true, place: places.getOwn(userIdOf(req), req.params.id, ctx(req)) }); } catch (err) { return sendError(req, res, err, 'reading a place'); }
+    },
+    addPlace(req, res) {
+      try { return res.status(201).json({ ok: true, place: places.create(userIdOf(req), body(req), ctx(req)) }); } catch (err) { return sendError(req, res, err, 'adding a place'); }
+    },
+    updatePlace(req, res) {
+      try { return res.json({ ok: true, place: places.update(userIdOf(req), req.params.id, body(req), ctx(req)) }); } catch (err) { return sendError(req, res, err, 'changing a place'); }
+    },
+    removePlace(req, res) {
+      try {
+        const force = req.query && (req.query.force === '1' || req.query.force === 'true');
+        const r = places.remove(userIdOf(req), req.params.id, { force }, ctx(req));
+        return res.json({ ok: true, deleted: true, id: r.id });
+      } catch (err) { return sendError(req, res, err, 'removing a place'); }
+    },
+    usedPlace(req, res) {
+      try { return res.json({ ok: true, place: places.markUsed(userIdOf(req), req.params.id, ctx(req)) }); } catch (err) { return sendError(req, res, err, 'marking a place used'); }
+    },
+    async searchPlaces(req, res) {
+      res.set('Cache-Control', 'no-store');
+      try {
+        const q = typeof req.query.q === 'string' ? req.query.q : '';
+        const near = typeof req.query.near === 'string' ? req.query.near : null;
+        const r = await placeSearch.search({ q, near, lang: ctx(req).lang, userId: userIdOf(req) });
+        return res.json({ ok: true, results: r.results, attribution: r.attribution });
+      } catch (err) { return sendError(req, res, err, 'searching an address'); }
+    },
   };
 }
 
-/** Mount the endpoints on `router` (GET /profile is the caller's — it already serves picture and colour). */
-function mount(router, h, { write = [], guard = [] } = {}) {
+/**
+ * Mount the endpoints on `router` (GET /profile is the caller's — it already serves picture and colour). `write`
+ * before every changing request (and the export), `read` before the reading ones of "Meine Orte" and the search.
+ */
+function mount(router, h, { write = [], guard = [], read = [] } = {}) {
   const w = [...write, ...guard];
+  const r = [...read, ...guard];
   router.patch('/profile', ...w, h.patch);
   router.post('/profile/phones', ...w, h.addPhone);
   router.patch('/profile/phones/:id', ...w, h.updatePhone);
@@ -147,6 +221,13 @@ function mount(router, h, { write = [], guard = [] } = {}) {
   router.post('/profile/emails/:id/resend', ...w, h.resendEmail);
   router.delete('/profile/emails/:id', ...w, h.removeEmail);
   router.get('/profile/export', ...w, h.exportData);
+  router.get('/profile/places', ...r, h.listPlaces);
+  router.post('/profile/places', ...w, h.addPlace);
+  router.get('/profile/places/:id', ...r, h.getPlace);
+  router.patch('/profile/places/:id', ...w, h.updatePlace);
+  router.delete('/profile/places/:id', ...w, h.removePlace);
+  router.post('/profile/places/:id/used', ...w, h.usedPlace);
+  router.get('/places/search', ...r, h.searchPlaces);
 }
 
 module.exports = { handlers, mount, sendError };

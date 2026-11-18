@@ -820,6 +820,28 @@ async function deliverEdgeEvent(ev) {
   return { handled: list.length };
 }
 
+// gc.places (permissions.places, docs/plugins.md "Meine Orte"): the places of the user profile. A plugin keeps the
+// reference 'profile:<id>' only, never a copy; the hook placesChanged { userId, ids, deleted } says when to read again.
+function makePlaces() {
+  const o = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  return Object.freeze({
+    /** the version of this interface (raised when methods or fields are added) */
+    version: 1,
+    /** list({ userId, owner? }) → [place] — what userId may see: all own places (usedBy), of others "Alle" and, in one family, "Familie" (ownerId, ownerName) */
+    list: (opts) => hostCall('places.list', { userId: o(opts).userId, owner: o(opts).owner == null ? null : o(opts).owner }),
+    /** get({ userId, id }) → place | null — only when userId may see it */
+    get: (opts) => hostCall('places.get', { userId: o(opts).userId, id: o(opts).id }),
+    /** resolve('profile:<id>' | { ref, userId? }) → place | null — with userId only when that person may see it */
+    resolve: (ref) => hostCall('places.resolve', typeof ref === 'string' ? { ref } : { ref: o(ref).ref, userId: o(ref).userId == null ? null : o(ref).userId }),
+    /** markUsed({ userId, id }) → { id, lastUsedAt } — "zuletzt genutzt", own places only */
+    markUsed: (opts) => hostCall('places.markUsed', { userId: o(opts).userId, id: o(opts).id }),
+    /** reportUsage({ userId, id, kind, count }) → { usedBy } — "Genutzt von": how many `kind` this plugin keeps at the place (0 removes it) */
+    reportUsage: (opts) => hostCall('places.reportUsage', { userId: o(opts).userId, id: o(opts).id, kind: o(opts).kind, count: o(opts).count }),
+    /** importFor({ userId, places: [{ sourceRef, name, lat, lon, icon?, radiusM?, address?, visibility? }], source }) → { map: { [sourceRef]: { id, ref, created } }, skipped } — idempotent */
+    importFor: (opts) => hostCall('places.importFor', { userId: o(opts).userId, places: o(opts).places, source: o(opts).source }),
+  });
+}
+
 function makeGc(info) {
   const log = (level) => (...a) => send({ t: 'log', level, message: fmt(a) });
   const features = info.features && typeof info.features === 'object' ? info.features : {};
@@ -844,6 +866,7 @@ function makeGc(info) {
     ...(features.vpnDns ? { vpnDns: makeVpnDns() } : {}),
     ...(features.bridges ? { bridges: makeBridges() } : {}),
     ...(features.remote ? { remote: makeRemote() } : {}),
+    ...(features.places ? { places: makePlaces() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {
@@ -1267,6 +1290,11 @@ async function handleCall(method, payload) {
     case 'profileChanged':
       // optional (permissions.users, the user profile): { userId, fields } — never a value; fetch again what you show. Answer ignored
       if (typeof plugin.profileChanged === 'function') await plugin.profileChanged(payload, gc);
+      return {};
+    case 'placesChanged':
+      // optional (permissions.places, "Meine Orte"): { userId, ids, deleted } — never a value; read them again
+      // with gc.places (deleted: the ids are gone — drop the references or ask the person). Answer ignored
+      if (typeof plugin.placesChanged === 'function') await plugin.placesChanged(payload, gc);
       return {};
     case 'myData':
       // optional (permissions.users, "Meine Daten herunterladen"): { userId } → { data } — this plugin's part of the

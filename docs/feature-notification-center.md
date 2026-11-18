@@ -784,6 +784,9 @@ data: {"type":"config_changed"}
 
 event: control
 data: {"type":"layout","scope":"user","updated_at":"2026-10-18T09:12:44.120Z"}
+
+event: control
+data: {"type":"places","ids":[12],"deleted":false}
 ```
 
 * **Ohne `id:`-Zeile:** Steuerereignisse werden nicht gespeichert, nicht
@@ -831,9 +834,16 @@ data: {"type":"layout","scope":"user","updated_at":"2026-10-18T09:12:44.120Z"}
   anderen offenen Streams derselben Person (nicht das speichernde Gerät);
   Scope `global` → alle offenen Streams außer dem speichernden; Änderung des
   Geltungsbereichs in den Einstellungen → alle offenen Streams.
+* `places`: „Meine Orte“ der Person haben sich geändert (angelegt, geändert,
+  gelöscht — `deleted: true` —, aus einem Plugin übernommen;
+  docs/feature-user-profile.md „Meine Orte“). `ids` sind die betroffenen Orte
+  (höchstens 100), nie ein Name oder ein Punkt. Die App lädt
+  `GET /api/v1/client/me/profile/places` neu und gleicht ihre Geofences ab.
+  Ziel: alle offenen Streams der Person außer dem Gerät, das die Änderung
+  gemacht hat.
 * Nur der Stream des betroffenen Geräts (bzw. der betroffenen Geräte) erhält
-  das Ereignis; andere Geräte derselben Person nicht (Ausnahme: `layout`,
-  das gerade für die anderen Geräte der Person gedacht ist). Steuerereignisse gehen
+  das Ereignis; andere Geräte derselben Person nicht (Ausnahmen: `layout` und
+  `places`, die gerade für die anderen Geräte der Person gedacht sind). Steuerereignisse gehen
   unabhängig von `enabled`, `muted_topics` und Ruhezeiten raus.
 * Ein Fehler beim Senden lässt die Admin-Aktion nie scheitern. Staut der
   Socket (Backpressure), wartet je Typ das neueste Ereignis bis zum `drain`.

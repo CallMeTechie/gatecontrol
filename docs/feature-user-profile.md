@@ -3,11 +3,14 @@
 One profile per person, kept by the person herself — in the portal ("Mein Profil", behind the own picture at the top
 right) and in the apps. The account keeps what it had (display name, user name, e-mail address, language, picture,
 favourite colour); new are first and last name, a short "about" (≤ 140 characters), the birthday (year can be hidden),
-up to three further e-mail addresses, the time zone, up to five **phone numbers** — and per field who sees it.
+up to three further e-mail addresses, the time zone, up to five **phone numbers**, up to 100 **places** ("Meine Orte") —
+and per field who sees it.
 
 Code: `src/services/profile.js` (service), `src/routes/api/profileApi.js` (the person's endpoints),
 `src/routes/api/users.js` (administrators), migration 151 `user_profile`, portal `templates/portal/portal.njk` /
 `public/js/portal.js` ("Mein Profil"), user page `public/js/users.js` (card "Profil"). Tests: `tests/user_profile.test.js`.
+"Meine Orte": `src/services/places.js`, `src/services/placeSearch.js` (address search), migration 158 `user_places`,
+portal page "Mein Profil › Meine Orte" (`#orte`). Tests: `tests/user_places.test.js`.
 
 ## Fields and who sees them
 
@@ -25,7 +28,7 @@ belong to; without a family the level is not offered), **Alle auf diesem Server*
 | Birthday | family | `YYYY-MM-DD` or `--MM-DD`; "Jahr verbergen" — nobody else sees the year |
 | Language, time zone | only me | the time zone is the same value as the quiet hours (`notify_user_prefs.tz`) |
 | Picture ("Wer sieht dein Bild?") | all | `all` / `contacts` / `family` / `self`, for all of GateControl — docs/feature-avatars.md "Wer sieht dein Bild?"; administrators see the picture anyway, marked "für andere verborgen" |
-| Address | — | not part of the profile |
+| Places ("Meine Orte") | only me | per place; see "Meine Orte" below — the own home address is a place like any other |
 
 Administrators see what they need to manage an account — name, user name, e-mail, language (changed in "Bearbeiten"
 as before) — and otherwise only what is visible to everybody ("verborgen, die Person gibt es nicht frei"). Of the
@@ -33,7 +36,8 @@ phone numbers they see count, state and whether the recognition is on, and when 
 account ("doppelt") — never a digit. They can confirm ("Vom Admin bestätigt") or remove a number without seeing it.
 
 Server settings (Benutzer → Einstellungen): **Telefonnummern im Profil erlauben** (on; off hides the section everywhere
-and nobody is recognised by numbers) and **Zum Erkennen nur bestätigte Nummern nutzen** (off).
+and nobody is recognised by numbers), **Zum Erkennen nur bestätigte Nummern nutzen** (off) and **Adresssuche für „Meine
+Orte“** (OpenStreetMap; an own Nominatim; off — see "Address search").
 
 ## Phone numbers at rest
 
@@ -92,22 +96,83 @@ The same on three mounts — `/api/v1/me` (web session), `/api/v1/portal/me` (po
 | `POST …/profile/emails/:id/resend` | → `{ ok, email, codeSent, profile }` (once a minute) |
 | `DELETE …/profile/emails/:id` | → `{ ok, profile }` |
 | `GET …/profile/export` | "Meine Daten" as a JSON file |
+| `GET …/profile/places[?shared=1]` | `{ ok, places, family, limits, options, search: 'osm' \| 'own' \| 'off', shared? }` — `shared` (with `?shared=1`): places of others the person may see (`ownerId`, `ownerName`, no `usedBy`) |
+| `POST …/profile/places` | `{ name, lat, lon, icon?, radiusM?, address?, visibility? }` → `201 { ok, place }` |
+| `GET …/profile/places/:id` | → `{ ok, place }` |
+| `PATCH …/profile/places/:id` | the same fields, each optional (`lat` and `lon` only together) → `{ ok, place }` |
+| `DELETE …/profile/places/:id[?force=1]` | → `{ ok, deleted: true, id }`; in use and no `force` → `409 { code: 'IN_USE', usedBy }` |
+| `POST …/profile/places/:id/used` | "zuletzt genutzt" → `{ ok, place }` |
+| `GET …/places/search?q=&near=lat,lon` | the address search (above) |
 
-Errors `{ ok: false, code, error, field? }`: `400 INVALID`, `400 WRONG_CODE`, `403 PHONES_OFF`, `404 NOT_FOUND`,
-`409 LIMIT | DUPLICATE | LOCKED | NO_MAIL`, `410 CODE_EXPIRED`, `429 RATE_LIMITED` (120 changes per 15 minutes in a
-browser, per hour in an app).
+Errors `{ ok: false, code, error, field? }`: `400 INVALID`, `400 WRONG_CODE`, `403 PHONES_OFF | SEARCH_OFF`,
+`404 NOT_FOUND`, `409 LIMIT | DUPLICATE | LOCKED | NO_MAIL | IN_USE` (`usedBy`), `410 CODE_EXPIRED`, `429 RATE_LIMITED`
+(120 changes per 15 minutes in a browser, per hour in an app; the search: `retryAfter` and `Retry-After`),
+`503 SEARCH_UNAVAILABLE`.
 
 Administrators: `GET /api/v1/users/:id/profile`, `POST /api/v1/users/:id/profile/phones/:pid/confirm`,
 `DELETE /api/v1/users/:id/profile/phones/:pid`, `GET|PUT /api/v1/users/settings/profile`
-(`{ phonesEnabled, confirmedOnly }`).
+(`{ phonesEnabled, confirmedOnly, placeSearch: 'osm' | 'own' | 'off', placeSearchUrl }`).
+
+## Meine Orte
+
+A person keeps her places once, in the profile — the plugins (Notizen, Messenger, Familie, …) and the apps offer exactly
+these and keep only the reference `profile:<id>`, never a copy: a new point or radius counts everywhere at once.
+
+| Field | Rule |
+|---|---|
+| `name` | 1–60 characters, unique per person without regard to case |
+| `icon` | `home`, `work`, `school`, `gym`, `shop`, `family`, `pin` (default) |
+| `lat`, `lon` | required, valid (±90 / ±180, 6 decimals), never 0/0 — no place without a point |
+| `radiusM` | 50–2000 m, default 150 |
+| `address` | optional, ≤ 200 characters, for display only |
+| `visibility` | `self` (default) / `family` / `all` — the levels of the profile's fields; "Familie" is a group of the kind family both belong to |
+| `source`, `sourceRef` | `manual`, or the plugin a place was moved from (`notizen`, `familie`, `messenger`) and its old id |
+
+At most 100 places per person. Answer form of a place: `{ id, ref: 'profile:<id>', name, icon, lat, lon, radiusM,
+address, visibility, source, usedBy: [{ plugin, pluginName, kind, count }], createdAt, updatedAt, lastUsedAt }`.
+**"Genutzt von"** (`usedBy`) is what plugins report through `gc.places.reportUsage` (table `user_place_usage`: place,
+plugin, kind, count; only plugins still installed count). A place in use is deleted only with `?force=1` — the portal
+asks first and names what uses it.
+
+The server never learns where a person is: the apps check arriving and leaving themselves.
+
+**Events.** After every change (not after "zuletzt genutzt") running plugins with `permissions.places` get the hook
+`placesChanged({ userId, ids, deleted })`, and the person's open app streams (`GET /api/v1/client/push`) the control event
+`{ "type": "places", "ids": [...], "deleted": false }` — the device that made the change excepted. Neither carries a
+name or a point. The activity log names the place's id only (`place_added`, `place_changed`, `place_removed`,
+`places_imported`).
+
+**Portal.** "Mein Profil › Meine Orte" (`#orte`, a card on "Mein Profil" leads there): the list left, the map right
+(Leaflet over the server's tile relay `/plugins/_shared/tiles/…`, loaded when the page opens). A click on the map starts
+a new place there; while a place is open a click moves its point. Address search, name, symbol, radius (slider), who
+sees it; "Speichern" stays off until there is a point.
+
+### Address search
+
+`GET …/places/search?q=&near=lat,lon` — one search for the portal and both apps (before, only the plugin Notizen had
+one). Setting **Adresssuche für „Meine Orte“** (`profile.place_search`): `osm` (default, nominatim.openstreetmap.org),
+`own` (an own Nominatim, `profile.place_search_url`, http/https; a private address in the home network is allowed,
+loopback, link-local and metadata addresses are not — `utils/outboundGuard`) or `off`.
+
+- `near` is rounded to two decimals (about 1 km) before anything else; the service gets the words and a box of ±50 km
+  around that cell, never a name, a device or a user id. Nothing of it is logged or stored; the cache (7 days, 500
+  entries, in memory) is keyed by words and cell.
+- OpenStreetMap's usage policy: one request at a time for the whole server and at least 1.1 s between two starts
+  (`own`: 0.25 s), a User-Agent naming GateControl, cached answers, at most 30 searches per person and hour that go out,
+  at most 8 waiting. The portal and the apps search on an explicit "Suchen" (Enter) only, never per keystroke, and from
+  3 characters on.
+- Answer `{ ok, results: [{ name, address, lat, lon, source: 'osm', distanceM? }], attribution: { text, url } }` — the
+  apps show the attribution "© OpenStreetMap" under the hits.
 
 ## "Meine Daten"
 
 `GET …/profile/export`: the account, every profile field, the numbers in plain text (only ever for the person
-herself), further addresses, consents with their time, groups, devices (names and times) — no password hash, key,
+herself), further addresses, consents with their time, the places ("Meine Orte", with "Genutzt von"), groups, devices
+(names and times) — no password hash, key,
 token or code — and what plugins add through the hook `myData` (Familie, Messenger without chat contents: later).
 
 ## Deleting
 
-Every field can be emptied, every number and address removed. When the account is deleted, profile, numbers,
-addresses and the hashes of the own logins go with it (`ON DELETE CASCADE`). Both are logged without values.
+Every field can be emptied, every number, address and place removed. When the account is deleted, profile, numbers,
+addresses, places (with their usage) and the hashes of the own logins go with it (`ON DELETE CASCADE`). The backup
+carries the places with their ids, so the plugins' references stay valid after a restore. Both are logged without values.

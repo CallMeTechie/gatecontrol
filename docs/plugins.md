@@ -355,6 +355,7 @@ unsigned build of the same id.
     "homeCache": true,
     "vpnDns": true,
     "bridges": true,
+    "places": true,
     "groups": "read",
     "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
     "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
@@ -416,6 +417,8 @@ unsigned build of the same id.
   with an integer 1 ≤ n ≤ 1000 (since 1.219.0; before 1 ≤ n ≤ 120; no other
   key); anything else is
   `permissions.notify: invalid`. See "Notifications".
+* `permissions.places` (boolean): "Meine Orte" of the user profile (`gc.places`, hook `placesChanged`) — see
+  "Meine Orte".
 * `permissions.app` (boolean): the plugin answers requests of the GateControl
   apps (device tokens). `ui.app` `{ label, icon }` (optional, needs
   `permissions.app` — else `ui.app: needs permissions.app`; label ≤ 40, icon
@@ -1036,6 +1039,7 @@ module.exports = {
 | `gc.users.setAvatarVisibility(userId, level)` | → `{ level }` — the person's own change of "Wer sieht dein Bild?" forwarded by the plugin (`users`); only for the person whose changing request (POST/PUT/PATCH/DELETE) to this plugin is in flight, else `ERR_FORBIDDEN` |
 | `gc.users.adoptAvatarVisibility(userId, level)` | → `{ adopted, level }` — one-time takeover of a plugin's old setting (`users`): only `contacts` / `family` / `self`, only while the person has chosen nothing; `all` changes nothing |
 | `gc.profile.get(userId, { viewer? })` | the user profile ([feature-user-profile.md](feature-user-profile.md)): `{ userId, firstName?, lastName?, about?, birthday?, phones? }` or `null` (unknown / disabled) — only the fields of `permissions.profile` (`["firstName", "lastName", "about", "birthday"]`, `"phones"` separately; needs `users`) and only what the viewer may see: the person's own choice per field (`self` / `family` / `all`). `viewer` counts only while that person has a request to this plugin in flight; otherwise the view of somebody without relation (what everybody sees). `birthday` is `{ date, month, day, year }` — `year: null` (and `date` `--MM-DD`) when the person hides it. `phones`: `[{ kind, number, confirmed }]` of the numbers set to "Familie" (family viewers) or "Alle" — a number set to "Niemand" never, not even for the person herself. Hook `profileChanged({ userId, fields })` (permissions `users`): what changed (`displayName`, `firstName`, `lastName`, `about`, `birthday`, `avatar` — who sees the picture, `phones` — the last only with `profile: [..., "phones"]`), never a value. Hook `myData({ userId })` → `{ data }`: the plugin's part of "Meine Daten herunterladen" (≤ 256 KB, ≤ 5 s; `null` = nothing) |
+| `gc.places.*` | "Meine Orte" of the user profile (`permissions.places`) — see "Meine Orte" |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
 | `gc.actions.list({ userId, lang, interactive, withWidget })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device, widget? }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0; `withWidget: true` adds `widget` — the device values — since 1.181.0) — see "Running other plugins' quick actions" |
@@ -3229,6 +3233,40 @@ without the hook, or without the take-over, changes nothing. A plugin that does 
 `503 plugin_unavailable` (`403 license_required` without a licence) — the core data may be
 outdated by then. The core's own `/connect` still has its plaintext fallback for old apps
 without a key; it is **deprecated** and logged (one warning per token and hour).
+
+## Meine Orte (`permissions.places`)
+
+The places a person keeps in her profile ([feature-user-profile.md](feature-user-profile.md) "Meine Orte"): name,
+point, radius, symbol, address, who sees it. A plugin keeps **only the reference** `profile:<id>`, never a copy of the
+point — a moved point or a new radius counts at once; read the place again when you need it.
+
+```json
+"permissions": { "places": true }
+```
+
+Without the permission every method fails with `ERR_PLACES_DENIED`. `gc.places.version` is `1`.
+
+| Call | Answer |
+|---|---|
+| `gc.places.list({ userId, owner? })` | `[place]` — what `userId` may see: all own places (`own: true`, with `usedBy`), of other enabled accounts those set to "Alle" and, when both belong to one family group, "Familie" (`own: false`, `ownerId`, `ownerName`, no `usedBy`). `owner` narrows to one person. Own places first, then by name |
+| `gc.places.get({ userId, id })` | `place` or `null` (unknown, or `userId` may not see it) |
+| `gc.places.resolve(ref)` / `resolve({ ref, userId? })` | `ref` = `'profile:<id>'` → `place` (with `ownerId`) or `null`. With `userId` only when that person may see it; without, any place — for a reference the plugin keeps. Another form of `ref` → `ERR_INVALID` |
+| `gc.places.markUsed({ userId, id })` | `{ id, lastUsedAt }` — "zuletzt genutzt"; own places only (`ERR_NOT_FOUND` otherwise). No event |
+| `gc.places.reportUsage({ userId, id, kind, count })` | `{ usedBy }` — "Genutzt von": how many `kind` (`[a-z][a-z0-9_.-]{0,39}`, e.g. `task`, `location_message`, `reminder`) this plugin keeps at the place; **absolute**, not added; `0` removes it. The place must be visible to `userId`. A place with a count > 0 is deleted by its owner only after a question (`409 IN_USE`, then `?force=1`) |
+| `gc.places.importFor({ userId, places, source })` | the one-time move of a plugin's own places into the profile. `places`: ≤ 100 of `{ sourceRef, name, lat, lon, icon?, radiusM?, address?, visibility? }`, `source`: `notizen` \| `familie` \| `messenger`. → `{ map: { [sourceRef]: { id, ref, created } }, skipped: [{ sourceRef, reason: 'invalid' \| 'limit', field? }] }`. **Idempotent** over `source` + `sourceRef`: a place moved before is answered again with `created: false` and not changed. A name in use gets a number ("Baumarkt 2"); a place without a valid point (or 0/0) is skipped (`field: 'lat'`), so is one beyond 100 places |
+
+`place`: `{ id, ref, name, icon, lat, lon, radiusM, address, visibility, source, usedBy?, createdAt, updatedAt,
+lastUsedAt, ownerId, own?, ownerName? }` — `icon` one of `home`, `work`, `school`, `gym`, `shop`, `family`, `pin`;
+`visibility` `self` / `family` / `all`; `usedBy` `[{ plugin, pluginName, kind, count }]` (plugins still installed).
+Errors: `ERR_INVALID` (message names the field), `ERR_NOT_FOUND` (unknown person or place).
+
+**Hook `placesChanged({ userId, ids, deleted })`** (optional, `permissions.places`): a person's places changed —
+created, changed, deleted (`deleted: true`: the ids are gone; drop the references or ask the person), imported. Never a
+name or a point; read again with `gc.places`. Called after every change of every person, not after `markUsed`. The
+person's apps get the control event `places` at the same time ([feature-notification-center.md](feature-notification-center.md)).
+
+The address search is the server's (`GET /api/v1/{me,portal/me,client/me}/places/search`) — a plugin needs no map
+service of its own for it.
 
 ## Messenger bridges (`permissions.bridges`)
 

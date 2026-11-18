@@ -310,7 +310,7 @@ describe('administrators', () => {
 
   it('settings: numbers can be switched off (and stay hidden everywhere); confirmed only', async () => {
     const s = await agent.put('/api/v1/users/settings/profile').set('X-CSRF-Token', csrf).send({ phonesEnabled: false, confirmedOnly: true }).expect(200);
-    assert.deepEqual(s.body.settings, { phonesEnabled: false, confirmedOnly: true });
+    assert.deepEqual(s.body.settings, { phonesEnabled: false, confirmedOnly: true, placeSearch: 'osm', placeSearchUrl: null });
     const u = H.makeUser('pf-off');
     assert.throws(() => profile.addPhone(u, { kind: 'mobile', number: N3 }), (e) => e.code === 'ERR_PHONES_OFF');
     assert.deepEqual(profile.ownView(u).phones, []);

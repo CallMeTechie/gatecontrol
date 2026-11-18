@@ -13,6 +13,8 @@
 //   config_changed            {}                   the device's WireGuard config changed
 //   layout                    { scope, updated_at } the order of the apps' Start / Familie
 //                                                  tabs changed (services/clientLayout.js)
+//   places                    { ids, deleted }     the owner's "Meine Orte" changed (services/places.js) —
+//                                                  the app loads GET /client/me/profile/places again
 //
 // Every entry point is best-effort: it never throws (the admin action that
 // triggered it must not fail because of push) and it touches the database
@@ -24,7 +26,7 @@ const logger = require('../../utils/logger');
 
 let configCounter = 0;
 
-const TYPES = Object.freeze(['policy_changed', 'support_bundle_requested', 'peer_state', 'config_changed', 'layout']);
+const TYPES = Object.freeze(['policy_changed', 'support_bundle_requested', 'peer_state', 'config_changed', 'layout', 'places']);
 
 function db() { return require('../../db/connection').getDb(); }
 
@@ -191,6 +193,23 @@ function layoutChanged({ userId = null, all = false, exceptToken = null, scope, 
 }
 
 /**
+ * "Meine Orte" of a person changed (services/places.js): that person's open
+ * streams get { type: 'places', ids, deleted } — ids of the places, never a
+ * name or a point. exceptToken: the device that made the change. No database
+ * access — the streams know their person.
+ */
+function placesChanged({ userId, ids = [], deleted = false, exceptToken = null }) {
+  return safely('places', () => {
+    let n = 0;
+    for (const conn of stream.list()) {
+      if (conn.closed || conn.tokenId === exceptToken || userId == null || conn.userId !== userId) continue;
+      if (write(conn, { type: 'places', ids: ids.slice(0, 100), deleted: !!deleted })) n += 1;
+    }
+    return n;
+  });
+}
+
+/**
  * Hash of the device's WireGuard client config — exactly what
  * GET /client/config and /client/config/check return as `hash`; null for a
  * token without a peer or when the config cannot be built. Never throws.
@@ -250,6 +269,7 @@ module.exports = {
   peerState,
   configChanged,
   layoutChanged,
+  placesChanged,
   stateFor,
   configHashFor,
   configSeq,

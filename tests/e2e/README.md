@@ -184,6 +184,11 @@ scenarios/30-gateway-docs.js Gateway-Detail › „Mehr“ › „Versionen“ u
                         und zur Übersicht, Hinweis bei altem Stand; Handbuch Kapitel 3–7
                         (Inhaltsverzeichnis, Anker in der Adresse, kein HTML), unbekanntes
                         Gateway → Übersicht, hell/dunkel, 390 px
+scenarios/32-portal-places.js Portal „Mein Profil › Meine Orte“ (#orte): Karte über das
+                        Kachel-Relay (Kacheln per page.route, kein Aufruf bei OpenStreetMap),
+                        Klick auf die Karte → neuer Ort mit Punkt, „Speichern“ erst mit
+                        Name, Symbol und Radius, Liste und Karte, Löschen fragt nach,
+                        390 px
 ```
 
 ## Ablauf

@@ -162,6 +162,8 @@ function permissionSummary(m, lang) {
     bridges: !!p.bridges,
     // the user profile (gc.profile.get): the fields it may read — "phones" shown as a sensitive permission
     profile: Array.isArray(p.profile) ? p.profile : [],
+    // "Meine Orte" of the user profile (gc.places)
+    places: !!p.places,
     // phase 3c: printers and scanners at home through the gateways (gc.print)
     print: !!p.print,
     // phase 3c, step 2: the Bluetooth sensors of the gateways (gc.radio)

@@ -339,6 +339,14 @@ function exportTables(db) {
     userEmails = db.prepare(`SELECT u.username AS user_name, e.address, e.address_lc, e.state, e.confirmed_at, e.created_at
       FROM user_emails e JOIN users u ON u.id = e.user_id ORDER BY e.id`).all();
   } catch (err) { logger.warn({ err: err.message }, 'backup export: user profile skipped'); }
+  // "Meine Orte" (services/places.js): with their ids — plugins keep the reference 'profile:<id>'
+  let userPlaces = [];
+  let userPlaceUsage = [];
+  try {
+    userPlaces = db.prepare(`SELECT p.id, u.username AS user_name, p.name, p.icon, p.lat, p.lon, p.radius_m, p.address, p.visibility, p.source, p.source_ref,
+        p.created_at, p.updated_at, p.last_used_at FROM user_places p JOIN users u ON u.id = p.user_id ORDER BY p.id`).all();
+    userPlaceUsage = db.prepare('SELECT place_id, plugin, kind, count, updated_at FROM user_place_usage ORDER BY place_id, plugin, kind').all();
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: user places skipped'); }
 
   // ── person groups (docs/groups.md) ──────────────────────────
   // Group ids are kept (group_ref) — rdp_routes.group_ids, route group_refs
@@ -455,6 +463,8 @@ function exportTables(db) {
       user_avatars: userAvatars,
       user_phones: userPhones,
       user_emails: userEmails,
+      user_places: userPlaces,
+      user_place_usage: userPlaceUsage,
       groups: groupsData.groups,
       group_members: groupsData.members,
       group_invites: groupsData.invites,
@@ -861,6 +871,7 @@ function getBackupSummary(backup) {
     users: (d.users || []).length,
     user_avatars: (d.user_avatars || []).length,
     user_phones: (d.user_phones || []).length,
+    user_places: (d.user_places || []).length,
     groups: (d.groups || []).length,
     group_members: (d.group_members || []).length,
     directories: (d.directories || []).length,
@@ -981,6 +992,8 @@ async function restoreBackup(backup) {
     user_avatars: userAvatars = [],
     user_phones: userPhones = [],
     user_emails: userEmails = [],
+    user_places: userPlaces = [],
+    user_place_usage: userPlaceUsage = [],
     groups: groupRows,
     group_members: groupMembers = [],
     group_invites: groupInvites = [],
@@ -1162,6 +1175,34 @@ async function restoreBackup(backup) {
           if (!uid || typeof e.address !== 'string' || e.address.length > 255 || !['confirmed', 'unconfirmed'].includes(e.state)) continue;
           insEmail.run(uid, e.address, e.address.toLowerCase(), e.state, typeof e.confirmed_at === 'string' ? e.confirmed_at : null, typeof e.created_at === 'string' ? e.created_at : null);
         } catch (err) { logger.warn({ err: err.message }, 'user email restore skipped'); }
+      }
+      // "Meine Orte" with their ids (the references 'profile:<id>' of the plugins stay valid); a row that does not fit
+      // the rules of services/places.js is skipped
+      const places = require('./places');
+      const insPlace = db.prepare(`INSERT OR IGNORE INTO user_places (id, user_id, name, name_lc, icon, lat, lon, radius_m, address, visibility, source, source_ref, created_at, updated_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')), ?)`);
+      const restoredPlaces = new Set();
+      const str = (v) => (typeof v === 'string' ? v : null);
+      for (const p of Array.isArray(userPlaces) ? userPlaces : []) {
+        try {
+          const uid = p && userIdByName.get(p.user_name);
+          const ok = uid && Number.isSafeInteger(p.id) && p.id > 0 && typeof p.name === 'string' && p.name.trim() && Array.from(p.name).length <= places.NAME_MAX
+            && Number.isFinite(p.lat) && Number.isFinite(p.lon) && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180 && !(p.lat === 0 && p.lon === 0)
+            && Number.isInteger(p.radius_m) && p.radius_m >= places.RADIUS_MIN && p.radius_m <= places.RADIUS_MAX
+            && places.ICONS.includes(p.icon) && places.VISIBILITY.includes(p.visibility) && places.SOURCES.includes(p.source);
+          if (!ok) continue;
+          const r = insPlace.run(p.id, uid, p.name, p.name.toLowerCase(), p.icon, p.lat, p.lon, p.radius_m, str(p.address) ? p.address.slice(0, places.ADDRESS_MAX) : null,
+            p.visibility, p.source, str(p.source_ref), str(p.created_at), str(p.updated_at), str(p.last_used_at));
+          if (r.changes) restoredPlaces.add(p.id);
+        } catch (e) { logger.warn({ err: e.message }, 'user place restore skipped'); }
+      }
+      const insUsage = db.prepare(`INSERT OR REPLACE INTO user_place_usage (place_id, plugin, kind, count, updated_at) VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      for (const x of Array.isArray(userPlaceUsage) ? userPlaceUsage : []) {
+        try {
+          if (!x || !restoredPlaces.has(x.place_id) || typeof x.plugin !== 'string' || x.plugin.length > 64 || typeof x.kind !== 'string' || !/^[a-z][a-z0-9_.-]{0,39}$/.test(x.kind)
+            || !Number.isSafeInteger(x.count) || x.count <= 0) continue;
+          insUsage.run(x.place_id, x.plugin, x.kind, x.count, str(x.updated_at));
+        } catch (e) { logger.warn({ err: e.message }, 'user place usage restore skipped'); }
       }
     }
 
