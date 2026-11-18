@@ -367,7 +367,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false, bridges: false, remote: false, profile: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false, bridges: false, remote: false, profile: null, places: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -394,7 +394,9 @@ function validate(raw, opts = {}) {
     // link (gc.bridges, services/bridges, docs/feature-messenger-bridges.md)
     // remote: remote access (gc.remote, services/remote) — sessions over guacd on a page of the core, a key
     // vault the plugin only holds handles of, L4 listeners through the gateways, wake-on-LAN
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print', 'radio', 'cameras', 'vpnDns', 'bridges', 'remote']) {
+    // places: "Meine Orte" of the user profile (gc.places, services/places.js) — read the places, report what the
+    // plugin keeps at them ("Genutzt von"), the one-time import; hook placesChanged
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print', 'radio', 'cameras', 'vpnDns', 'bridges', 'remote', 'places']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

@@ -42,11 +42,13 @@ function guard(req, res, next) {
 const h = handlers((req) => req.avatarUserId, (req) => ({ actorId: req.avatarUserId, ip: req.ip, source: 'api' }));
 
 // The profile (docs/feature-user-profile.md, routes/api/profileApi.js): GET answers picture and colour as before plus
-// `profile`; PATCH /me/profile, /me/profile/phones…, /me/profile/emails…, GET /me/profile/export.
-const p = profileApi.handlers((req) => req.avatarUserId, (req) => ({ actorId: req.avatarUserId, ip: req.ip, source: 'api' }));
+// `profile`; PATCH /me/profile, /me/profile/phones…, /me/profile/emails…, GET /me/profile/export, /me/profile/places…
+// and /me/places/search ("Meine Orte").
+// exceptToken: the device that changed "Meine Orte" gets no control event `places` for it
+const p = profileApi.handlers((req) => req.avatarUserId, (req) => ({ actorId: req.avatarUserId, ip: req.ip, source: 'api', exceptToken: req.tokenId }));
 router.get('/me/profile', guard, p.get);
 const sub = Router();
-profileApi.mount(sub, p, { write: [clientProfileLimiter, guard] });
+profileApi.mount(sub, p, { write: [clientProfileLimiter, guard], read: [guard] });
 router.use('/me', sub);
 router.put('/me/avatar', clientAvatarLimiter, guard, avatarUpload, h.putAvatar);
 router.delete('/me/avatar', clientAvatarLimiter, guard, h.deleteAvatar);

@@ -390,6 +390,12 @@
           <div class="pt-look-vis" id="pt-look-vis" hidden></div>
         </section>
         <section class="pt-card pt-pad" id="pt-pf-recog" aria-labelledby="pt-h-recog" hidden></section>
+        {#- "Meine Orte" (docs/feature-user-profile.md "Meine Orte"): a page of its own, #orte -#}
+        <a class="pt-card pt-navcard pt-pl-navcard" href="#orte" data-goto="orte" id="pt-pf-places">
+          <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></span>
+          <span class="pt-grow"><b>{{ t('myprofile.places.title') }}</b><span class="pt-small pt-muted pt-block">{{ t('myprofile.places.navcard') }}</span></span>
+          <span class="pt-navcard-go" aria-hidden="true">›</span>
+        </a>
         {#- Plugin sections on the viewer's own profile (docs/plugins.md "Portal", since 1.188.0):
             a signed-in person only, never a kiosk device (routes/portal.js). #}
         {%- for sec in pluginSections.profile %}{{ pluginSection(sec) }}{% endfor %}
@@ -399,6 +405,35 @@
           <a class="pt-btn pt-btn-sm" id="pt-pf-export" href="/api/v1/portal/me/profile/export" download><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>{{ t('myprofile.download') }}</a>
         </section>
       </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {#- ═══ Mein Profil › Meine Orte (docs/feature-user-profile.md "Meine Orte") ═══
+      A page without a tab (#orte), reached from "Mein Profil". Left the list
+      (or the form of one place), right the map (Leaflet over the server's
+      tile relay, loaded when the page opens). A click on the map starts a new
+      place there, or moves the point of the one being edited. Data:
+      /api/v1/portal/me/profile/places…, /api/v1/portal/me/places/search
+      (public/js/portal.js "Meine Orte"). #}
+  {% if tabs.profile %}
+  <section class="pt-panel" id="panel-orte" role="region" aria-labelledby="pt-h-places" tabindex="0" data-panel="orte" data-extra hidden>
+    <nav class="pt-crumbs" aria-label="{{ t('myprofile.places.crumbs') }}"><a href="#profil" data-goto="profil">{{ t('myprofile.title') }}</a><span aria-hidden="true">›</span><span aria-current="page">{{ t('myprofile.places.title') }}</span></nav>
+    <div class="pt-hero">
+      <div class="pt-hero-text">
+        <h1 class="pt-h1 pt-h1-sm" id="pt-h-places">{{ t('myprofile.places.title') }}</h1>
+        <p class="pt-lead">{{ t('myprofile.places.lead') }}</p>
+      </div>
+      <div class="pt-hero-actions">
+        <button type="button" class="pt-btn pt-btn-primary" id="pt-pl-add"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>{{ t('myprofile.places.add') }}</button>
+      </div>
+    </div>
+    <div class="pt-pl-grid">
+      <div class="pt-pl-side" id="pt-pl-side" aria-live="polite"><div class="pt-card pt-pad"><div class="pt-empty">{{ t('portal.loading') }}</div></div></div>
+      <section class="pt-card pt-pl-mapcard" aria-label="{{ t('myprofile.places.map') }}">
+        <div class="pt-pl-map" id="pt-pl-map"></div>
+        <p class="pt-pl-maphint" id="pt-pl-maphint">{{ t('myprofile.places.map_hint') }}</p>
+      </section>
     </div>
   </section>
   {% endif %}

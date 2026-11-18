@@ -1,7 +1,7 @@
 // public/js/portal.js — GateControl portal (redesign "variant A": tabs).
 //
 // Start · Dienste · Zuhause · Fahrzeug · Netzwerk · Meine Geräte · Gruppen;
-// pages without a tab: Mitteilungen, Meine Benachrichtigungen, Mein Profil.
+// pages without a tab: Mitteilungen, Meine Benachrichtigungen, Mein Profil (› Meine Orte).
 // The tabs are URL-addressable (#start, #dienste, #zuhause, #fahrzeug,
 // #netzwerk, #geraete, #gruppen) and a WAI-ARIA tablist (arrow keys, Home/End). Every area that
 // is unlicensed or has no data is hidden (tab, panel and start card).
@@ -1936,6 +1936,402 @@
     }).catch(function () { pf.loading = false; pf.failed = true; renderProfile(); });
   }
   onPanel(function (id) { if (id === 'profil') loadProfile(false); });
+
+  // ═══ Mein Profil › Meine Orte (docs/feature-user-profile.md "Meine Orte") ═══
+  // A page without a tab (#orte). Left the list of the own places — or the
+  // form of one place —, right the map (Leaflet, loaded when the page opens
+  // first; tiles through the server's relay CTX.tiles). A click on the map
+  // starts a new place there, or moves the point of the place being edited.
+  // No place without a point: "Speichern" stays off until there is one.
+  // The address search asks the server (GET …/places/search) on an explicit
+  // search only — never while typing (OpenStreetMap's usage policy).
+  var PLACES_API = '/api/v1/portal/me/profile/places';
+  var SEARCH_API = '/api/v1/portal/me/places/search';
+  var PL_IC = {
+    home: 'M3 11.5L12 4l9 7.5M5.5 10v10h13V10M10 20v-5h4v5',
+    work: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16',
+    school: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c3 2 9 2 12 0v-5',
+    gym: 'M3 10v4M6 8v8M18 8v8M21 10v4M6 12h12',
+    shop: 'M5 8h14l-1 12H6L5 8zM9 8a3 3 0 0 1 6 0',
+    family: 'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM21 19v-1a3.5 3.5 0 0 0-2.5-3.4M15.5 4.2a3 3 0 0 1 0 5.6',
+    pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 7.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+    edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+    trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+    back: 'M15 6l-6 6 6 6',
+    search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
+    point: 'M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  };
+  var pl = { data: null, loading: false, failed: false, edit: null, map: null, layer: null, editLayer: null, leaflet: null, results: null, searching: false };
+
+  function plMeta(p) {
+    var bits = [];
+    if (p.address) bits.push(p.address);
+    bits.push(T('myprofile.places.radius_m', { m: p.radiusM }));
+    return bits.join(' · ');
+  }
+  function plUsage(u) {
+    var kindKey = 'myprofile.places.kind.' + u.kind;
+    var kind = T(kindKey) === kindKey ? u.kind : T(kindKey);
+    return (u.pluginName || u.plugin) + ' · ' + u.count + ' × ' + kind;
+  }
+
+  // Leaflet once: the vendored script and the stylesheet of the plugin frames (same origin, 'self' in the CSP).
+  function loadLeaflet() {
+    if (pl.leaflet) return pl.leaflet;
+    pl.leaflet = new Promise(function (resolve, reject) {
+      if (window.L) { resolve(window.L); return; }
+      if (!doc.querySelector('link[data-pt-leaflet]')) {
+        var css = doc.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = '/plugins/_shared/leaflet/leaflet.css';
+        css.setAttribute('data-pt-leaflet', '');
+        doc.head.appendChild(css);
+      }
+      var s = doc.createElement('script');
+      s.src = '/vendor/leaflet/leaflet.js';
+      s.onload = function () { if (window.L) resolve(window.L); else reject(new Error('leaflet')); };
+      s.onerror = function () { reject(new Error('leaflet')); };
+      doc.head.appendChild(s);
+    });
+    pl.leaflet.catch(function () { pl.leaflet = null; });
+    return pl.leaflet;
+  }
+
+  function plColor() {
+    var v = '';
+    try { v = getComputedStyle(doc.documentElement).getPropertyValue('--teal').trim(); } catch (_) { v = ''; }
+    return v || '#0e9b8a';
+  }
+
+  function ensureMap() {
+    var host = $('pt-pl-map');
+    if (!host || !CTX.tiles) return Promise.resolve(null);
+    if (pl.map) { pl.map.invalidateSize(); return Promise.resolve(pl.map); }
+    return loadLeaflet().then(function (L) {
+      if (pl.map) return pl.map;
+      pl.map = L.map(host, { zoomControl: true, attributionControl: true, scrollWheelZoom: true });
+      L.tileLayer(CTX.tiles, { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(pl.map);
+      pl.map.setView([51.16, 10.45], 5);
+      pl.layer = L.layerGroup().addTo(pl.map);
+      pl.editLayer = L.layerGroup().addTo(pl.map);
+      pl.map.on('click', function (e) {
+        var ll = { lat: Math.round(e.latlng.lat * 1e6) / 1e6, lon: Math.round(e.latlng.lng * 1e6) / 1e6 };
+        if (pl.edit) { setEditPoint(ll); return; }
+        openPlace(null, ll);
+      });
+      return pl.map;
+    }).catch(function () { show($('pt-pl-maphint'), true); setText('pt-pl-maphint', T('myprofile.places.map_failed')); return null; });
+  }
+
+  function drawPlaces(fit) {
+    if (!pl.map || !window.L) return;
+    var L = window.L;
+    pl.layer.clearLayers();
+    var color = plColor();
+    var list = (pl.data && pl.data.places) || [];
+    var bounds = [];
+    list.forEach(function (p) {
+      if (pl.edit && pl.edit.id === p.id) return;
+      var c = L.circle([p.lat, p.lon], { radius: p.radiusM, color: color, weight: 1.5, fillColor: color, fillOpacity: 0.12 });
+      var m = L.circleMarker([p.lat, p.lon], { radius: 6, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 });
+      // a click on a place opens it — not "new place here"
+      [c, m].forEach(function (x) { x.on('click', function (e) { L.DomEvent.stopPropagation(e); if (!pl.edit) openPlace(p); }); x.addTo(pl.layer); });
+      // a DOM node, never markup: Leaflet would put a string into innerHTML
+      m.bindTooltip(el('span', null, p.name));
+      bounds.push([p.lat, p.lon]);
+    });
+    if (fit && bounds.length) pl.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+  }
+
+  function drawEdit(fit) {
+    if (!pl.map || !window.L) return;
+    var L = window.L;
+    pl.editLayer.clearLayers();
+    var e = pl.edit;
+    if (!e || e.lat == null) return;
+    var coral = '';
+    try { coral = getComputedStyle(doc.documentElement).getPropertyValue('--coral').trim(); } catch (_) { coral = ''; }
+    coral = coral || '#d9602f';
+    L.circle([e.lat, e.lon], { radius: e.radiusM, color: coral, weight: 2, fillColor: coral, fillOpacity: 0.15, interactive: false }).addTo(pl.editLayer);
+    L.circleMarker([e.lat, e.lon], { radius: 7, color: '#fff', weight: 2, fillColor: coral, fillOpacity: 1, interactive: false }).addTo(pl.editLayer);
+    if (fit) pl.map.setView([e.lat, e.lon], Math.max(pl.map.getZoom(), 15));
+  }
+
+  function renderPlaces() {
+    var host = $('pt-pl-side');
+    if (!host) return;
+    clear(host);
+    if (pl.edit) { host.appendChild(placeForm()); return; }
+    var d = pl.data;
+    if (!d) {
+      host.appendChild(el('div', { class: 'pt-card pt-pad' }, pl.failed
+        ? [T('myprofile.places.load_failed') + ' ', el('button', { type: 'button', class: 'pt-linkbtn', on: { click: function () { loadPlaces(true); } } }, T('portal.notify.retry'))]
+        : empty(T('portal.loading'))));
+      return;
+    }
+    var addBtn = $('pt-pl-add');
+    if (addBtn) addBtn.disabled = d.places.length >= d.limits.places;
+    var card = el('section', { class: 'pt-card pt-pl-list', 'aria-labelledby': 'pt-h-pl-list' }, [
+      el('div', { class: 'pt-pf-head' }, [el('h2', { class: 'pt-h2', id: 'pt-h-pl-list' }, T('myprofile.places.mine', { n: d.places.length }))]),
+    ]);
+    if (!d.places.length) card.appendChild(el('div', { class: 'pt-pf-empty' }, T('myprofile.places.none')));
+    d.places.forEach(function (p) {
+      var used = (p.usedBy || []).reduce(function (n, u) { return n + u.count; }, 0);
+      card.appendChild(el('button', { type: 'button', class: 'pt-pl-item', 'data-id': String(p.id), on: { click: function () { openPlace(p); } } }, [
+        el('span', { class: 'pt-pl-ic', 'aria-hidden': 'true' }, icon(PL_IC[p.icon] || PL_IC.pin, 18)),
+        el('span', { class: 'pt-grow pt-pl-text' }, [
+          el('b', { class: 'pt-block' }, p.name),
+          el('span', { class: 'pt-small pt-muted pt-block' }, plMeta(p)),
+          used ? el('span', { class: 'pt-small pt-pl-used pt-block' }, T('myprofile.places.used_n', { n: used })) : null,
+        ]),
+        visChip(p.visibility),
+      ]));
+    });
+    card.appendChild(el('p', { class: 'pt-pl-foot' }, T('myprofile.places.foot')));
+    host.appendChild(card);
+  }
+
+  /** The form of one place (pl.edit: { id|null, name, icon, lat, lon, radiusM, address, visibility, usedBy }). */
+  function placeForm() {
+    var e = pl.edit;
+    var d = pl.data || { limits: { name: 60, address: 200, radius: { min: 50, max: 2000 } }, options: { icons: ['pin'] }, family: false, search: 'off' };
+    var lim = d.limits;
+    var card = el('section', { class: 'pt-card pt-pl-form', 'aria-labelledby': 'pt-h-pl-form' });
+    var head = el('div', { class: 'pt-pf-head' }, [
+      el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-pf-iconbtn', 'aria-label': T('myprofile.places.back'), title: T('myprofile.places.back'), on: { click: closePlace } }, icon(PL_IC.back, 16)),
+      el('h2', { class: 'pt-h2', id: 'pt-h-pl-form' }, e.id ? T('myprofile.places.edit_title') : T('myprofile.places.new_title')),
+      e.id ? el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-btn-danger pt-pf-iconbtn pt-pl-del', id: 'pt-pl-delete', 'aria-label': T('myprofile.places.delete'), title: T('myprofile.places.delete'), on: { click: function () { deletePlace(e); } } }, icon(PL_IC.trash, 16)) : null,
+    ]);
+    card.appendChild(head);
+    var body = el('div', { class: 'pt-pl-body' });
+    card.appendChild(body);
+
+    // ── the point: address search, map, "Auf der Karte" ──
+    if (d.search !== 'off') {
+      var q = el('input', { type: 'search', class: 'pt-grp-input', id: 'pt-pl-q', maxlength: 120, placeholder: T('myprofile.places.search_ph'), 'aria-label': T('myprofile.places.search'), autocomplete: 'off' });
+      var go = el('button', { type: 'submit', class: 'pt-btn pt-btn-sm pt-pf-iconbtn', 'aria-label': T('myprofile.places.search'), title: T('myprofile.places.search') }, icon(PL_IC.search, 16));
+      var form = el('form', { class: 'pt-pl-search', role: 'search' }, [q, go]);
+      form.addEventListener('submit', function (ev) { ev.preventDefault(); runSearch(q.value, go); });
+      body.appendChild(form);
+      var res = el('div', { class: 'pt-pl-results', id: 'pt-pl-results' });
+      body.appendChild(res);
+      renderResults(res);
+    }
+    var pointLine = el('p', { class: 'pt-pl-point', id: 'pt-pl-point', 'data-tone': e.lat == null ? 'warn' : 'good' }, [icon(PL_IC.point, 14),
+      e.lat == null ? T('myprofile.places.no_point') : T('myprofile.places.point', { lat: e.lat.toFixed(5), lon: e.lon.toFixed(5) })]);
+    body.appendChild(pointLine);
+
+    // ── name, symbol, radius, who sees it, address ──
+    var name = textInput(e.name, lim.name, { id: 'pt-pl-name', autocomplete: 'off' });
+    name.addEventListener('input', function () { e.name = name.value; syncSave(); });
+    body.appendChild(field(T('myprofile.places.name'), name));
+    var icons = el('div', { class: 'pt-pl-icons', role: 'radiogroup', 'aria-label': T('myprofile.places.icon') });
+    (d.options.icons || []).forEach(function (k) {
+      var r = el('input', { type: 'radio', name: 'pt-pl-icon', value: k, checked: e.icon === k, 'aria-label': T('myprofile.places.icon.' + k) });
+      r.addEventListener('change', function () { if (r.checked) e.icon = k; });
+      icons.appendChild(el('label', { class: 'pt-pl-iconbtn', title: T('myprofile.places.icon.' + k) }, [r, el('span', null, icon(PL_IC[k] || PL_IC.pin, 18))]));
+    });
+    body.appendChild(el('div', { class: 'pt-field-label pt-pf-field' }, [T('myprofile.places.icon'), icons]));
+    var out = el('b', { class: 'pt-pl-rv', id: 'pt-pl-radius-v' }, T('myprofile.places.radius_m', { m: e.radiusM }));
+    var range = el('input', { type: 'range', class: 'pt-pl-range', id: 'pt-pl-radius', min: lim.radius.min, max: lim.radius.max, step: 10, value: String(e.radiusM), 'aria-valuetext': T('myprofile.places.radius_m', { m: e.radiusM }) });
+    range.addEventListener('input', function () {
+      e.radiusM = Number(range.value);
+      out.textContent = T('myprofile.places.radius_m', { m: e.radiusM });
+      range.setAttribute('aria-valuetext', out.textContent);
+      drawEdit(false);
+    });
+    body.appendChild(el('label', { class: 'pt-field-label pt-pf-field', for: 'pt-pl-radius' }, [el('span', { class: 'pt-pl-rl' }, [T('myprofile.places.radius'), out]), range]));
+    var levels = d.family ? ['self', 'family', 'all'] : ['self', 'all'];
+    if (levels.indexOf(e.visibility) < 0) levels.splice(1, 0, e.visibility);
+    var seg = el('div', { class: 'pt-pf-seg', role: 'radiogroup', 'aria-label': T('myprofile.places.who_sees') });
+    levels.forEach(function (l) {
+      var r = el('input', { type: 'radio', name: 'pt-pl-vis', value: l, checked: l === e.visibility });
+      r.addEventListener('change', function () { if (r.checked) e.visibility = l; });
+      seg.appendChild(el('label', { class: 'pt-pf-segbtn' }, [r, el('span', null, T('myprofile.places.vis.' + l))]));
+    });
+    body.appendChild(el('div', { class: 'pt-field-label pt-pf-field' }, [T('myprofile.places.who_sees'), seg]));
+    var addr = textInput(e.address, lim.address, { id: 'pt-pl-address', autocomplete: 'off' });
+    addr.addEventListener('input', function () { e.address = addr.value; });
+    body.appendChild(field(T('myprofile.places.address'), addr, T('myprofile.places.address_hint')));
+
+    // ── "Genutzt von" ──
+    if (e.id) {
+      var used = e.usedBy || [];
+      body.appendChild(el('div', { class: 'pt-pl-usedby' }, [
+        el('b', { class: 'pt-block' }, T('myprofile.places.used_by')),
+        used.length ? el('ul', { class: 'pt-pl-usedlist' }, used.map(function (u) { return el('li', null, plUsage(u)); }))
+          : el('span', { class: 'pt-small pt-muted pt-block' }, T('myprofile.places.unused')),
+        used.length ? el('span', { class: 'pt-small pt-muted pt-block' }, T('myprofile.places.used_hint')) : null,
+      ]));
+    }
+    var err = el('p', { class: 'pt-pl-err', id: 'pt-pl-err', role: 'alert', hidden: true });
+    body.appendChild(err);
+    var save = el('button', { type: 'button', class: 'pt-btn pt-btn-primary', id: 'pt-pl-save', on: { click: function () { savePlace(save, err); } } }, T('myprofile.save'));
+    var cancel = el('button', { type: 'button', class: 'pt-btn', on: { click: closePlace } }, T('portal.cancel'));
+    body.appendChild(el('div', { class: 'pt-pl-actions' }, [cancel, save]));
+    pl.saveBtn = save;
+    syncSave();
+    return card;
+  }
+
+  function syncSave() {
+    var e = pl.edit;
+    if (pl.saveBtn && e) pl.saveBtn.disabled = e.lat == null || !String(e.name || '').trim();
+  }
+
+  function setEditPoint(ll, address) {
+    var e = pl.edit;
+    if (!e) return;
+    e.lat = ll.lat; e.lon = ll.lon;
+    if (address != null) {
+      e.address = address;
+      var a = $('pt-pl-address');
+      if (a) a.value = address;
+    }
+    var line = $('pt-pl-point');
+    if (line) {
+      line.setAttribute('data-tone', 'good');
+      clear(line).appendChild(icon(PL_IC.point, 14));
+      line.appendChild(doc.createTextNode(T('myprofile.places.point', { lat: e.lat.toFixed(5), lon: e.lon.toFixed(5) })));
+    }
+    syncSave();
+    drawEdit(address != null);
+  }
+
+  function renderResults(box) {
+    if (!box) return;
+    clear(box);
+    var r = pl.results;
+    if (pl.searching) { box.appendChild(el('p', { class: 'pt-small pt-muted' }, T('myprofile.places.searching'))); return; }
+    if (!r) return;
+    if (r.error) { box.appendChild(el('p', { class: 'pt-small pt-pl-err' }, r.error)); return; }
+    if (!r.results.length) { box.appendChild(el('p', { class: 'pt-small pt-muted' }, T('myprofile.places.no_results'))); return; }
+    var list = el('ul', { class: 'pt-pl-reslist' });
+    r.results.forEach(function (h) {
+      list.appendChild(el('li', null, el('button', { type: 'button', class: 'pt-pl-res', on: { click: function () {
+        if (pl.edit && !String(pl.edit.name || '').trim()) {
+          pl.edit.name = h.name;
+          var n = $('pt-pl-name');
+          if (n) n.value = h.name;
+        }
+        pl.results = null;
+        renderResults($('pt-pl-results'));
+        setEditPoint({ lat: h.lat, lon: h.lon }, h.address || h.name);
+      } } }, [el('b', { class: 'pt-block' }, h.name), el('span', { class: 'pt-small pt-muted pt-block' }, h.address || '')])));
+    });
+    box.appendChild(list);
+    if (r.attribution) box.appendChild(el('a', { class: 'pt-small pt-muted pt-pl-attr', href: r.attribution.url, target: '_blank', rel: 'noopener noreferrer' }, r.attribution.text));
+  }
+
+  function runSearch(text, btn) {
+    var q = String(text || '').trim();
+    if (q.length < 3) { pl.results = { error: T('myprofile.places.search_short'), results: [] }; renderResults($('pt-pl-results')); return; }
+    var url = SEARCH_API + '?q=' + encodeURIComponent(q);
+    if (pl.map) {
+      var c = pl.map.getCenter();
+      url += '&near=' + encodeURIComponent(c.lat.toFixed(2) + ',' + c.lng.toFixed(2));
+    }
+    pl.searching = true;
+    btn.disabled = true;
+    renderResults($('pt-pl-results'));
+    getJson(url).then(function (res) {
+      pl.searching = false;
+      btn.disabled = false;
+      if (res.status === 200 && res.body && res.body.ok) pl.results = { results: res.body.results || [], attribution: res.body.attribution };
+      else pl.results = { error: pfError(res), results: [] };
+      renderResults($('pt-pl-results'));
+    }).catch(function () { pl.searching = false; btn.disabled = false; pl.results = { error: T('myprofile.err.failed'), results: [] }; renderResults($('pt-pl-results')); });
+  }
+
+  function openPlace(p, at) {
+    var d = pl.data;
+    if (!p && d && d.places.length >= d.limits.places) { toast(T('myprofile.places.err.limit'), 'error'); return; }
+    var def = d ? d.limits.radius.default : 150;
+    pl.edit = p ? { id: p.id, name: p.name, icon: p.icon, lat: p.lat, lon: p.lon, radiusM: p.radiusM, address: p.address || '', visibility: p.visibility, usedBy: p.usedBy || [] }
+      : { id: null, name: '', icon: 'pin', lat: at ? at.lat : null, lon: at ? at.lon : null, radiusM: def, address: '', visibility: 'self', usedBy: [] };
+    pl.results = null;
+    renderPlaces();
+    drawPlaces(false);
+    drawEdit(!!(p || at));
+    var n = $('pt-pl-name');
+    if (n) { try { n.focus({ preventScroll: true }); } catch (_) { n.focus(); } }
+  }
+
+  function closePlace() {
+    pl.edit = null;
+    pl.saveBtn = null;
+    pl.results = null;
+    if (pl.editLayer) pl.editLayer.clearLayers();
+    renderPlaces();
+    drawPlaces(false);
+  }
+
+  function savePlace(btn, err) {
+    var e = pl.edit;
+    if (!e || e.lat == null) return;
+    var body = { name: String(e.name || '').trim(), icon: e.icon, lat: e.lat, lon: e.lon, radiusM: e.radiusM, visibility: e.visibility, address: String(e.address || '').trim() || null };
+    btn.disabled = true;
+    err.hidden = true;
+    send(e.id ? 'PATCH' : 'POST', PLACES_API + (e.id ? '/' + Number(e.id) : ''), body).then(function (res) {
+      if (res.status >= 200 && res.status < 300 && res.body && res.body.ok) {
+        toast(T('myprofile.places.saved'));
+        pl.edit = null;
+        pl.saveBtn = null;
+        if (pl.editLayer) pl.editLayer.clearLayers();
+        loadPlaces(true);
+        return;
+      }
+      btn.disabled = false;
+      err.textContent = pfError(res);
+      err.hidden = false;
+    }).catch(function () { btn.disabled = false; err.textContent = T('myprofile.err.failed'); err.hidden = false; });
+  }
+
+  function deletePlace(e) {
+    var used = e.usedBy || [];
+    var msg = used.length
+      ? T('myprofile.places.delete_used', { list: used.map(plUsage).join(', ') })
+      : T('myprofile.places.delete_text');
+    portalConfirm({ title: T('myprofile.places.delete_title', { name: e.name }), message: msg, okLabel: T('myprofile.places.delete'), danger: true }).then(function (yes) {
+      if (!yes) return;
+      send('DELETE', PLACES_API + '/' + Number(e.id) + (used.length ? '?force=1' : '')).then(function (res) {
+        if (res.status === 200 && res.body && res.body.ok) {
+          toast(T('myprofile.places.deleted'));
+          closePlace();
+          loadPlaces(true);
+          return;
+        }
+        // in use since the page was loaded: ask once more, with what uses it now
+        if (res.status === 409 && res.body && res.body.code === 'IN_USE') {
+          e.usedBy = res.body.usedBy || [];
+          deletePlace(e);
+          return;
+        }
+        toast(pfError(res), 'error');
+      }).catch(function () { toast(T('myprofile.err.failed'), 'error'); });
+    });
+  }
+
+  function loadPlaces(force) {
+    if (!TABS.profile || pl.loading || (pl.data && !force)) return;
+    pl.loading = true;
+    getJson(PLACES_API).then(function (res) {
+      pl.loading = false;
+      if (res.status === 200 && res.body && res.body.ok) { pl.data = res.body; pl.failed = false; }
+      else pl.failed = true;
+      if (!pl.edit) renderPlaces();
+      drawPlaces(!force);
+    }).catch(function () { pl.loading = false; pl.failed = true; renderPlaces(); });
+  }
+  (function wirePlaces() {
+    var add = $('pt-pl-add');
+    if (add) add.addEventListener('click', function () { openPlace(null, null); });
+  })();
+  onPanel(function (id) {
+    if (id !== 'orte') return;
+    loadPlaces(false);
+    ensureMap().then(function () { drawPlaces(true); drawEdit(false); });
+  });
 
   // Kiosk device (docs/feature-kiosk-devices.md): "Abmelden" unpairs the
   // tablet for good — ask first (a tap on a wall tablet is easy).

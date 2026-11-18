@@ -226,6 +226,8 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
       canEnroll: viewer.kind === 'person' && !!req.portalLoggedIn && !!viewer.canEnroll,
       // Own profile picture and colour on "Mein Profil" (never on a kiosk device).
       canEditLook: viewer.kind === 'person' && !!req.portalLoggedIn && !isKiosk(req),
+      // "Meine Orte" (#orte): the map's tiles through the server's relay (services/plugins/tiles.js)
+      tiles: tabs.profile ? require('../services/plugins/tiles').template() : null,
       kiosk: isKiosk(req),
       tabs,
     }),

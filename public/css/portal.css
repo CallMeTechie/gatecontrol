@@ -676,3 +676,60 @@ a.pt-user-link:hover { border-color: var(--accent-bd); }
   .pt-pf-avatar { width: 56px; height: 56px; font-size: 19px; }
   .pt-pf-two { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ═══ Mein Profil › Meine Orte (docs/feature-user-profile.md "Meine Orte") ═══ */
+.pt-pl-navcard { margin-top: 0; }
+.pt-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+.pt-crumbs a { color: var(--accent-text); font-weight: 600; text-decoration: none; }
+.pt-crumbs a:hover { text-decoration: underline; }
+.pt-crumbs [aria-current] { color: var(--text); font-weight: 600; }
+.pt-hero-actions .pt-btn-primary { display: inline-flex; align-items: center; gap: 6px; }
+.pt-pl-grid { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+.pt-pl-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pt-pl-mapcard { position: sticky; top: 16px; }
+.pt-pl-map { height: min(68vh, 620px); min-height: 340px; background: var(--surface-3); }
+.pt-pl-map .leaflet-container, .pt-pl-map.leaflet-container { font: 13px var(--font-body); }
+.pt-pl-maphint { margin: 0; padding: 10px 14px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); }
+.pt-pl-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pt-pl-item:hover { background: var(--chip); }
+.pt-pl-item:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.pt-pl-ic { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); }
+.pt-pl-text { min-width: 0; overflow-wrap: anywhere; }
+.pt-pl-used { color: var(--accent-text); font-weight: 600; }
+.pt-pl-foot { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+.pt-pl-form .pt-pf-head .pt-h2 { flex: 1; }
+.pt-pl-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 18px 18px; }
+.pt-pl-search { display: flex; gap: 8px; }
+.pt-pl-search .pt-grp-input { flex: 1; }
+.pt-pl-results:empty { display: none; }
+.pt-pl-reslist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
+.pt-pl-reslist li + li { border-top: 1px solid var(--line); }
+.pt-pl-res { display: block; width: 100%; padding: 9px 12px; border: 0; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pt-pl-res:hover, .pt-pl-res:focus-visible { background: var(--accent-soft); outline: none; }
+.pt-pl-attr { display: inline-block; margin-top: 6px; }
+.pt-pl-point { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12.5px; font-weight: 600; }
+.pt-pl-point[data-tone="good"] { color: var(--good-text); }
+.pt-pl-point[data-tone="warn"] { color: var(--warn-text); }
+.pt-pl-icons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.pt-pl-iconbtn { position: relative; display: inline-flex; }
+.pt-pl-iconbtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pt-pl-iconbtn span { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); cursor: pointer; }
+.pt-pl-iconbtn input:checked + span { border-color: var(--teal); background: var(--accent-soft); color: var(--accent-text); }
+.pt-pl-iconbtn input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.pt-pl-rl { display: flex; justify-content: space-between; gap: 10px; }
+.pt-pl-rv { color: var(--text); }
+.pt-pl-range { display: block; width: 100%; margin-top: 8px; accent-color: var(--teal); }
+.pt-pl-usedby { padding: 12px; border-radius: 12px; background: var(--chip); border: 1px solid var(--line); font-size: 13px; }
+.pt-pl-usedlist { margin: 6px 0; padding-left: 18px; }
+.pt-pl-err { margin: 0; color: var(--crit-text); font-size: 13px; font-weight: 600; }
+.pt-pl-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 900px) {
+  .pt-pl-grid { grid-template-columns: minmax(0, 1fr); }
+  .pt-pl-mapcard { position: static; order: -1; }
+  .pt-pl-map { height: 46vh; min-height: 260px; }
+}
+@media (max-width: 640px) {
+  .pt-pl-item { padding: 10px 14px; }
+  .pt-pl-body { padding: 4px 14px 14px; }
+  .pt-pl-foot { padding: 10px 14px 14px; }
+}

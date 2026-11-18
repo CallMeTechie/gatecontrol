@@ -10515,6 +10515,8 @@ a.gwp-mrow-n{color:var(--teal)}
 .up-pf-dup{font-size:13px}
 .us-settings-row{align-items:flex-start}
 .us-settings-row .up-switchrow-label{display:flex; flex-direction:column; gap:2px}
+.us-settings-search{margin-top:14px}
+.us-settings-search + .us-field{margin-top:10px}
 @media (max-width:640px){
   .up-pf-row{grid-template-columns:minmax(0, 1fr) auto}
   .up-pf-label{grid-column:1 / -1}

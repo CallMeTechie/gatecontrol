@@ -186,7 +186,9 @@ class PluginProcess {
       // gc.bridges: permissions.bridges (messenger bridges)
       bridges: perms.bridges === true,
       // gc.remote: permissions.remote (remote access, version 2 — services/remote)
-      remote: perms.remote === true };
+      remote: perms.remote === true,
+      // gc.places: permissions.places ("Meine Orte" of the user profile — services/places.js)
+      places: perms.places === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

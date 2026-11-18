@@ -474,6 +474,54 @@ function usersReader(plugin, args) {
 }
 const AVATAR_LEVEL_RE = /^(all|contacts|family|self)$/;
 
+// ─── "Meine Orte" (gc.places, permissions.places — services/places.js) ────
+//
+// The places of the user profile. Every call names the person it is for (userId): list / get / resolve answer only
+// what that person may see (own places, of others "Alle" and — in one family — "Familie"); resolve without a person
+// answers any place (the plugin needs the point of a reference it keeps). markUsed only for the owner. reportUsage
+// keeps the plugin's own count per kind ("Genutzt von"); importFor is the one-time move of a plugin's own places.
+
+function placeUser(v, field = 'userId') {
+  const n = Number(v);
+  need(Number.isSafeInteger(n) && n > 0, 'ERR_INVALID', `invalid ${field}`);
+  return n;
+}
+
+function placesCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.places === true, 'ERR_PLACES_DENIED', 'this plugin has no places permission');
+  const places = require('../places');
+  try {
+    switch (op) {
+      case 'list': {
+        const userId = placeUser(args.userId);
+        return places.visibleTo(userId, { owner: args.owner == null ? null : placeUser(args.owner, 'owner') });
+      }
+      case 'get': return places.placeFor(placeUser(args.id, 'id'), placeUser(args.userId));
+      case 'resolve': {
+        const id = places.parseRef(args.ref);
+        need(id != null, 'ERR_INVALID', "ref must be 'profile:<id>'");
+        return places.placeFor(id, args.userId == null ? null : placeUser(args.userId));
+      }
+      case 'markUsed': {
+        const p = places.markUsed(placeUser(args.userId), placeUser(args.id, 'id'));
+        return { id: p.id, lastUsedAt: p.lastUsedAt };
+      }
+      case 'reportUsage':
+        return places.reportUsage(plugin.id, { userId: placeUser(args.userId), id: placeUser(args.id, 'id'), kind: args.kind, count: args.count });
+      case 'importFor':
+        return places.importFor({ userId: placeUser(args.userId), places: args.places, source: args.source }, { plugin: plugin.id, source: 'plugin' });
+      default: throw new HostApiError('ERR_INVALID', 'unknown method');
+    }
+  } catch (e) {
+    if (e instanceof places.PlaceError) {
+      if (e.code === 'ERR_NOT_FOUND') throw new HostApiError('ERR_NOT_FOUND', e.message);
+      if (e.code === 'ERR_INVALID') throw new HostApiError('ERR_INVALID', e.message, e.field || undefined);
+      throw new HostApiError(e.code, e.message);
+    }
+    throw e;
+  }
+}
+
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const SEVERITY_PRIORITY = { info: 'info', success: 'info', warning: 'normal', error: 'normal' };
 
@@ -2574,6 +2622,13 @@ async function handle(plugin, api, args, ctx) {
       const viewer = v !== null && require('./personContext').has(plugin.id, v) ? v : null;
       return require('../profile').viewFor(id, viewer, allowed);
     }
+    case 'places.list':
+    case 'places.get':
+    case 'places.resolve':
+    case 'places.markUsed':
+    case 'places.reportUsage':
+    case 'places.importFor':
+      return placesCall(plugin, api.slice(7), args || {});
     case 'kiosk.allow': {
       // docs/feature-kiosk-devices.md: mark/unmark a user as a kiosk user (never an admin or a disabled account)
       need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');

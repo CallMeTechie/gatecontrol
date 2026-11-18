@@ -4328,6 +4328,48 @@ const migrations = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_client_enrollment_codes_ticket ON client_enrollment_codes(ticket) WHERE ticket IS NOT NULL;`,
     detect: (db) => hasColumn(db, 'client_enrollment_codes', 'redeemed_platform'),
   },
+  {
+    version: 158,
+    name: 'user_places',
+    // "Meine Orte" in the user profile (docs/feature-user-profile.md "Meine Orte", services/places.js): a person's
+    // places, kept once and offered by every plugin and app (gc.places, the reference 'profile:<id>'):
+    //   user_places        name (1–60, unique per person without regard to case: name_lc), icon, lat / lon (always
+    //                      set, never 0/0), radius_m (50–2000), address (optional), visibility (self / family / all),
+    //                      source (manual / notizen / familie / messenger) and source_ref (where an imported place
+    //                      came from — gc.places.importFor is idempotent over source + source_ref), last_used_at
+    //   user_place_usage   "Genutzt von": what a plugin keeps at a place (gc.places.reportUsage) — plugin, kind, count
+    // Everything goes with the user, the usage with its place (ON DELETE CASCADE).
+    sql: `
+      CREATE TABLE IF NOT EXISTS user_places (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        name_lc TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT 'pin',
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        radius_m INTEGER NOT NULL DEFAULT 150,
+        address TEXT,
+        visibility TEXT NOT NULL DEFAULT 'self',
+        source TEXT NOT NULL DEFAULT 'manual',
+        source_ref TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_used_at TEXT,
+        UNIQUE (user_id, name_lc)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_places_source ON user_places (user_id, source, source_ref) WHERE source_ref IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_user_places_visibility ON user_places (visibility);
+      CREATE TABLE IF NOT EXISTS user_place_usage (
+        place_id INTEGER NOT NULL REFERENCES user_places(id) ON DELETE CASCADE,
+        plugin TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (place_id, plugin, kind)
+      );`,
+    detect: (db) => tableExists(db, 'user_places') && tableExists(db, 'user_place_usage'),
+  },
 ];
 
 module.exports = { migrations };
