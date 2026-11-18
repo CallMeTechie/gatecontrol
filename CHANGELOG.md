@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.298.0] — 2026-11-18
 
 ### Features
 - Profil: **„Meine Orte“** – jede Person legt ihre Orte einmal im Profil an (Name, Punkt auf der Karte, Radius 50–2000 m, Symbol, Adresse, Sichtbarkeit „Nur ich“/„Familie“/„Alle“, höchstens 100, Name je Person eindeutig, ohne Koordinaten kein Ort). Endpunkte unter `/api/v1/me`, `/api/v1/portal/me` und `/api/v1/client/me` (`profile/places…`, Löschen eines genutzten Orts nur mit `?force=1`, sonst `409 IN_USE` mit „Genutzt von“), Steuerereignis `places` an die Apps der Person. Für Plugins `gc.places` (Berechtigung `places`: `list`, `get`, `resolve`, `markUsed`, `reportUsage`, `importFor`) und der Hook `placesChanged`; Plugins speichern nur den Verweis `profile:<id>`. Die Adresssuche von Notizen zieht in den Server (`GET …/places/search`, Einstellung unter Benutzer → Einstellungen: OpenStreetMap, eigener Nominatim oder aus; eine Anfrage je Sekunde, Cache, Position auf etwa 1 km gerundet). Im Portal neue Seite „Mein Profil › Meine Orte“ mit Liste und Karte. Orte stehen in „Meine Daten“ und im Backup. Migration 158 (`user_places`, `user_place_usage`). Texte DE/EN, docs/feature-user-profile.md, docs/plugins.md.
