@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Plugins: **`gc.places` Version 2** (abwärtskompatibel) – `create`, `update` und `remove` für den Besitzer (`userId` = Besitzer, sonst `ERR_NOT_FOUND`) mit denselben Prüfregeln und Fehlercodes wie `POST`/`PATCH`/`DELETE profile/places` (`ERR_INVALID`/`ERR_DUPLICATE` mit `err.field`, `ERR_LIMIT`, `ERR_IN_USE` mit `err.usedBy` ohne `force`), Hook `placesChanged` und Steuerereignis `places` an die Apps; `search` ist die zentrale Adresssuche des Servers (gleiche Einstellung, Rundung auf ~1 km, Limit je Person, Cache). `reportUsage` mit `count: 0` geht jetzt für jede Orts-ID – auch für einen Ort, den die Person nicht mehr sieht oder den es nicht mehr gibt (entfernt nur den eigenen Eintrag, Antwort `usedBy: []`). Das Aktivitätsprotokoll nennt das Plugin. docs/plugins.md „Meine Orte“.
+
 ## [1.298.0] — 2026-11-18
 
 ### Features

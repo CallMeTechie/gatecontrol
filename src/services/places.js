@@ -227,7 +227,12 @@ function log(type, userId, ctx, extra) {
   try {
     activity.log(type, LOG_TEXT[type] || type, {
       source: ctx && ctx.source ? ctx.source : 'user', ipAddress: ctx && ctx.ip ? ctx.ip : null, severity: 'info',
-      details: { userId, ...(ctx && ctx.actorId && ctx.actorId !== userId ? { by: ctx.actorId } : {}), ...(extra || {}) },
+      details: {
+        userId, ...(ctx && ctx.actorId && ctx.actorId !== userId ? { by: ctx.actorId } : {}),
+        // gc.places version 2 (create / update / remove by a plugin): which plugin made the change
+        ...(ctx && typeof ctx.plugin === 'string' && ctx.plugin ? { plugin: ctx.plugin } : {}),
+        ...(extra || {}),
+      },
     });
   } catch (err) { logger.debug({ err: err.message }, 'places: activity not written'); }
 }
@@ -402,14 +407,24 @@ function parseRef(ref) {
 /**
  * reportUsage(pluginId, { userId, id, kind, count }) → { usedBy } — what the plugin keeps at a place it may see for
  * userId: `count` of `kind` (absolute, not added; 0 removes it).
+ *
+ * Since gc.places version 2 a count of 0 is taken for any place id — also one userId may no longer see (its owner
+ * set it to "Nur ich", left the family, …) or that is gone: a plugin can always take its own count down. It removes
+ * only this plugin's own row of that kind and answers `usedBy: []` then — never what others keep at a place the
+ * person may not see. A count > 0 still needs a place visible to userId (ERR_NOT_FOUND otherwise).
  */
 function reportUsage(pluginId, { userId, id, kind, count } = {}) {
   if (typeof kind !== 'string' || !KIND_RE.test(kind)) throw invalid('kind');
   const n = typeof count === 'number' ? count : NaN;
   if (!Number.isSafeInteger(n) || n < 0 || n > USAGE_MAX) throw invalid('count');
-  const p = placeFor(id, userId);
-  if (!p) throw new PlaceError('ERR_NOT_FOUND', 'unknown place');
   const db = getDb();
+  const p = placeFor(id, userId);
+  if (!p) {
+    const placeId = positive(id);
+    if (n !== 0 || !placeId) throw new PlaceError('ERR_NOT_FOUND', 'unknown place');
+    db.prepare('DELETE FROM user_place_usage WHERE place_id = ? AND plugin = ? AND kind = ?').run(placeId, pluginId, kind);
+    return { usedBy: [] };
+  }
   if (n === 0) db.prepare('DELETE FROM user_place_usage WHERE place_id = ? AND plugin = ? AND kind = ?').run(p.id, pluginId, kind);
   else {
     db.prepare(`INSERT INTO user_place_usage (place_id, plugin, kind, count, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
@@ -494,5 +509,5 @@ module.exports = {
   ICONS, VISIBILITY, SOURCES, MAX_PLACES, NAME_MAX, ADDRESS_MAX, RADIUS_MIN, RADIUS_MAX, RADIUS_DEFAULT, IMPORT_MAX,
   PlaceError,
   listOwn, getOwn, create, update, remove, markUsed,
-  visibleTo, placeFor, parseRef, reportUsage, importFor, exportFor, emitChanged, hasFamily,
+  visibleTo, placeFor, parseRef, reportUsage, importFor, exportFor, emitChanged, hasFamily, needUser,
 };

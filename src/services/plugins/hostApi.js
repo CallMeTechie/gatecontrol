@@ -480,6 +480,10 @@ const AVATAR_LEVEL_RE = /^(all|contacts|family|self)$/;
 // what that person may see (own places, of others "Alle" and — in one family — "Familie"); resolve without a person
 // answers any place (the plugin needs the point of a reference it keeps). markUsed only for the owner. reportUsage
 // keeps the plugin's own count per kind ("Genutzt von"); importFor is the one-time move of a plugin's own places.
+// Version 2: create / update / remove for the owner (userId = owner, else ERR_NOT_FOUND — never "exists, not
+// yours"), with the rules, codes and events of POST / PATCH / DELETE profile/places; search = the server's address
+// search (placeSearch.js: the administrator's setting, the rounding, the limit per person, the cache); reportUsage
+// with count 0 for any place id (a count can always be taken down).
 
 function placeUser(v, field = 'userId') {
   const n = Number(v);
@@ -487,9 +491,19 @@ function placeUser(v, field = 'userId') {
   return n;
 }
 
-function placesCall(plugin, op, args) {
+/** "Genutzt von" of an ERR_IN_USE, as it goes to the plugin (bounded, the known fields only). */
+function usedByOut(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 50).map((x) => ({
+    plugin: String(x.plugin), pluginName: String(x.pluginName), kind: String(x.kind), count: Number(x.count) || 0,
+  }));
+}
+
+async function placesCall(plugin, op, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.places === true, 'ERR_PLACES_DENIED', 'this plugin has no places permission');
   const places = require('../places');
+  const placeSearch = require('../placeSearch');
+  // the activity log names the plugin; the owner's apps all get the control event (no device of theirs made it)
+  const ctx = { source: 'plugin', plugin: plugin.id };
   try {
     switch (op) {
       case 'list': {
@@ -510,12 +524,40 @@ function placesCall(plugin, op, args) {
         return places.reportUsage(plugin.id, { userId: placeUser(args.userId), id: placeUser(args.id, 'id'), kind: args.kind, count: args.count });
       case 'importFor':
         return places.importFor({ userId: placeUser(args.userId), places: args.places, source: args.source }, { plugin: plugin.id, source: 'plugin' });
+      // ── version 2 ──
+      case 'create': {
+        const userId = placeUser(args.userId);
+        return { ...places.create(userId, args.place, ctx), ownerId: userId, own: true };
+      }
+      case 'update': {
+        const userId = placeUser(args.userId);
+        return { ...places.update(userId, placeUser(args.id, 'id'), args.patch, ctx), ownerId: userId, own: true };
+      }
+      case 'remove': {
+        const r = places.remove(placeUser(args.userId), placeUser(args.id, 'id'), { force: args.force === true }, ctx);
+        return { deleted: true, id: r.id };
+      }
+      case 'search': {
+        // a real person (the limit counts per person — no made-up ids around it)
+        const user = places.needUser(placeUser(args.userId));
+        need(args.q == null || typeof args.q === 'string', 'ERR_INVALID', 'q: 3…120 characters');
+        const near = args.near == null || args.near === '' ? null : args.near;
+        need(near === null || typeof near === 'string' || (typeof near === 'object' && !Array.isArray(near)), 'ERR_INVALID', 'near: lat,lon');
+        const r = await placeSearch.search({ q: args.q || '', near, lang: args.lang === 'en' ? 'en' : 'de', userId: user.id });
+        return { results: r.results, attribution: r.attribution };
+      }
       default: throw new HostApiError('ERR_INVALID', 'unknown method');
     }
   } catch (e) {
     if (e instanceof places.PlaceError) {
       if (e.code === 'ERR_NOT_FOUND') throw new HostApiError('ERR_NOT_FOUND', e.message);
-      if (e.code === 'ERR_INVALID') throw new HostApiError('ERR_INVALID', e.message, e.field || undefined);
+      if (e.code === 'ERR_INVALID' || e.code === 'ERR_DUPLICATE') throw Object.assign(new HostApiError(e.code, e.message, e.field || undefined), e.field ? { field: e.field } : {});
+      if (e.code === 'ERR_IN_USE') throw Object.assign(new HostApiError('ERR_IN_USE', e.message), { usedBy: usedByOut(e.usedBy) });
+      throw new HostApiError(e.code, e.message);
+    }
+    if (e instanceof placeSearch.SearchError) {
+      if (e.code === 'ERR_INVALID') throw Object.assign(new HostApiError('ERR_INVALID', e.message, e.field || undefined), e.field ? { field: e.field } : {});
+      if (e.code === 'ERR_RATE_LIMIT') throw Object.assign(new HostApiError('ERR_RATE_LIMIT', e.message), { retryAfterS: Math.max(1, Math.ceil(Number(e.retryAfter) || 60)) });
       throw new HostApiError(e.code, e.message);
     }
     throw e;
@@ -2628,6 +2670,11 @@ async function handle(plugin, api, args, ctx) {
     case 'places.markUsed':
     case 'places.reportUsage':
     case 'places.importFor':
+    // gc.places version 2
+    case 'places.create':
+    case 'places.update':
+    case 'places.remove':
+    case 'places.search':
       return placesCall(plugin, api.slice(7), args || {});
     case 'kiosk.allow': {
       // docs/feature-kiosk-devices.md: mark/unmark a user as a kiosk user (never an admin or a disabled account)

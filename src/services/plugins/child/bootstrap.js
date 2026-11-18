@@ -825,8 +825,9 @@ async function deliverEdgeEvent(ev) {
 function makePlaces() {
   const o = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   return Object.freeze({
-    /** the version of this interface (raised when methods or fields are added) */
-    version: 1,
+    /** the version of this interface (raised when methods or fields are added; 2: create, update, remove, search,
+     *  reportUsage with count 0 for any place id) */
+    version: 2,
     /** list({ userId, owner? }) → [place] — what userId may see: all own places (usedBy), of others "Alle" and, in one family, "Familie" (ownerId, ownerName) */
     list: (opts) => hostCall('places.list', { userId: o(opts).userId, owner: o(opts).owner == null ? null : o(opts).owner }),
     /** get({ userId, id }) → place | null — only when userId may see it */
@@ -839,6 +840,15 @@ function makePlaces() {
     reportUsage: (opts) => hostCall('places.reportUsage', { userId: o(opts).userId, id: o(opts).id, kind: o(opts).kind, count: o(opts).count }),
     /** importFor({ userId, places: [{ sourceRef, name, lat, lon, icon?, radiusM?, address?, visibility? }], source }) → { map: { [sourceRef]: { id, ref, created } }, skipped } — idempotent */
     importFor: (opts) => hostCall('places.importFor', { userId: o(opts).userId, places: o(opts).places, source: o(opts).source }),
+    // ── since version 2 (docs/plugins.md "Meine Orte") ──
+    /** create({ userId, place: { name, lat, lon, icon?, radiusM?, address?, visibility? } }) → place — for the owner userId; ERR_INVALID | ERR_DUPLICATE (err.field) | ERR_LIMIT */
+    create: (opts) => hostCall('places.create', { userId: o(opts).userId, place: o(opts).place }),
+    /** update({ userId, id, patch }) → place — the owner's place only (ERR_NOT_FOUND otherwise); the fields of create, each optional, lat and lon together */
+    update: (opts) => hostCall('places.update', { userId: o(opts).userId, id: o(opts).id, patch: o(opts).patch }),
+    /** remove({ userId, id, force? }) → { deleted: true, id } — the owner's place only; in use and no force → ERR_IN_USE (err.usedBy) */
+    remove: (opts) => hostCall('places.remove', { userId: o(opts).userId, id: o(opts).id, force: o(opts).force === true }),
+    /** search({ userId, q, near?, lang? }) → { results: [{ name, address, lat, lon, source, distanceM? }], attribution } — the server's address search */
+    search: (opts) => hostCall('places.search', { userId: o(opts).userId, q: o(opts).q, near: o(opts).near == null ? null : o(opts).near, lang: o(opts).lang }),
   });
 }
 
@@ -1384,6 +1394,9 @@ process.on('message', (msg) => {
         typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {},
         // why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off | office_off | office_missing)
         typeof msg.reason === 'string' ? { reason: msg.reason } : {},
+        // gc.places version 2: the field of ERR_INVALID / ERR_DUPLICATE, "Genutzt von" of ERR_IN_USE
+        typeof msg.field === 'string' ? { field: msg.field } : {},
+        Array.isArray(msg.usedBy) ? { usedBy: msg.usedBy } : {},
         Number.isSafeInteger(msg.retryAfterS) ? { retryAfterS: msg.retryAfterS } : {}));
     }
     return;
