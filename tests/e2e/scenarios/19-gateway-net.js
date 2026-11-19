@@ -40,7 +40,7 @@ function devices(now) {
 }
 
 module.exports = (ctx) => {
-  const { BASE, FIXTURES, step, visible, shot, api, allow } = ctx;
+  const { BASE, FIXTURES, step, visible, shot, api, allow, loadFresh } = ctx;
   const until = (page, fn, arg, ms = 8000) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true).catch(() => false);
   const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const theme = async (page, mode) => {
@@ -125,8 +125,7 @@ module.exports = (ctx) => {
         // a real load: the page is already on /gateways (opened above for the language), so going to the
         // hash alone would keep the gateway list from before the heartbeat — and with it a card
         // "Erkannte Geräte" that depends on whether a poll happened to run in between
-        await page.goto(`${BASE}/gateways#gw/${GW}`);
-        await page.reload();
+        await loadFresh(page, `${BASE}/gateways#gw/${GW}`);
         await theme(page, 'dark');
         step('net: the overview shows the card "Funktionen" with chips and "Verwalten" → tab', await until(page, () => {
           const c = document.querySelector('.gwn-fsum');

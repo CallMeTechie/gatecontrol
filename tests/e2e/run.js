@@ -20,6 +20,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
+const { isExternalNetError } = require('./page-problems');
 
 const BASE = process.env.BASE || 'http://127.0.0.1:3000';
 const OUT = process.env.E2E_OUT || path.join(process.env.GC_DATA_DIR || '.', 'e2e-out');
@@ -27,11 +28,13 @@ const FIXTURES = JSON.parse(fs.readFileSync(process.env.E2E_FIXTURES || path.joi
 
 const steps = [];
 const problems = [];
+// console errors that are not faults of the app (page-problems.js): shown, not counted
+const notes = [];
 // In GitHub Actions every failed step and page problem also becomes an error
 // annotation, so the check run names it (job logs are not always reachable).
-function annotate(msg) {
+function annotate(msg, level = 'error') {
   if (!process.env.GITHUB_ACTIONS) return;
-  console.log('::error title=Browser test::' + String(msg).replace(/%/g, '%25').replace(/\r?\n/g, ' ').slice(0, 900));
+  console.log(`::${level} title=Browser test::` + String(msg).replace(/%/g, '%25').replace(/\r?\n/g, ' ').slice(0, 900));
 }
 function step(name, ok, info) {
   steps.push({ name, ok, ...(info ? { info } : {}) });
@@ -61,6 +64,15 @@ const ctx = {
     await Promise.all([page.waitForNavigation(), page.click('button[type="submit"]')]);
     return page.url();
   },
+  // A full load of an address: a fresh document that knows nothing of the page before. Not
+  // page.goto(<the open page>#hash) + page.reload(): when the page itself changes its address
+  // (replaceState) right then, Chromium can keep the address before for the reload — it loads
+  // without the hash (gatewaywizard, runs 43863311002 and 44508800779: the overview instead of #gw/<id>).
+  async loadFresh(page, url) {
+    await page.goto('about:blank');
+    return page.goto(url);
+  },
+  navLog: (page) => page.evaluate(() => window.__gcNav || []).catch((e) => [String(e).slice(0, 120)]),
   shot: (page, name, full = true) => page.screenshot({ path: path.join(OUT, name + '.png'), fullPage: full }).catch(() => {}),
   // Antworten, die ein Szenario absichtlich provoziert, wieder austragen.
   allow(...preds) {
@@ -86,6 +98,26 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  // Where the page has been (ctx.navLog): the address each document was loaded with and every
+  // change of it since — hash changes, pushState/replaceState with the script line that called it.
+  // For the info of a failed step: "loaded without the hash" and "the hash was taken later" look
+  // the same on a screenshot.
+  await context.addInitScript(() => {
+    const log = [];
+    Object.defineProperty(window, '__gcNav', { value: log });
+    const add = (kind, by) => {
+      log.push({ ms: Math.round(performance.now()), kind, url: location.pathname + location.search + location.hash, ...(by ? { by } : {}) });
+      if (log.length > 30) log.shift();
+    };
+    // [0] Error, [1] this arrow, [2] the wrapper below, [3] the caller
+    const caller = () => ((new Error().stack || '').split('\n')[3] || '').trim().replace(location.origin, '').slice(0, 160);
+    for (const k of ['pushState', 'replaceState']) {
+      const orig = history[k];
+      history[k] = function (...a) { const r = orig.apply(this, a); add(k, caller()); return r; };
+    }
+    addEventListener('hashchange', () => add('hashchange'));
+    add('load');
+  });
   const page = await context.newPage();
   // every problem names its scenario and, for a console line, where it came from (a "Failed to load
   // resource" alone does not say which request it was)
@@ -93,7 +125,9 @@ async function main() {
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const at = (m.location() && m.location().url) || '';
-    problems.push({ kind: 'console', scenario: current, text: m.text().slice(0, 300), ...(at ? { at: at.replace(BASE, '').slice(0, 200) } : {}) });
+    const p = { kind: 'console', scenario: current, text: m.text().slice(0, 300), ...(at ? { at: at.replace(BASE, '').slice(0, 200) } : {}) };
+    if (isExternalNetError(m.text(), at, BASE)) { notes.push(p); console.log(`note (not counted): another host was not reached — ${JSON.stringify(p)}`); return; }
+    problems.push(p);
   });
   page.on('pageerror', (e) => problems.push({ kind: 'pageerror', scenario: current, text: String(e).slice(0, 300) }));
   page.on('response', (r) => {
@@ -114,8 +148,9 @@ async function main() {
   await browser.close();
 
   const failed = steps.filter((s) => !s.ok);
-  console.log('\n' + JSON.stringify({ scenarios: wanted, steps: steps.length, failed: failed.length, problems }, null, 1));
+  console.log('\n' + JSON.stringify({ scenarios: wanted, steps: steps.length, failed: failed.length, problems, ...(notes.length ? { notes } : {}) }, null, 1));
   for (const p of problems.slice(0, 20)) annotate('page problem: ' + JSON.stringify(p));
+  for (const p of notes.slice(0, 5)) annotate('not counted, another host was not reached: ' + JSON.stringify(p), 'warning');
   if (failed.length || problems.length) {
     console.error(`\n${failed.length} step(s) failed, ${problems.length} page problem(s).`);
     process.exit(1);
