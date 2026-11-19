@@ -54,6 +54,35 @@ module.exports = (ctx) => {
     };
   });
 
+  // The frame stands still on the page: same place and same scroll for a few frames in a row.
+  // Playwright waits for the element to be stable INSIDE the frame only — when the page around
+  // the frame still moves (scrolls, a bar above it changes), the click lands where the button
+  // was, not where it is (CI, 1440-light: "Close" of "Long" missed, the dialog stayed open).
+  const steady = (page) => page.evaluate(() => new Promise((resolve) => {
+    const f = document.getElementById('pg-frame');
+    const give = setTimeout(() => resolve(false), 5000);
+    const at = () => { const r = f.getBoundingClientRect(); return [r.top, r.left, r.height, window.scrollY].join(); };
+    let last = at(); let same = 0;
+    const tick = () => {
+      const now = at();
+      same = now === last ? same + 1 : 0;
+      last = now;
+      if (same >= 3) { clearTimeout(give); resolve(true); } else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })).catch(() => false);
+
+  // Closes a dialog of the frame: the page back to the top first, so the button is in the window
+  // without Playwright scrolling the page through the frame, then the click once the frame
+  // stands still. → { hidden, clicks } for the step's detail
+  async function closeDialog(page, fr, id) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await steady(page);
+    await fr.locator('#' + id + ' .close').click();
+    const hidden = await fr.locator('#' + id).waitFor({ state: 'hidden', timeout: 5000 }).then(() => true).catch(() => false);
+    return hidden;
+  }
+
   async function openPage(page) {
     await page.goto(BASE + '/plugins/' + ID);
     const fr = page.frameLocator('#pg-frame');
@@ -69,6 +98,7 @@ module.exports = (ctx) => {
       await page.waitForTimeout(100);
     }
     fr.readyPolls = polls;
+    fr.page = page;
     return fr;
   }
 
@@ -78,6 +108,7 @@ module.exports = (ctx) => {
   async function openDialog(fr, id) {
     const dlg = fr.locator('#' + id);
     for (let i = 1; i <= 3; i++) {
+      await steady(fr.page);
       await fr.locator('#open-' + id).click();
       if (await dlg.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) return i;
     }
@@ -116,9 +147,9 @@ module.exports = (ctx) => {
     // (the page itself may scroll for the sidebar — a long navigation on a low window; the frame stays inside it)
     step(`plugindialog ${label}: a dialog kept to GC.viewport fits, the frame ends inside the window`, !!l.dim && l.frameBottom + v.padB <= v.inner && l.frameBottom - l.frameTop === want, JSON.stringify(l));
     await shot(page, `plugindialog-${label}-fit`, false);
-    await fr.locator('#fit .close').click();
-    await fr.locator('#fit').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
-    await until(page, () => !document.querySelector('.plugin-frame-dim'));
+    const fitClosed = await closeDialog(page, fr, 'fit');
+    const fitNoDim = await until(page, () => !document.querySelector('.plugin-frame-dim'));
+    step(`plugindialog ${label}: "Fit" closed → no dim`, fitClosed && fitNoDim, JSON.stringify({ closed: fitClosed, ...(await layout(page)) }));
 
     // "Long": the frame grows past the window; scrolled down, it is under the topbar
     const longClicks = await openDialog(fr, 'long');
@@ -131,9 +162,12 @@ module.exports = (ctx) => {
     step(`plugindialog ${label}: the dim leaves out the frame only below the topbar (topbar dimmed)`, !!l.dim && l.dim.top >= l.barBottom, JSON.stringify(l));
     if (l.navTop != null) step(`plugindialog ${label}: … and only above the bottom navigation`, !!l.dim && l.dim.bottom <= l.navTop, JSON.stringify(l));
     await shot(page, `plugindialog-${label}-long`, false);
-    await fr.locator('#long .close').click();
+    const longClosed = await closeDialog(page, fr, 'long');
     await until(page, () => !document.querySelector('.plugin-frame-dim'));
-    step(`plugindialog ${label}: closed → no dim`, !(await page.$('.plugin-frame-dim')));
+    const after = await layout(page);
+    const closedOk = longClosed && !(await page.$('.plugin-frame-dim'));
+    if (!closedOk) await shot(page, `plugindialog-${label}-close-failed`, false);
+    step(`plugindialog ${label}: closed → no dim`, closedOk, JSON.stringify({ closed: longClosed, ...after }));
   }
 
   return {
