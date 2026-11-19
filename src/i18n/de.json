@@ -8453,6 +8453,8 @@
   "error.directory.unreachable": "Das Verzeichnis ist nicht erreichbar.",
   "error.directory.auth_failed": "Anmeldung am Verzeichnis abgelehnt — Dienstkonto, Passwort bzw. App-Registrierung prüfen.",
   "error.directory.tls_failed": "Das Zertifikat des Servers wurde nicht akzeptiert — CA-Zertifikat oder Servernamen prüfen.",
+  "error.directory.tls_missing_intermediate": "Der Server schickt nur sein eigenes Zertifikat, ohne das Zwischenzertifikat seiner CA. Abhilfe: auf dem Server die vollständige Zertifikatskette einrichten – oder das Zwischenzertifikat (PEM) als CA-Zertifikat hinterlegen.",
+  "error.directory.tls_unknown_issuer": "Der Aussteller des Server-Zertifikats ist nicht unter den hinterlegten CA-Zertifikaten. Schickt der Server kein Zwischenzertifikat, das Zwischenzertifikat (PEM) hinterlegen – sonst das CA-Zertifikat der ausstellenden CA.",
   "dir.intro": "Konten und Gruppen kommen aus dem Firmenverzeichnis. Dort ändern, hier erscheint es beim nächsten Abgleich. Admin-Rechte kommen nie aus dem Verzeichnis.",
   "dir.add": "Verzeichnis verbinden",
   "dir.empty": "Noch kein Verzeichnis verbunden.",

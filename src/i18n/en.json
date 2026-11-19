@@ -8453,6 +8453,8 @@
   "error.directory.unreachable": "The directory cannot be reached.",
   "error.directory.auth_failed": "The directory refused the credentials — check the service account, password or app registration.",
   "error.directory.tls_failed": "The server certificate was not accepted — check the CA certificate or server name.",
+  "error.directory.tls_missing_intermediate": "The server sends only its own certificate, without its CA's intermediate certificate. Fix: configure the full certificate chain on the server – or upload the intermediate certificate (PEM) as CA certificate.",
+  "error.directory.tls_unknown_issuer": "The issuer of the server certificate is not among the uploaded CA certificates. If the server sends no intermediate certificate, upload the intermediate (PEM) – otherwise the certificate of the issuing CA.",
   "dir.intro": "Accounts and groups come from the company directory. Change them there; they appear here with the next sync. Admin rights never come from the directory.",
   "dir.add": "Connect directory",
   "dir.empty": "No directory connected yet.",
