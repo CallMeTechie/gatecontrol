@@ -6,7 +6,10 @@
 // after a restore (a backup from before the removal brings it all back):
 //   settings   pihole_config (URLs and the instances' app passwords),
 //              pihole_blocking_desired, portal.widget.pihole
-//   api_tokens, client_enrollment_codes   the scopes `pihole` / `pihole:control`
+//   api_tokens, client_enrollment_codes   the scopes `pihole` / `pihole:control`;
+//              a token left without any scope (it only had Pi-hole rights)
+//              is deleted, with an activity entry each; so is an unused
+//              setup code without any scope (migration 160)
 // Statistics were only ever held in memory — there is no table to drop.
 // dnsmasq is not this module's business: services/dnsChain.js puts it on the
 // default upstreams (or on the DNS protection) at every start.
@@ -18,6 +21,7 @@ const SETTINGS = ['pihole_config', 'pihole_blocking_desired', 'portal.widget.pih
 const SCOPES = ['pihole', 'pihole:control'];
 const NOTICE_KEY = 'pihole_removed.notice';
 const EVENT = 'pihole_integration_removed';
+const TOKEN_EVENT = 'token_deleted';
 const MESSAGE = 'The Pi-hole integration was removed from GateControl — its settings and stored credentials were deleted. Replacement: the DNS protection plugin';
 // The plugin the notice leads to when none with permissions.vpnDns is installed.
 const CATALOG_PLUGIN = 'gatecontrol-dns';
@@ -53,23 +57,64 @@ function stripScopes(db, table, idColumn) {
   return changed;
 }
 
+function emptyList(raw) {
+  try { const list = JSON.parse(raw); return Array.isArray(list) && list.length === 0; } catch { return false; }
+}
+
+/**
+ * Tokens without any scope can do nothing (a token is never created or
+ * changed to that — tokens.validateScopes): they are what is left of a token
+ * that only had Pi-hole rights. Deleted, one activity entry each, so the
+ * administrator sees which one went. Unused setup codes without any scope
+ * would only mint such a token: deleted too.
+ * @returns {number} deleted tokens
+ */
+function dropEmptyTokens(db) {
+  let dropped = 0;
+  if (tableExists(db, 'api_tokens')) {
+    const del = db.prepare('DELETE FROM api_tokens WHERE id = ?');
+    const log = tableExists(db, 'activity_log')
+      ? db.prepare(`INSERT INTO activity_log (event_type, message, details, source, severity) VALUES (?, ?, ?, 'system', 'warning')`)
+      : null;
+    for (const row of db.prepare("SELECT id, name, user_id, peer_id, scopes FROM api_tokens WHERE scopes NOT LIKE '%\"%'").all()) {
+      if (!emptyList(row.scopes)) continue;
+      del.run(row.id);
+      dropped += 1;
+      if (log) {
+        log.run(TOKEN_EVENT, `API token "${row.name}" deleted: it only had rights of the removed Pi-hole integration`,
+          JSON.stringify({ tokenId: row.id, userId: row.user_id || null, peerId: row.peer_id || null, reason: 'pihole_removed' }));
+      }
+    }
+  }
+  if (tableExists(db, 'client_enrollment_codes')) {
+    const del = db.prepare('DELETE FROM client_enrollment_codes WHERE code_hash = ?');
+    for (const row of db.prepare("SELECT code_hash, scopes FROM client_enrollment_codes WHERE consumed_at IS NULL AND scopes NOT LIKE '%\"%'").all()) {
+      if (emptyList(row.scopes)) del.run(row.code_hash);
+    }
+  }
+  return dropped;
+}
+
 /**
  * Take the leftovers out of the database. Idempotent; cheap when there is
  * nothing (two small reads). Uses nothing but `db`, so the migration runner
  * can call it inside its transaction.
  * @param {import('better-sqlite3').Database} db
  * @param {{ notice?: boolean }} [opts] notice: false = no activity entry
- *   and no dashboard notice, whatever is found
- * @returns {{ configured: boolean, settings: number, tokens: number }}
+ *   pihole_integration_removed and no dashboard notice, whatever is found
+ *   (a deleted token is always logged)
+ * @returns {{ configured: boolean, settings: number, tokens: number, dropped: number }}
+ *   tokens: tokens and codes that lost a scope, dropped: tokens deleted
  */
 function purge(db, { notice = true } = {}) {
-  if (!tableExists(db, 'settings')) return { configured: false, settings: 0, tokens: 0 };
+  if (!tableExists(db, 'settings')) return { configured: false, settings: 0, tokens: 0, dropped: 0 };
   const row = db.prepare("SELECT value FROM settings WHERE key = 'pihole_config'").get();
   const configured = wasConfigured(row && row.value);
   const del = db.prepare('DELETE FROM settings WHERE key = ?');
   let settings = 0;
   for (const key of SETTINGS) settings += del.run(key).changes;
   const tokens = stripScopes(db, 'api_tokens', 'id') + stripScopes(db, 'client_enrollment_codes', 'code_hash');
+  const dropped = dropEmptyTokens(db);
   if (configured && notice) {
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, '1', datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = datetime('now')`).run(NOTICE_KEY);
@@ -78,14 +123,14 @@ function purge(db, { notice = true } = {}) {
         .run(EVENT, MESSAGE, JSON.stringify({ replacement: CATALOG_PLUGIN }));
     }
   }
-  return { configured, settings, tokens };
+  return { configured, settings, tokens, dropped };
 }
 
 /** At every start of the server (after the migrations). Never throws. */
 function atStart() {
   try {
     const r = purge(require('../db/connection').getDb());
-    if (r.settings || r.tokens) require('../utils/logger').info(r, 'Pi-hole integration: leftovers removed');
+    if (r.settings || r.tokens || r.dropped) require('../utils/logger').info(r, 'Pi-hole integration: leftovers removed');
     return r;
   } catch (err) {
     require('../utils/logger').warn({ err: err.message }, 'Pi-hole integration: leftovers not removed');
@@ -114,4 +159,4 @@ function dismiss() {
   return db.prepare('DELETE FROM settings WHERE key = ?').run(NOTICE_KEY).changes > 0;
 }
 
-module.exports = { purge, atStart, notice, dismiss, wasConfigured, SETTINGS, SCOPES, NOTICE_KEY, EVENT, CATALOG_PLUGIN };
+module.exports = { purge, atStart, notice, dismiss, wasConfigured, dropEmptyTokens, SETTINGS, SCOPES, NOTICE_KEY, EVENT, TOKEN_EVENT, CATALOG_PLUGIN };

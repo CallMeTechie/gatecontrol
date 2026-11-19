@@ -399,7 +399,9 @@ nicht mehr an – die Seite „Pi-hole“, die Pi-hole-Einstellungen, die Rechte
 werden die gespeicherten Pi-hole-Einstellungen samt Zugangsdaten gelöscht, und
 die VPN-Geräte nutzen wieder die normalen DNS-Server (oder den DNS-Schutz,
 wenn er eingeschaltet ist) – ohne Namensauflösung steht kein Gerät da. War
-Pi-hole eingerichtet, weist das Dashboard einmal darauf hin. Dein Pi-hole selbst
+Pi-hole eingerichtet, weist das Dashboard einmal darauf hin. Ein API-Token, das
+nur Pi-hole-Rechte hatte, kann nichts mehr und wird gelöscht; das
+Aktivitätsprotokoll nennt es („API token … deleted“). Dein Pi-hole selbst
 bleibt unberührt und kann im Heimnetz weiterlaufen.
 
 **Prüfen:** Die Übersicht des Plugins zeigt, ob gefiltert wird; „Domain

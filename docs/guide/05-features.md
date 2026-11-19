@@ -391,7 +391,8 @@ gone. The replacement is the DNS protection. The update deletes the stored
 Pi-hole settings including the credentials, and the VPN devices use the normal
 DNS servers again (or the DNS protection, when it is switched on) – no device
 is left without name resolution. Where Pi-hole was set up, the dashboard says
-so once. Your Pi-hole itself is not touched and can keep running in the home
+so once. An API token that only had Pi-hole rights can do nothing any more and
+is deleted; the activity log names it (“API token … deleted”). Your Pi-hole itself is not touched and can keep running in the home
 network.
 
 **Check:** The plugin's overview shows whether filtering is on; “Check a

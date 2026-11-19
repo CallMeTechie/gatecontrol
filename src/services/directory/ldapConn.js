@@ -29,7 +29,7 @@
  */
 
 const net = require('node:net');
-const { isMetadataHost } = require('../../utils/lanFetch');
+const { isMetadataHost } = require('../../utils/metadataHost');
 
 const CONNECT_TIMEOUT_MS = 10000;
 const OP_TIMEOUT_MS = 30000;

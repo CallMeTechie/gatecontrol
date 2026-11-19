@@ -446,9 +446,10 @@ function makeVpnDns() {
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 2: test().match/scope, blockedBy, status().pihole.targets;
      *  3: the setting blockForeignDns, status().foreignDns;
-     *  4: profiles shared with a home network (profile.home, homes()), the setting homeInternet) */
+     *  4: profiles shared with a home network (profile.home, homes()), the setting homeInternet;
+     *  status().pihole and releasePihole() of the removed Pi-hole integration are gone since the version after 1.300.0) */
     version: 4,
-    /** status() → { available, enabled, state: off|starting|filtering|fallback, since, chain, pihole, pause, pauses, service, peers, lists, today, log } */
+    /** status() → { available, enabled, state: off|starting|filtering|fallback, since, chain, pause, pauses, service, peers, lists, today, log } */
     status: () => hostCall('vpnDns.status', {}),
     /** catalog() → { lists, categories, providers, limits } */
     catalog: () => hostCall('vpnDns.catalog', {}),
@@ -476,9 +477,6 @@ function makeVpnDns() {
     resume: (target, opts) => hostCall('vpnDns.resume', { target: o(target), ...actor(opts) }),
     /** restart({ actor }?) → { restarting, how } — the filter service; an administrator */
     restart: (opts) => hostCall('vpnDns.restart', { ...actor(opts) }),
-    /** releasePihole() → { configured: false, wantsChain: false, chain: 'off', targets: [] } — obsolete: the Pi-hole integration is gone (status().pihole
-     *  always says so too). Kept so that plugins written against older servers keep running; does nothing, never fails. */
-    releasePihole: (opts) => hostCall('vpnDns.releasePihole', { ...actor(opts) }),
     /** log({ limit, before, peerId, userId, blockedOnly, search, since }?) → { entries, next } — ERR_LOG_OFF while the query log is off */
     log: (query) => hostCall('vpnDns.log', { query: o(query) }),
     /** clearLog({ actor }?) → { removed } — an administrator */

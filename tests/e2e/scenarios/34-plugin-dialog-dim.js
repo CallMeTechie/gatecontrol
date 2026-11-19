@@ -58,7 +58,30 @@ module.exports = (ctx) => {
     await page.goto(BASE + '/plugins/' + ID);
     const fr = page.frameLocator('#pg-frame');
     await fr.locator('#title').waitFor({ timeout: 10000 }).catch(() => {});
+    // #title alone is not "ready": the buttons get their handlers from the script at the end of the
+    // document — a click before that does nothing (CI, 1440-light: the dialog never opened)
+    let polls = 0;
+    for (; polls < 100; polls++) {
+      const ready = await fr.locator('html').evaluate(() => document.readyState === 'complete'
+        && typeof document.getElementById('open-fit').onclick === 'function'
+        && typeof document.getElementById('open-long').onclick === 'function').catch(() => false);
+      if (ready) break;
+      await page.waitForTimeout(100);
+    }
+    fr.readyPolls = polls;
     return fr;
+  }
+
+  // Opens a dialog of the frame and waits until it shows; a click that got lost (the page still
+  // moving under the pointer) is given once more — what is tested is the layout of the open dialog.
+  // Returns the number of clicks it took (0: it never opened) — in the step's detail.
+  async function openDialog(fr, id) {
+    const dlg = fr.locator('#' + id);
+    for (let i = 1; i <= 3; i++) {
+      await fr.locator('#open-' + id).click();
+      if (await dlg.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) return i;
+    }
+    return 0;
   }
 
   async function round(page, label) {
@@ -84,17 +107,22 @@ module.exports = (ctx) => {
     let got = null;
     for (let i = 0; i < 30 && got !== want; i++) { got = await told(); if (got !== want) await page.waitForTimeout(100); }
     step(`plugindialog ${label}: GC.viewport is the room below the frame's top (not its own height)`, got === want, `got ${got}, want ${want}`);
-    await fr.locator('#open-fit').click();
-    await page.waitForTimeout(500);
+    const clicks = await openDialog(fr, 'fit');
+    step(`plugindialog ${label}: "Fit" opens`, clicks > 0, `clicks ${clicks}, frame ready after ${fr.readyPolls} polls`);
+    // the bridge places the dim and sizes the frame once the frame reports the dialog
+    await until(page, (h) => !!document.querySelector('.plugin-frame-dim')
+      && Math.round(document.getElementById('pg-frame').getBoundingClientRect().height) === h, want);
     let l = await layout(page);
     // (the page itself may scroll for the sidebar — a long navigation on a low window; the frame stays inside it)
     step(`plugindialog ${label}: a dialog kept to GC.viewport fits, the frame ends inside the window`, !!l.dim && l.frameBottom + v.padB <= v.inner && l.frameBottom - l.frameTop === want, JSON.stringify(l));
     await shot(page, `plugindialog-${label}-fit`, false);
     await fr.locator('#fit .close').click();
-    await page.waitForTimeout(300);
+    await fr.locator('#fit').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    await until(page, () => !document.querySelector('.plugin-frame-dim'));
 
     // "Long": the frame grows past the window; scrolled down, it is under the topbar
-    await fr.locator('#open-long').click();
+    const longClicks = await openDialog(fr, 'long');
+    step(`plugindialog ${label}: "Long" opens`, longClicks > 0, `clicks ${longClicks}`);
     await until(page, () => !!document.querySelector('.plugin-frame-dim') && document.getElementById('pg-frame').offsetHeight > window.innerHeight);
     await page.evaluate(() => window.scrollTo(0, 400));
     await page.waitForTimeout(300);

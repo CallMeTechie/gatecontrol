@@ -272,7 +272,7 @@ describe('manifest: permissions.vpnDns', () => {
     const r = await agent.get(`/api/v1/plugins/${P}/api/has`).expect(200);
     assert.equal(r.body.vpnDns, true);
     assert.equal(r.body.version, 4);
-    assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'homes', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists', 'releasePihole',
+    assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'homes', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists',
       'restart', 'resume', 'set', 'stats', 'status', 'test', 'version']);
     const st = await ok('status');
     assert.equal(st.available, true);
@@ -287,8 +287,8 @@ describe('manifest: permissions.vpnDns', () => {
     const dev = H.makeDevice(anna, { name: 'vpndns-off-phone' });
     const perm = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', dev.raw).expect(200);
     assert.equal(perm.body.vpnDns, null);
-    // the Pi-hole integration is gone: the flags stay in the answer, always false (older apps hide their view)
-    assert.deepEqual([perm.body.permissions.pihole, perm.body.permissions.piholeControl], [false, false]);
+    // the Pi-hole integration is gone, and with it the flags pihole / piholeControl (a missing flag is "no" to every app)
+    assert.ok(!('pihole' in perm.body.permissions) && !('piholeControl' in perm.body.permissions));
     assert.deepEqual(perm.body.dnsProtection, { plugin: P, enabled: false, state: 'off' });
     assert.deepEqual(vpnDns.installedPlugin(), { id: P, usable: true });
     require('../src/services/tokens').revoke(dev.tokenId, '127.0.0.1');
@@ -959,21 +959,20 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
 });
 
 describe('outage', () => {
-  it('plugins written for servers with Pi-hole: status().pihole says "none", releasePihole() does nothing', async () => {
+  it('the Pi-hole leftovers of the interface are gone: no status().pihole, no releasePihole()', async () => {
     await freshRound();
     assert.equal(dnsChain.status().provider, 'vpnfilter');
     assert.deepEqual(dnsChain.status().displaced, []);
-    const none = { configured: false, wantsChain: false, chain: 'off', targets: [] };
     const conf = fs.readFileSync(confPath, 'utf8');
     const before = restarts;
-    assert.deepEqual((await ok('status')).pihole, none);
-    assert.deepEqual(await ok('releasePihole'), none);
+    const st = await ok('status');
+    assert.equal(st.chain, 'filter');
+    assert.ok(!('pihole' in st), 'gatecontrol-dns 1.0.0–1.1.0 read it only behind `st.pihole &&`');
+    assert.equal(typeof vpnDns.releasePihole, 'undefined');
+    await assert.rejects(() => hostApi.handle({ id: P, manifest: { permissions: { vpnDns: true } } }, 'vpnDns.releasePihole', {}));
     assert.equal(fs.readFileSync(confPath, 'utf8'), conf, 'the chain is not touched');
     assert.equal(restarts, before);
     assert.equal(dnsChain.status().provider, 'vpnfilter');
-    // … also when the protection does not filter and without an acting person (it used to refuse then)
-    assert.deepEqual(vpnDns.releasePihole(), none);
-    assert.deepEqual(await hostApi.handle({ id: P, manifest: { permissions: { vpnDns: true } } }, 'vpnDns.releasePihole', {}), none);
   });
 
   it('the service dies → fallback with notice, activity and event; it comes back → restored', async () => {

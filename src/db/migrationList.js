@@ -4388,6 +4388,18 @@ const migrations = [
       UPDATE rdp_routes SET gateway_peer_id = NULL, updated_at = datetime('now')
         WHERE gateway_pool_id IS NOT NULL AND gateway_peer_id IS NOT NULL;`,
   },
+  {
+    version: 160,
+    name: 'pihole_only_tokens_removed',
+    // Migration 147 took the Pi-hole scopes out of the stored tokens; a token
+    // that only had Pi-hole rights was left with an empty list and can do
+    // nothing. It is deleted now, with an activity entry each ("token_deleted",
+    // source system); unused setup codes without any scope go too.
+    // services/piholeRemoval.js dropEmptyTokens(), which purge() also runs at
+    // every start and after a restore.
+    sql: `DELETE FROM client_enrollment_codes WHERE consumed_at IS NULL AND scopes = '[]';`,
+    run: (db) => { require('../services/piholeRemoval').dropEmptyTokens(db); },
+  },
 ];
 
 module.exports = { migrations };
