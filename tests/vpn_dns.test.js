@@ -39,12 +39,8 @@ let app, agent, csrf, db, runtime, plugins, vpnDns, dnsChain, hostApi, personCon
 let adminId, anna, lea, boss, annaPhone, annaLaptop, leaPhone, bossPhone, guestTab, ownDnsPc, gateway, office, family;
 let upstream, svc, restarts = 0, confPath, ipt, fw;
 
-function freePort() {
-  return new Promise((resolve) => {
-    const s = dgram.createSocket('udp4');
-    s.bind(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
-  });
-}
+// below the ephemeral range: a port from bind(0) can meanwhile be the local port of another test's connection
+const { dnsPort: freePort } = require('./helpers/dns-port');
 
 async function installPkg(buf) {
   const r = await agent.post('/api/v1/plugins/inspect').set('X-CSRF-Token', csrf).set('Content-Type', 'application/octet-stream').send(buf);

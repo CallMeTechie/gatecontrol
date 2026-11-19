@@ -267,7 +267,7 @@ ensure_guacd() {
 # Marker 9: is the drive of the recordings there? (state only — see the header)
 REC_STATE="$DATA_DIR/.remote-recordings-state.json"
 has_recordings_mount() { # $1=container
-  docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$1" 2>/dev/null | grep -qx '/recordings'
+  docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$1" 2>/dev/null | grep -x '/recordings' >/dev/null
 }
 sync_recordings() {
   local compose=false guacd=false gc=false
@@ -293,7 +293,7 @@ clamav_state() { # $1=state (running|starting|failed|stopped) [$2=error code]
   printf '{"checked_at":"%s","state":"%s","error":"%s","update_sh":%s}\n' \
     "$(date -Iseconds)" "$(safe "$1")" "$(safe "${2:-}")" "$SELF_VERSION" | write_atomic "$CLAMAV_STATE"
 }
-clamav_in_compose() { ( cd "$COMPOSE_DIR" && docker compose --profile clamav config --services 2>/dev/null ) | grep -qx clamav; }
+clamav_in_compose() { ( cd "$COMPOSE_DIR" && docker compose --profile clamav config --services 2>/dev/null ) | grep -x clamav >/dev/null; }
 
 run_clamav() {
   # Same settings as the clamav service of docker-compose.yml, for a compose
@@ -392,7 +392,7 @@ bridges_wanted_split() { # $1=present|missing → the wanted bridges the compose
   [ -n "$want" ] || return 0
   svc="$(bridges_services)"
   for n in $want; do
-    if printf '%s\n' "$svc" | grep -qx "bruecken-$n"; then [ "$1" = present ] && echo "$n"; else [ "$1" = missing ] && echo "$n"; fi
+    if has_line "$svc" "bruecken-$n"; then [ "$1" = present ] && echo "$n"; else [ "$1" = missing ] && echo "$n"; fi
   done
   return 0
 }
@@ -423,8 +423,8 @@ bridges_images_sync() { # the pins of the server → .bruecken-images.yml (only 
     name="${item%%=*}"; ref="${item#*=}"
     repo="$(bridge_repo "$name")" || continue
     case "$ref" in "$repo:"*) ;; *) log "bridges: the image for $name is not from $repo — not taken"; continue ;; esac
-    printf '%s' "${ref#"$repo:"}" | grep -Eq '^[A-Za-z0-9._-]{1,60}@sha256:[0-9a-f]{64}$' || { log "bridges: the image for $name is no pin — not taken"; continue; }
-    printf '%s\n' "$svc" | grep -qx "bruecken-$name" || continue
+    printf '%s' "${ref#"$repo:"}" | grep -E '^[A-Za-z0-9._-]{1,60}@sha256:[0-9a-f]{64}$' >/dev/null || { log "bridges: the image for $name is no pin — not taken"; continue; }
+    has_line "$svc" "bruecken-$name" || continue
     body="$body  bruecken-$name:\n    image: \"$ref\"\n"
   done
   if [ -z "$body" ]; then rm -f "$BRIDGES_IMAGES"; return 0; fi
@@ -445,6 +445,10 @@ bcompose() { # docker compose for the profile — `up` with the server's pins wh
 # bruecken-hs, bruecken-<name> and the relay of a bridge (bruecken-<name>-relay: hands the homeserver's calls to
 # the bridge's Unix socket)
 bridges_services() { ( cd "$COMPOSE_DIR" && docker compose --profile bruecken config --services 2>/dev/null ) | grep -E '^bruecken-[a-z]{2,16}(-relay)?$' || true; }
+# $1=list (one per line) $2=name → 0 when $2 is one of the lines. No pipe on purpose: under pipefail,
+# `printf '%s\n' "$list" | grep -qx …` fails at random — grep -q leaves at the first hit, bash writes the list
+# line by line and the next write gets SIGPIPE (exit 141), so a present service read as missing.
+has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1; }
 bridge_running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" = "true" ]; }
 to_mb() { # "123.4MiB" / "1.2GiB" / "900KiB" → whole MiB; anything else → nothing
   printf '%s' "$1" | awk '/^[0-9.]+GiB$/ { printf "%d", $0 * 1024; exit } /^[0-9.]+MiB$/ { printf "%d", $0 + 0.5; exit } /^[0-9.]+KiB$/ { printf "%d", $0 / 1024; exit } /^[0-9.]+B$/ { printf "0"; exit }'
@@ -470,7 +474,7 @@ bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or
   for n in "$@"; do body="$body,\"$n\":$(bridge_json "bruecken-$n")"; done
   for n in $BRIDGES_MISSING; do body="$body,\"$n\":{\"present\":false,\"running\":false}"; done
   # the server's own relay: missing in an older docker-compose.yml
-  if bridges_services | grep -qx 'bruecken-core-relay'; then
+  if has_line "$(bridges_services)" 'bruecken-core-relay'; then
     body="$body,\"core-relay\":{\"present\":true,\"running\":$(bridge_running bruecken-core-relay && echo true || echo false)}"
   else
     body="$body,\"core-relay\":{\"present\":false,\"running\":false}"
@@ -538,7 +542,7 @@ bridges_restore_maybe() { # $@=wanted bridges — put a snapshot back the server
   if [ -z "$bad" ]; then
     bad="$(tar -tf "$f" 2>/dev/null | grep -Ev "^($re)/data(/[A-Za-z0-9._+=-]+)*/?\$" | head -n1 || true)"
     tar -tf "$f" >/dev/null 2>&1 || bad="x"
-    tar -tf "$f" 2>/dev/null | grep -q '\.\.' && bad="x"
+    tar -tf "$f" 2>/dev/null | grep '\.\.' >/dev/null && bad="x"
   fi
   if [ -n "$bad" ]; then
     log "bridges: the snapshot to restore holds something else than the data folders — not restored"
@@ -582,13 +586,13 @@ sync_bridges() {
   if [ -n "$want" ]; then
     svc="$(bridges_services)"
     names="bruecken-hs"
-    if printf '%s\n' "$svc" | grep -qx 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
+    if has_line "$svc" 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
     for n in $want; do
       names="$names bruecken-$n"
-      if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
+      if has_line "$svc" "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
     done
     for n in $names; do
-      if ! printf '%s\n' "$svc" | grep -qx "$n"; then
+      if ! has_line "$svc" "$n"; then
         # a docker-compose.yml without the profile: it has to be replaced once, by hand
         # shellcheck disable=SC2086
         bridges_state failed compose_missing $want; return 0
@@ -706,10 +710,10 @@ bridges_probe() {
     er="$(sed -n 's/.*"error":"\([a-z_]*\)".*/\1/p' "$BRIDGES_STATE" 2>/dev/null | head -n1)"
     svc="$(bridges_services)"
     names="bruecken-hs"
-    if printf '%s\n' "$svc" | grep -qx 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
+    if has_line "$svc" 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
     for n in $want; do
       names="$names bruecken-$n"
-      if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
+      if has_line "$svc" "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
     done
     if [ "$st" = "failed" ]; then
       result="${er:-start_failed}"

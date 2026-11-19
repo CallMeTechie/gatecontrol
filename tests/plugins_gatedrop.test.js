@@ -213,8 +213,16 @@ describe('resumable uploads', () => {
       req.on('response', () => resolve());
       req.write(file.subarray(0, CHUNK + CHUNK / 2), () => setTimeout(() => { req.destroy(); resolve(); }, 300));
     });
-    await sleep(200);
-    const r = await status(annaDev, 'gd-drop', 'up-bbbbbbbb').expect(200);
+    // the server takes the cut connection in its own time (sealing and storing the whole chunk): wait for
+    // the stored offset instead of a fixed pause — 0 until then, never more than the whole chunk
+    let r;
+    for (const end = Date.now() + 10000; ;) {
+      r = await status(annaDev, 'gd-drop', 'up-bbbbbbbb').expect(200);
+      if (r.body.offset !== 0 || Date.now() > end) break;
+      await sleep(50);
+    }
+    await sleep(100);
+    r = await status(annaDev, 'gd-drop', 'up-bbbbbbbb').expect(200);
     assert.equal(r.body.offset, CHUNK, 'the half chunk is dropped');
     const done = await part(annaDev, 'gd-drop', 'up-bbbbbbbb', CHUNK, total - 1).expect(200);
     assert.equal(done.body.complete, true);

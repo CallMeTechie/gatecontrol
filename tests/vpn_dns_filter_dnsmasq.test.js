@@ -43,12 +43,8 @@ function canBind(ip) {
   });
 }
 
-function freePort() {
-  return new Promise((resolve) => {
-    const s = dgram.createSocket('udp4');
-    s.bind(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
-  });
-}
+// below the ephemeral range: a port from bind(0) can meanwhile be the local port of another test's connection
+const { dnsPort: freePort } = require('./helpers/dns-port');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
