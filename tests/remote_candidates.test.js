@@ -243,7 +243,8 @@ describe('a listener of a failover pool (Fernzugriff 1.7.2: a home with two gate
     const orig = { push: gateways.notifyConfigChanged, probe: gateways.probeGatewayTarget, wol: gateways.notifyWol, snap: health().getSnapshot };
     gateways.notifyConfigChanged = async (peerId) => { pushed.push(peerId); };
     gateways.probeGatewayTarget = async (peerId, host, port) => { asked.push([peerId, host, port]); return { probed_target: true, probe_result: false, probe_latency_ms: 9 }; };
-    gateways.notifyWol = async (peerId, x) => { woken.push([peerId, x.mac, x.lan_host]); return { ok: true }; };
+    let failing = null;
+    gateways.notifyWol = async (peerId, x) => { woken.push([peerId, x.mac, x.lan_host]); return peerId === failing ? null : { ok: true }; };
     let snap = { [GW]: { alive: true }, [GW2]: { alive: true } };
     health().getSnapshot = () => snap;
     try {
@@ -264,6 +265,14 @@ describe('a listener of a failover pool (Fernzugriff 1.7.2: a home with two gate
       assert.deepEqual(asked[1], [GW2, '192.168.178.89', 22], 'after a failover: the reserve');
       assert.equal((await call('wake', target)).result.via, 'gateway');
       assert.deepEqual(woken, [[GW2, '3c:7c:3f:12:9a:10', '192.168.178.89']]);
+
+      // both members alive, the active one does not answer: the wake-up goes through the next member
+      snap = { [GW]: { alive: true }, [GW2]: { alive: true } };
+      failing = GW;
+      targets._resetForTest();
+      assert.equal((await call('wake', target)).result.via, 'gateway');
+      assert.deepEqual(woken.slice(1).map((w) => w[0]), [GW, GW2]);
+      failing = null;
 
       // no member alive: offline without asking anyone, no broadcast into the server's own network
       snap = { [GW]: { alive: false }, [GW2]: { alive: false } };
