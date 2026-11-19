@@ -141,6 +141,16 @@ function buildL4FilterRoute(route, tlsMode) {
   return Object.keys(match).length === 0 ? { handle } : { match: [match], handle };
 }
 
+// caddy-l4 dials an upstream over TCP unless its address names the network:
+// a UDP entry needs `udp/host:port`, otherwise the UDP listener accepts the
+// datagrams and forwards them as a TCP connection (which a UDP service never
+// answers). An address that already names a network is left alone.
+function upstreamDial(addr, protocol) {
+  const a = String(addr);
+  if (protocol !== 'udp' || /^[a-z0-9]+\//i.test(a)) return a;
+  return 'udp/' + a;
+}
+
 // caddy-l4's proxy handler accepts multiple upstreams + a load_balancing
 // block similar to (but smaller than) http/reverse_proxy. Supported policies:
 // `random`, `round_robin`, `least_conn`, `first`, `ip_hash`. We map the
@@ -148,9 +158,10 @@ function buildL4FilterRoute(route, tlsMode) {
 // (`round_robin` / `least_conn` / `ip_hash`) are all valid here.
 function buildL4Route(route, tlsMode, internalOnlyRanges) {
   const target = route.target_ip + ':' + route.target_port;
+  const proto = route.l4_protocol;
   const upstreams = (Array.isArray(route._poolUpstreams) && route._poolUpstreams.length > 0)
-    ? route._poolUpstreams.map(addr => ({ dial: [addr] }))
-    : [{ dial: [target] }];
+    ? route._poolUpstreams.map(addr => ({ dial: [upstreamDial(addr, proto)] }))
+    : [{ dial: [upstreamDial(target, proto)] }];
 
   const proxyHandler = { handler: 'proxy', upstreams };
   if (route._poolLbPolicy && upstreams.length > 1) {
@@ -320,6 +331,7 @@ function assertListenPortFree(listenPort, { protocol = 'tcp', excludeRouteIds = 
 module.exports = {
   buildL4Servers,
   buildL4Route,
+  upstreamDial,
   buildL4FilterRoute,
   banCloseRoute,
   l4IpFilter,

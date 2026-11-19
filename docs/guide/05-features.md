@@ -31,10 +31,36 @@ result on each of these routes: “… reaches the target” or “… does not 
 the target”. That way you see before an outage whether the reserve could take
 the route over.
 
-For that the reserve also gets the TCP/UDP routes of its partner and opens
+For that the reserve also gets the TCP routes of its partner and opens
 their listen ports. If that fails (for instance because the port is already
 taken on its device), it shows “degraded” and names route, port and reason in
 “Status” – see the [FAQ](07-faq.md#gateway-degraded).
+
+### Routes through a gateway or a pool
+
+Under “Domains / Routes”, “Options” on an entry opens the editor. When the
+entry has a target of its own (not the domain’s), “Target type: Home Gateway
+(LAN)” lets you pick in the field “Gateway” either a single gateway or – in the
+second group “Gateway pools” – a pool. It is the same choice as for an RDP
+route. Switching between gateway and pool drops the old target completely:
+afterwards the entry hangs on the new one only.
+
+When the gateway of an entry was deleted, the editor says “The previous gateway
+no longer exists …” and the field is empty. Choose a new gateway or a pool –
+without a target the entry cannot be saved; the message then shows right at
+the field.
+
+**UDP does not go through a gateway.** The gateway forwards TCP only. For an
+entry behind a gateway or pool “UDP” can therefore not be chosen, and the
+server refuses the combination. For UDP (e.g. a game server) use a VPN peer as
+the target. Older UDP entries behind a gateway stay, but the list marks them
+“no effect”: switch them to TCP or choose a VPN peer.
+
+When you delete an entry, its row goes at once. If Caddy needs more than a few
+seconds to apply it, the page says “deleted – the change is still being
+applied”; if applying fails, the entry comes back with a note. How long the
+page waits for Caddy is set by `GC_CADDY_ANSWER_BUDGET_MS` (default 3000, `0` =
+always wait).
 
 Where the gateways are (“Home”, “Office” …) you keep with “Locations” at the
 top of the same page. As soon as there is a location, the list is grouped by

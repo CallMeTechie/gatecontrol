@@ -373,7 +373,7 @@
       el('span', { class: 'rt-arrow', 'aria-hidden': 'true' }, [icon('arrow', 14)]),
       el('span', { class: 'rt-to', text: line.to }),
       name ? el('span', { class: 'rt-line-name od-name', text: name.value }) : null,
-      notes.map((n) => el('span', { class: 'rt-note' + (n.id === 'rdp' ? ' rt-note-purple' : ''), text: noteText(n) })),
+      notes.map((n) => el('span', { class: 'rt-note' + (n.id === 'rdp' ? ' rt-note-purple' : n.id === 'udp_gateway' ? ' rt-note-amber' : ''), text: noteText(n), title: n.id === 'udp_gateway' ? t('zones.note_udp_gateway_hint') : null })),
       e.enabled ? null : el('span', { class: 'rt-note rt-note-off', text: t('zones.note_off') }),
       // Body limit / mTLS tags (secopt-ui.js) and the certificate problem tag
       // (tls-ui.js, opens the certificate detail).

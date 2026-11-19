@@ -32,10 +32,37 @@ das Ergebnis an jeder dieser Routen: „… erreicht das Ziel“ oder „… err
 das Ziel nicht“. So siehst du vor einem Ausfall, ob die Reserve die Route
 übernehmen könnte.
 
-Dafür bekommt die Reserve auch die TCP/UDP-Routen ihres Partners und öffnet
+Dafür bekommt die Reserve auch die TCP-Routen ihres Partners und öffnet
 deren Listen-Ports. Gelingt das nicht (etwa weil der Port auf ihrem Gerät
 schon belegt ist), zeigt sie „degradiert“ und nennt im „Zustand“ Route, Port
 und Grund – siehe [FAQ](07-faq.md#gateway-degradiert).
+
+### Routen über ein Gateway oder einen Pool
+
+Unter „Domains / Routen“ öffnet „Optionen“ an einem Eintrag den Editor. Hat
+der Eintrag ein eigenes Ziel (nicht das der Domain), wählst du bei „Ziel-Typ:
+Home Gateway (LAN)“ im Feld „Gateway“ entweder ein einzelnes Gateway oder –
+in der zweiten Gruppe „Gateway-Pools“ – einen Pool. Das ist dieselbe Auswahl
+wie bei einer RDP-Route. Ein Wechsel zwischen Gateway und Pool löst das alte
+Ziel ganz: Der Eintrag hängt danach nur noch am neuen.
+
+Wurde das Gateway eines Eintrags gelöscht, steht im Editor „Das bisherige
+Gateway gibt es nicht mehr …“, und das Feld ist leer. Wähle ein neues Gateway
+oder einen Pool – ohne Ziel lässt sich der Eintrag nicht speichern; die
+Meldung erscheint dann direkt am Feld.
+
+**UDP geht nicht über ein Gateway.** Das Gateway leitet nur TCP weiter. Für
+einen Eintrag hinter einem Gateway oder Pool ist „UDP“ deshalb nicht wählbar,
+und der Server lehnt die Kombination ab. Für UDP (z. B. einen Spieleserver)
+nimm einen VPN-Peer als Ziel. Ältere UDP-Einträge hinter einem Gateway bleiben
+stehen, sind in der Liste aber mit „wirkt nicht“ markiert: Stelle sie auf TCP
+um oder wähle einen VPN-Peer.
+
+Beim Löschen eines Eintrags verschwindet die Zeile sofort. Braucht Caddy
+länger als ein paar Sekunden für die Übernahme, meldet die Seite „gelöscht –
+die Änderung wird noch übernommen“; klappt die Übernahme nicht, kommt der
+Eintrag mit einem Hinweis zurück. Wie lange die Seite auf Caddy wartet,
+stellt `GC_CADDY_ANSWER_BUDGET_MS` ein (Standard 3000, `0` = immer warten).
 
 Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
 auf derselben Seite. Sobald es einen Standort gibt, ist die Liste nach

@@ -536,7 +536,7 @@ laufen normal. In einem Pool springt stattdessen die Reserve ein.
 Das Gateway ist verbunden, sein Selbsttest meldet aber ein Problem. Den Grund
 nennt die Karte „Zustand“ in der Übersicht des Gateways.
 
-Am häufigsten: Das Gateway kann den Listen-Port einer TCP/UDP-Route nicht
+Am häufigsten: Das Gateway kann den Listen-Port einer TCP-Route nicht
 öffnen. Dort steht dann die Route, der Port und der Grund:
 
 - **Port belegt:** Auf dem Gerät des Gateways nutzt schon ein anderer Dienst
@@ -638,6 +638,13 @@ LAN-Erkennung (sie durchsuchen ein IPv4-Subnetz), die Internetqualität
 (Messziele und Router über IPv4), MQTT-Broker und Edge-Plugins im Heimnetz,
 Wake-on-LAN, Drucken & Scannen und Kameras. Schalte sie in einem reinen
 IPv6-Netz aus – die Internetqualität würde sonst einen Dauerausfall melden.
+
+### Eine UDP-Route über ein Gateway kommt nicht an
+
+Das Gateway leitet nur TCP weiter – eine UDP-Route hinter einem Gateway oder
+Pool wirkt nicht. Neue lassen sich so nicht mehr anlegen; ältere stehen in der
+Liste mit „wirkt nicht“. Stelle sie auf TCP um oder nimm einen VPN-Peer als
+Ziel ([Kapitel 5](05-funktionen.md#routen-über-ein-gateway-oder-einen-pool)).
 
 ## DNS-Schutz
 

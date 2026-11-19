@@ -367,3 +367,20 @@ describe('zones-view: withoutRemoved', () => {
     assert.equal(out.gateways, data.gateways);
   });
 });
+
+describe('UDP behind a gateway (isUdpViaGateway, entry note udp_gateway)', () => {
+  const udp = (over) => entry(Object.assign({ route_type: 'l4', l4_protocol: 'udp', l4_listen_port: '27015', l4_tls_mode: 'none' }, over));
+
+  it('only a UDP entry with a gateway or pool target is marked', () => {
+    assert.equal(V.isUdpViaGateway(udp()), true);
+    assert.equal(V.isUdpViaGateway(udp({ target_peer_id: null, target_pool_id: 3 })), true);
+    assert.equal(V.isUdpViaGateway(udp({ target_kind: 'peer', peer_id: 5 })), false);
+    assert.equal(V.isUdpViaGateway(udp({ l4_protocol: 'tcp' })), false);
+    assert.equal(V.isUdpViaGateway(entry()), false);
+  });
+
+  it('the host row line carries the note "udp_gateway" for such an entry only', () => {
+    assert.ok(V.entryLine(udp()).notes.some((n) => n.id === 'udp_gateway'));
+    assert.ok(!V.entryLine(udp({ target_kind: 'peer', peer_id: 5 })).notes.some((n) => n.id === 'udp_gateway'));
+  });
+});

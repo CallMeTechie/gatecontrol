@@ -58,6 +58,9 @@ function denyFeature(req, res, feature) {
 // Plain service errors (routes.create validation) → 400; see routes API.
 const VALIDATION_RE = /is reserved|invalid|must be|required|tls |tls$|port range|conflicting_target|target_pool|not found|disabled|too long/i;
 
+// Coded errors with a translated text (de/en) instead of the service message.
+const TRANSLATED_CODES = { UDP_VIA_GATEWAY: 'error.routes.udp_via_gateway' };
+
 function handleError(req, res, err) {
   if (err.statusCode === 409 && err.conflict) {
     const c = err.conflict;
@@ -65,6 +68,9 @@ function handleError(req, res, err) {
       ? req.t('error.bundles.port_conflict', { port: c.port, suggested: c.suggestedPort })
       : req.t('error.bundles.port_conflict_no_free', { port: c.port });
     return res.status(409).json({ ok: false, error: msg, code: err.code || 'BUNDLE_PORT_CONFLICT', conflict: c });
+  }
+  if (err.statusCode && TRANSLATED_CODES[err.code]) {
+    return res.status(err.statusCode).json({ ok: false, error: req.t(TRANSLATED_CODES[err.code]), code: err.code });
   }
   if (err.statusCode) {
     return res.status(err.statusCode).json({ ok: false, error: err.message, ...(err.code ? { code: err.code } : {}) });

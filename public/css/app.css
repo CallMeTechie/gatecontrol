@@ -4186,6 +4186,8 @@ button.rt-tag{cursor:pointer; font-family:inherit}
   color:var(--rt-muted); background:var(--chip); border:1px solid var(--line-2); white-space:nowrap}
 .rt-note-purple{color:var(--rt-purple-ink); background:var(--purple-bg); border-color:var(--purple-border)}
 .rt-note-teal{color:var(--rt-teal-ink); background:var(--teal-soft); border-color:var(--rt-teal-bd)}
+/* UDP entry behind a gateway/pool: has no effect (the gateway forwards TCP only) */
+.rt-note-amber{color:var(--rt-amber-ink); background:var(--amber-bg); border-color:var(--amber-bd)}
 .rt-note-off{color:var(--faint); border-style:dashed}
 .rt-pro{display:inline-flex; align-items:center; margin-left:6px; padding:1px 7px; border-radius:999px; font-size:10.5px; font-weight:700; line-height:1.4;
   vertical-align:2px; color:var(--rt-amber-ink); background:var(--amber-bg); border:1px solid var(--amber-bd)}
