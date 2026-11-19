@@ -87,15 +87,23 @@ async function main() {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-  page.on('console', (m) => { if (m.type() === 'error') problems.push({ kind: 'console', text: m.text().slice(0, 300) }); });
-  page.on('pageerror', (e) => problems.push({ kind: 'pageerror', text: String(e).slice(0, 300) }));
+  // every problem names its scenario and, for a console line, where it came from (a "Failed to load
+  // resource" alone does not say which request it was)
+  let current = '';
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    const at = (m.location() && m.location().url) || '';
+    problems.push({ kind: 'console', scenario: current, text: m.text().slice(0, 300), ...(at ? { at: at.replace(BASE, '').slice(0, 200) } : {}) });
+  });
+  page.on('pageerror', (e) => problems.push({ kind: 'pageerror', scenario: current, text: String(e).slice(0, 300) }));
   page.on('response', (r) => {
     const u = r.url();
-    if (u.startsWith(BASE) && r.status() >= 400 && !u.includes('/favicon')) problems.push({ kind: 'http', status: r.status(), url: u.replace(BASE, '') });
+    if (u.startsWith(BASE) && r.status() >= 400 && !u.includes('/favicon')) problems.push({ kind: 'http', scenario: current, status: r.status(), url: u.replace(BASE, '') });
   });
 
   for (const name of wanted) {
     console.log(`\n── ${name} ──`);
+    current = name;
     try {
       await scenarios[name](page);
     } catch (e) {
