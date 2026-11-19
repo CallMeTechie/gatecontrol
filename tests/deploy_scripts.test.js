@@ -68,7 +68,28 @@ describe('shell scripts', () => {
     });
   }
 
-  it('shellcheck -S warning is clean', { skip: !has('shellcheck') && 'shellcheck not installed' }, () => {
+  // update.sh runs under `set -o pipefail`: in `producer | grep -q …` grep leaves at the first hit, the
+  // producer's next write gets SIGPIPE (141) and the whole pipeline reads as "not found" — at random. That
+  // made the bridges' relay look missing (tests/bridges.test.js, red once on CI) and could let a tar
+  // listing with ".." through the restore check. A plain grep reads all of its input.
+  it('update.sh: no early-leaving grep -q at the end of a pipe (pipefail)', () => {
+    const src = read('update.sh');
+    assert.match(src, /^set -euo pipefail$/m);
+    const bad = src.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\|\s*grep\s+-[A-Za-z]*q/.test(l) && !/^\s*#/.test(l));
+    assert.deepEqual(bad, []);
+  });
+
+  it('update.sh: has_line finds whole lines only, also the first of many', () => {
+    const src = read('update.sh');
+    const def = src.split('\n').find((l) => l.startsWith('has_line() '));
+    assert.ok(def, 'has_line is defined');
+    const list = Array.from({ length: 2000 }, (_, i) => `bruecken-x${i}`).join('\n');
+    const script = `set -euo pipefail\n${def}\nL="$1"\nhas_line "$L" bruecken-x0 && has_line "$L" bruecken-x1999 && ! has_line "$L" bruecken-x && ! has_line "$L" 'bruecken-x*' && ! has_line "" bruecken-x0 && echo ok`;
+    const r = spawnSync('bash', ['-c', script, 'sh', list], { encoding: 'utf8' });
+    assert.equal(r.stdout.trim(), 'ok', r.stderr);
+  });
+
+  it('shellcheck -S warning is clean',{ skip: !has('shellcheck') && 'shellcheck not installed' }, () => {
     const r = spawnSync('shellcheck', ['-S', 'warning', ...SCRIPTS, 'tests/update_sh.test.sh'], { cwd: ROOT, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stdout + r.stderr);
   });
