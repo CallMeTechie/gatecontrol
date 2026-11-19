@@ -247,7 +247,8 @@ Ein Profil kann für beides gelten („gilt zu Hause und unterwegs“, siehe unt
 - Für „Eltern unterbrechen für ihre Kinder“ und „Internet pausieren“: das
   Plugin „Familie“ (ab 1.15.0).
 - Für „Mit Heimnetz-Profil verbinden“: ein Heimnetz-Gateway mit DNS-Filter.
-- Für den Bildschirm in den Apps: Android-App ab 1.105, Windows-App ab 1.84.
+- Für den Bildschirm in den Apps: Android-App ab 1.105, Windows-App GateControl
+  Pro ab 1.84, GateControl Community ab 1.50.
   Ältere Apps zeigen ihn nicht; das Portal geht immer.
 
 **Einrichten:**
@@ -315,7 +316,7 @@ Heimnetz-Profil kann nur mit einem Profil verbunden sein.
 
 **Unterbrechen:** Geht eine Seite nicht, lässt sich der Schutz für ein paar
 Minuten ausschalten – in der Android-App (ab 1.105), in der Windows-App
-(ab 1.84) und im Portal (Tab „DNS-Schutz“). Er schaltet sich von selbst wieder
+(Pro ab 1.84, Community ab 1.50; Karte auf „Übersicht“ und Tray-Menü) und im Portal (Tab „DNS-Schutz“). Er schaltet sich von selbst wieder
 ein. Solange wird für diese Geräte nichts gesperrt und nichts gezählt.
 
 Wer darf für wen unterbrechen?
@@ -339,7 +340,8 @@ Unterbrechung steht mit Person und Dauer in der Aktivität von GateControl.
 Internet einer Person, gilt das auch für deren VPN-Geräte unterwegs
 (Voreinstellung: an; abschaltbar unter „Einstellungen“ › „Heimnetz und
 Familie“). Es antworten dann nur Einträge aus „Immer erlaubt“. Übersicht,
-Geräteliste und Portal zeigen „Internet pausiert bis …“; „Unterbrechen“ wird
+Geräteliste, Portal und die Windows-App (Pro ab 1.106, Community ab 1.50; Karte
+und Tray-Menü) zeigen „Internet pausiert bis …“; „Unterbrechen“ wird
 solange nicht angeboten, und beenden lässt sich die Pause nur in „Familie“.
 
 **Fremden DNS und DoT sperren:** Der Schalter (Karte „Umgehung erschweren“) ist
