@@ -19,10 +19,13 @@ after(() => {
 function db() { return require('../src/db/connection').getDb(); }
 const api = (method, path) => agent[method](path).set('X-CSRF-Token', csrf);
 
-const fake = { users: new Map(), groups: new Map(), fail: false };
+const fake = { users: new Map(), groups: new Map(), fail: false, failWith: null };
 function installFake() {
   require('../src/services/directory/adapters')._setFactory(() => ({
-    async test() { if (fake.fail) { const e = new Error('connect ECONNREFUSED'); throw e; } return { ok: true, details: { sampleGroups: fake.groups.size } }; },
+    async test() {
+      if (fake.failWith) throw fake.failWith;
+      if (fake.fail) { const e = new Error('connect ECONNREFUSED'); throw e; }
+      return { ok: true, details: { sampleGroups: fake.groups.size } }; },
     async searchGroups(q) {
       if (fake.fail) throw new Error('connect ECONNREFUSED');
       return [...fake.groups.entries()].filter(([, g]) => !q || g.name.toLowerCase().includes(q.toLowerCase()))
@@ -119,6 +122,27 @@ describe('CRUD, test, groups, sync, runs, conflicts', () => {
     const search = await api('get', `/api/v1/directories/${id}/groups?q=buch`);
     assert.equal(search.status, 502);
     fake.fail = false;
+  });
+
+  it('a certificate error says what helps: missing intermediate, unknown issuer, other', async () => {
+    const de = require('../src/i18n/de.json');
+    const en = require('../src/i18n/en.json');
+    const tlsErr = (code, message) => Object.assign(new Error(message), { code });
+    const cases = [
+      [tlsErr('UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'unable to verify the first certificate'), 'error.directory.tls_missing_intermediate'],
+      [tlsErr('UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'unable to get local issuer certificate'), 'error.directory.tls_unknown_issuer'],
+      [tlsErr('ERR_TLS_CERT_ALTNAME_INVALID', "Hostname/IP does not match certificate's altnames"), 'error.directory.tls_failed'],
+      [tlsErr('DEPTH_ZERO_SELF_SIGNED_CERT', 'self-signed certificate'), 'error.directory.tls_failed'],
+      [new Error('connect ECONNREFUSED'), 'error.directory.unreachable'],
+    ];
+    try {
+      for (const [err, key] of cases) {
+        fake.failWith = err;
+        const r = await api('post', `/api/v1/directories/${id}/test`).expect(200);
+        assert.equal(r.body.ok, false);
+        assert.ok([de[key], en[key]].includes(r.body.error), `${err.message} → ${key}`);
+      }
+    } finally { fake.failWith = null; }
   });
 
   it('searches directory groups and saves the selection', async () => {

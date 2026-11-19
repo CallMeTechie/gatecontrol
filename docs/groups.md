@@ -577,6 +577,19 @@ certificate names another host than the address you enter, put that name into
 the certificate is always verified — upload your own CA (PEM) for an internal
 CA such as AD Certificate Services.
 
+A server that sends only its own certificate without the intermediate CA
+(„unable to verify the first certificate“; Node does not fetch the
+intermediate through AIA) works when the **intermediate** is uploaded as CA
+certificate: like the storage targets' own certificate, every uploaded
+certificate is an anchor of its own (`allowPartialTrustChain`), the root is
+not needed. Then only the uploaded certificates are trusted, not the system
+CAs; dates and the server name are checked as always. The connection test
+says which case it is: intermediate missing (`tls_missing_intermediate`),
+issuer not among the uploaded certificates — e.g. only the root uploaded
+while the server sends no intermediate (`tls_unknown_issuer`), any other
+certificate error (`tls_failed`). Better still: configure the full chain on
+the server.
+
 **Active Directory**
 
 1. Create a service account with read rights (a normal domain user is
