@@ -229,7 +229,17 @@ function createApp() {
     // throttled warning without the body (middleware/bodyErrors.js)
     if (require('./middleware/bodyErrors').handle(err, req, res, THEME)) return;
 
-    logger.error({ err, path: req.path }, 'Unhandled error');
+    // JSON.parse of something on the server's side (a stored value, an
+    // answer) that threw past its caller: still a 500, but the log names
+    // method and path and where the JSON broke — never the message, which
+    // quotes the text (utils/jsonSyntaxError.js)
+    const jsonErr = require('./utils/jsonSyntaxError');
+    if (jsonErr.isJsonSyntaxError(err)) {
+      const firstFrame = String(err.stack || '').split('\n').find((l) => /^\s+at /.test(l) && !/JSON\.parse/.test(l));
+      logger.error({ err: jsonErr.describe(err), method: req.method, path: req.path, at: firstFrame ? firstFrame.trim().slice(0, 300) : null }, 'Unhandled error: invalid JSON on the server side');
+    } else {
+      logger.error({ err, path: req.path }, 'Unhandled error');
+    }
 
     const status = err.status || 500;
     if (req.path.startsWith('/api/')) {
