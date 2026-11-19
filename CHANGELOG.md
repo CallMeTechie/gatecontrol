@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.3] — 2026-11-19
+
+### Fixes
+- ungültiges JSON – unlesbare Sitzung wird verworfen statt 500, serverseitiger JSON-Fehler im Log mit Pfad und Position, nie mit Inhalt (#523)
+
+---
+
 ## [1.299.2] — 2026-11-19
 
 ### Fixes
