@@ -228,15 +228,16 @@ Ein Szenario ist eine Datei in `scenarios/`, die `(ctx) => ({ name: async
 (page) => … })` exportiert. `ctx` bringt `BASE`, `FIXTURES`, `step`, `login`,
 `api`, `visible`, `waitIdle`, `shot`, `allow`, `loadFresh`, `navLog`. Der Lauf endet mit Exit 1,
 sobald ein Schritt fehlschlägt oder die Seite einen Konsolenfehler, einen
-Skriptfehler oder eine Antwort ≥ 400 erzeugt hat; erwartete Antworten trägt
-das Szenario mit `allow(...)` wieder aus.
+Skriptfehler, eine Antwort ≥ 400 oder eine Anfrage an die Schrift-Hosts von
+Google (fonts.googleapis.com, fonts.gstatic.com) erzeugt hat — die Webfonts
+liefert die App selbst aus (`public/fonts/`); erwartete Antworten trägt das
+Szenario mit `allow(...)` wieder aus.
 
 Nicht gezählt (nur als `note` gedruckt und als Warnung annotiert) wird genau
 ein Fall: ein Netzfehler (`net::ERR_…`) einer Ressource auf einem anderen Host
-als der App — die Webfonts von fonts.gstatic.com, wenn die Verbindung des
-Runners abreißt (dreimal `ERR_CONNECTION_CLOSED` pro Seite, einmal je
-Schriftdatei). Eine Antwort ≥ 400 eines fremden Hosts und jeder Netzfehler der
-App selbst (127.0.0.1, localhost) zählen weiter (`page-problems.js`).
+als der App, wenn die Verbindung des Runners dorthin abreißt. Eine Antwort
+≥ 400 eines fremden Hosts und jeder Netzfehler der App selbst (127.0.0.1,
+localhost) zählen weiter (`page-problems.js`).
 
 `loadFresh(page, url)` lädt eine Adresse frisch (erst `about:blank`, dann die
 Adresse). Nicht `page.goto(<offene Seite>#hash)` und dann `page.reload()`: ändert

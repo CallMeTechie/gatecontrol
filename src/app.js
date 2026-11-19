@@ -40,9 +40,10 @@ function createApp() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        styleSrcElem: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, "https://fonts.googleapis.com"],
+        // Web fonts ship with the app (public/fonts/), nothing from Google.
+        styleSrcElem: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
         styleSrcAttr: ["'unsafe-inline'"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        fontSrc: ["'self'"],
         scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
@@ -95,9 +96,18 @@ function createApp() {
 
   // ─── Static files (webroot) ──────────────────────
   const publicDir = path.join(__dirname, '..', 'public');
+  // Web fonts live under a versioned directory (public/fonts/<version>/): a
+  // new font version is a new path, so a file never changes under its URL
+  // and the browser may keep it for a year without asking again.
+  const fontCacheHeaders = (res, filePath) => {
+    if (/[\\/]fonts[\\/]\d+\.\d+\.\d+[\\/][^\\/]+\.woff2$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  };
   app.use(express.static(publicDir, {
     dotfiles: 'deny',
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+    setHeaders: fontCacheHeaders,
   }));
   // Same files under /route-auth/static/* so the route-auth login page
   // can load its CSS/JS assets via a unique prefix that Caddy can
@@ -106,6 +116,7 @@ function createApp() {
   app.use('/route-auth/static', express.static(publicDir, {
     dotfiles: 'deny',
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+    setHeaders: fontCacheHeaders,
   }));
 
   // ─── Route Auth (public, before session/csrf) ──────
