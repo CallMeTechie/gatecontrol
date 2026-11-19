@@ -12,9 +12,9 @@ beforeEach(async () => {
   domainBoot = require('../src/services/domainBoot');
   settings = require('../src/services/settings');
   getDb().prepare(`INSERT INTO routes (description, domain, target_ip, target_port, enabled, route_type)
-                   VALUES ('r1','nas.domaincaster.com','10.0.0.2','80',1,'http')`).run();
+                   VALUES ('r1','nas.example.net','10.0.0.2','80',1,'http')`).run();
   getDb().prepare(`INSERT INTO routes (description, domain, target_ip, target_port, enabled, route_type)
-                   VALUES ('r2','foo.marcbackes.net','10.0.0.3','80',1,'http')`).run();
+                   VALUES ('r2','foo.example.org','10.0.0.3','80',1,'http')`).run();
 });
 afterEach(teardown);
 
@@ -24,7 +24,7 @@ test('seeds distinct base domains and verifies them', async () => {
   });
   assert.equal(res.seeded, 2);
   const rows = getDb().prepare('SELECT domain,status FROM domains ORDER BY domain').all();
-  assert.deepEqual(rows.map(r => r.domain), ['domaincaster.com', 'marcbackes.net']);
+  assert.deepEqual(rows.map(r => r.domain), ['example.net', 'example.org']);
   assert.ok(rows.every(r => r.status === 'verified'));
 });
 
@@ -48,7 +48,7 @@ test('skips non-public-TLD bases and prunes lingering pending non-public rows', 
   assert.ok(!present.has('gc.internal'), 'non-public base must not be seeded');
   assert.ok(!present.has('old.lan'), 'lingering pending non-public row must be pruned');
   assert.ok(present.has('kept.internal'), 'verified rows must never be pruned');
-  assert.ok(present.has('domaincaster.com') && present.has('marcbackes.net'), 'public bases seeded');
+  assert.ok(present.has('example.net') && present.has('example.org'), 'public bases seeded');
 });
 
 test('>=2 all-mismatch sets the server-IP warning and keeps rows pending', async () => {

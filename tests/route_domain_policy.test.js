@@ -21,9 +21,9 @@ beforeEach(async () => {
 afterEach(teardown);
 
 test('public TLD requires a verified base', () => {
-  assert.equal(policy.checkDomainPolicy('nas.domaincaster.com', {}).error, 'public_domain_use_verified');
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  assert.equal(policy.checkDomainPolicy('nas.domaincaster.com', {}).error, null);
+  assert.equal(policy.checkDomainPolicy('nas.example.net', {}).error, 'public_domain_use_verified');
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  assert.equal(policy.checkDomainPolicy('nas.example.net', {}).error, null);
 });
 
 test('non-public TLD is carved out (no verify needed)', () => {

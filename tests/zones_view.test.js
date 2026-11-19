@@ -19,40 +19,40 @@ function entry(over) {
 
 function zonesFixture() {
   const apex = {
-    id: 1, domain_id: 1, subdomain: '@', fqdn: 'marcbackes.net', name: 'Homepage', description: 'Hauptdomain · Homepage',
+    id: 1, domain_id: 1, subdomain: '@', fqdn: 'example.org', name: 'Homepage', description: 'Hauptdomain · Homepage',
     template: null, lan_host: '192.168.2.151', gateway_override: false, entry_count: 1, enabled_count: 1, health: 'ok',
-    entries: [entry({ id: 101, domain: 'marcbackes.net', target_lan_host: '192.168.2.151', target_lan_port: 8092, target_port: 8092, external_enabled: 1, bundle_id: 1 })],
+    entries: [entry({ id: 101, domain: 'example.org', target_lan_host: '192.168.2.151', target_lan_port: 8092, target_port: 8092, external_enabled: 1, bundle_id: 1 })],
   };
   const claude = {
-    id: 2, domain_id: 1, subdomain: 'claude', fqdn: 'claude.marcbackes.net', name: 'Claude Code', description: 'Claude Code',
+    id: 2, domain_id: 1, subdomain: 'claude', fqdn: 'claude.example.org', name: 'Claude Code', description: 'Claude Code',
     template: null, lan_host: '192.168.2.86', gateway_override: false, entry_count: 3, enabled_count: 3, health: 'ok',
     entries: [
-      entry({ id: 102, domain: 'claude.marcbackes.net', target_lan_host: '192.168.2.86', target_lan_port: 80, target_port: 80, bundle_id: 2 }),
-      entry({ id: 103, domain: 'claude.marcbackes.net', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '2028', l4_tls_mode: 'none', target_lan_host: '192.168.2.86', target_lan_port: 22, target_port: 22, https_enabled: 0, bundle_id: 2 }),
+      entry({ id: 102, domain: 'claude.example.org', target_lan_host: '192.168.2.86', target_lan_port: 80, target_port: 80, bundle_id: 2 }),
+      entry({ id: 103, domain: 'claude.example.org', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '2028', l4_tls_mode: 'none', target_lan_host: '192.168.2.86', target_lan_port: 22, target_port: 22, https_enabled: 0, bundle_id: 2 }),
       // RDP-owned L4 route: read-only "Remote Desktop" entry.
       entry({ id: 110, domain: null, route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '3392', l4_tls_mode: 'none', target_lan_host: '192.168.2.86', target_lan_port: 3389, target_port: 3389, https_enabled: 0, rdp_owned: true, rdp_route_id: 7 }),
     ],
   };
   const drucker = {
-    id: 3, domain_id: 1, subdomain: 'drucker', fqdn: 'drucker.marcbackes.net', name: 'Drucker', description: 'HP Officejet Pro 8720',
+    id: 3, domain_id: 1, subdomain: 'drucker', fqdn: 'drucker.example.org', name: 'Drucker', description: 'HP Officejet Pro 8720',
     template: 'printer', lan_host: '192.168.2.45', gateway_override: false, entry_count: 3, enabled_count: 3, health: 'degraded',
     entries: [
-      entry({ id: 106, domain: 'drucker.marcbackes.net', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '9100', l4_tls_mode: 'none', target_lan_host: '192.168.2.45', target_lan_port: 9100, target_port: 9100, https_enabled: 0, bundle_id: 3, monitoring_enabled: 1, monitoring_status: 'down' }),
-      entry({ id: 104, domain: 'drucker.marcbackes.net', target_lan_host: '192.168.2.45', target_lan_port: 443, target_port: 443, backend_https: 1, bundle_id: 3 }),
-      entry({ id: 105, domain: 'drucker.marcbackes.net', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '631', l4_tls_mode: 'none', target_lan_host: '192.168.2.45', target_lan_port: 631, target_port: 631, https_enabled: 0, bundle_id: 3 }),
+      entry({ id: 106, domain: 'drucker.example.org', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '9100', l4_tls_mode: 'none', target_lan_host: '192.168.2.45', target_lan_port: 9100, target_port: 9100, https_enabled: 0, bundle_id: 3, monitoring_enabled: 1, monitoring_status: 'down' }),
+      entry({ id: 104, domain: 'drucker.example.org', target_lan_host: '192.168.2.45', target_lan_port: 443, target_port: 443, backend_https: 1, bundle_id: 3 }),
+      entry({ id: 105, domain: 'drucker.example.org', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '631', l4_tls_mode: 'none', target_lan_host: '192.168.2.45', target_lan_port: 631, target_port: 631, https_enabled: 0, bundle_id: 3 }),
     ],
   };
   const mail1 = {
-    id: 4, domain_id: 1, subdomain: 'mail1', fqdn: 'mail1.marcbackes.net', name: 'M365 MCP', description: 'M365 MCP',
+    id: 4, domain_id: 1, subdomain: 'mail1', fqdn: 'mail1.example.org', name: 'M365 MCP', description: 'M365 MCP',
     template: null, lan_host: '192.168.2.151', gateway_override: true, entry_count: 1, enabled_count: 0, health: 'disabled',
-    entries: [entry({ id: 107, domain: 'mail1.marcbackes.net', target_peer_id: 84, target_peer_name: 'DS918 Gateway', target_lan_host: '192.168.2.151', target_lan_port: 3001, target_port: 3001, external_enabled: 1, enabled: 0, bundle_id: 4 })],
+    entries: [entry({ id: 107, domain: 'mail1.example.org', target_peer_id: 84, target_peer_name: 'DS918 Gateway', target_lan_host: '192.168.2.151', target_lan_port: 3001, target_port: 3001, external_enabled: 1, enabled: 0, bundle_id: 4 })],
   };
   const nas = {
-    id: 5, domain_id: 2, subdomain: 'nas', fqdn: 'nas.domaincaster.com', name: 'DS218+', description: 'DS218+',
+    id: 5, domain_id: 2, subdomain: 'nas', fqdn: 'nas.example.net', name: 'DS218+', description: 'DS218+',
     template: 'nas', lan_host: '192.168.2.228', gateway_override: false, entry_count: 2, enabled_count: 2, health: 'ok',
     entries: [
-      entry({ id: 201, domain: 'nas.domaincaster.com', target_lan_host: '192.168.2.228', target_lan_port: 5001, target_port: 5001, backend_https: 1, external_enabled: 1, target_pool_id: 3, target_peer_id: null, target_peer_name: null }),
-      entry({ id: 202, domain: 'nas.domaincaster.com', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '4450', target_lan_host: '192.168.2.228', target_lan_port: 445, target_port: 445, https_enabled: 0, target_pool_id: 3, target_peer_id: null, target_peer_name: null }),
+      entry({ id: 201, domain: 'nas.example.net', target_lan_host: '192.168.2.228', target_lan_port: 5001, target_port: 5001, backend_https: 1, external_enabled: 1, target_pool_id: 3, target_peer_id: null, target_peer_name: null }),
+      entry({ id: 202, domain: 'nas.example.net', route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '4450', target_lan_host: '192.168.2.228', target_lan_port: 445, target_port: 445, https_enabled: 0, target_pool_id: 3, target_peer_id: null, target_peer_name: null }),
     ],
   };
   const unassigned = [{
@@ -65,7 +65,7 @@ function zonesFixture() {
     ok: true,
     zones: [
       {
-        domain_id: 1, domain: 'marcbackes.net', verification: 'verified',
+        domain_id: 1, domain: 'example.org', verification: 'verified',
         gateway: { kind: 'gateway', peer_id: 79, pool_id: null, name: 'Home Gateway', ip: '10.8.0.8', online: true },
         default_external_enabled: false,
         counts: { hosts: 4, entries: 8, http: 4, l4: 4, disabled: 1 },
@@ -74,7 +74,7 @@ function zonesFixture() {
         hosts: [mail1, drucker, apex, claude],
       },
       {
-        domain_id: 2, domain: 'domaincaster.com', verification: 'pending',
+        domain_id: 2, domain: 'example.net', verification: 'pending',
         gateway: { kind: 'pool', peer_id: null, pool_id: 3, name: 'Zuhause', ip: null, online: null },
         default_external_enabled: true,
         counts: { hosts: 1, entries: 2, http: 1, l4: 1, disabled: 0 },
@@ -82,7 +82,7 @@ function zonesFixture() {
         hosts: [nas],
       },
       {
-        domain_id: 3, domain: 'jennybackes.de', verification: 'failed',
+        domain_id: 3, domain: 'example.edu', verification: 'failed',
         gateway: { kind: null, peer_id: null, pool_id: null, name: null, ip: null, online: null },
         default_external_enabled: false,
         counts: { hosts: 0, entries: 0, http: 0, l4: 0, disabled: 0 },
@@ -163,9 +163,9 @@ describe('zones-view: entryChip', () => {
 describe('zones-view: targets and status', () => {
   it('entry lines: gateway entries point at lan_host, peer entries at the peer IP', () => {
     const z = allZones();
-    const claude = byDomain(z, 'marcbackes.net').hosts.find((h) => h.subdomain === 'claude');
+    const claude = byDomain(z, 'example.org').hosts.find((h) => h.subdomain === 'claude');
     for (const e of claude.entries.filter((x) => !x.rdp_owned)) assert.match(V.entryLine(e).to, /^192\.168\.2\.86 : \d+$/);
-    const apex = byDomain(z, 'marcbackes.net').hosts[0];
+    const apex = byDomain(z, 'example.org').hosts[0];
     assert.match(V.entryLine(apex.entries[0]).to, / : 8092$/);
     const game = z[z.length - 1].hosts[0];
     assert.match(V.entryLine(game.entries[0]).to, /^10\.8\.0\.12 : /);
@@ -233,7 +233,7 @@ describe('zones-view: filterZones', () => {
     const z = V.filterZones(allZones(), { type: 'http' });
     assert.deepEqual(hostIds(z), [1, 2, 3, 4, 5]);
     assert.ok(!z.some((x) => x.unassigned));
-    assert.ok(!z.some((x) => x.domain === 'jennybackes.de'));
+    assert.ok(!z.some((x) => x.domain === 'example.edu'));
   });
   it('type l4 keeps hosts with a TCP/UDP entry', () => {
     assert.deepEqual(hostIds(V.filterZones(allZones(), { type: 'l4' })), [2, 3, 5, 9]);
@@ -252,14 +252,14 @@ describe('zones-view: filterZones', () => {
     assert.deepEqual(hostIds(V.filterZones(allZones(), { gatewayKey: 'pool:3' })), [5]);
   });
   it('search over fqdn, description, lan_host and ports (case-insensitive)', () => {
-    assert.deepEqual(hostIds(V.filterZones(allZones(), { q: 'CLAUDE.marc' })), [2]);
+    assert.deepEqual(hostIds(V.filterZones(allZones(), { q: 'CLAUDE.exa' })), [2]);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: 'officejet' })), [3]);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: '192.168.2.228' })), [5]);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: '2028' })), [2]);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: '8092' })), [1]);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: '27016' })), []);
     assert.deepEqual(hostIds(V.filterZones(allZones(), { q: '27015' })), [9]);
-    assert.deepEqual(hostIds(V.filterZones(allZones(), { q: 'domaincaster' })), [5]);
+    assert.deepEqual(hostIds(V.filterZones(allZones(), { q: 'example.net' })), [5]);
     assert.equal(hostIds(V.filterZones(allZones(), { q: '  ' })).length, 6);
   });
   it('criteria combine with AND', () => {
@@ -281,7 +281,7 @@ describe('zones-view: summarize, counts, pseudo-zone', () => {
   });
   it('pageZones sorts hosts and appends "Ohne Domain" last only when needed', () => {
     const z = allZones();
-    assert.deepEqual(z.map((x) => x.domain), ['marcbackes.net', 'domaincaster.com', 'jennybackes.de', null]);
+    assert.deepEqual(z.map((x) => x.domain), ['example.org', 'example.net', 'example.edu', null]);
     assert.equal(z[0].hosts[0].subdomain, '@');
     const none = V.pageZones(Object.assign(zonesFixture(), { unassigned: [] }));
     assert.equal(none.length, 3);
@@ -296,17 +296,17 @@ describe('zones-view: summarize, counts, pseudo-zone', () => {
     assert.equal(V.zoneKey(allZones()[0]), 'z:1');
   });
   it('smbEntries finds port-445 L4 entries for the scan-to-folder picker', () => {
-    const z = byDomain(allZones(), 'domaincaster.com');
+    const z = byDomain(allZones(), 'example.net');
     assert.deepEqual(V.smbEntries(z).map((s) => s.id), [202]);
-    assert.deepEqual(V.smbEntries(byDomain(allZones(), 'marcbackes.net')), []);
+    assert.deepEqual(V.smbEntries(byDomain(allZones(), 'example.org')), []);
   });
 });
 
 describe('zones-view: input helpers', () => {
   it('previewFqdn', () => {
-    assert.equal(V.previewFqdn('', 'marcbackes.net'), 'marcbackes.net');
-    assert.equal(V.previewFqdn('@', 'marcbackes.net'), 'marcbackes.net');
-    assert.equal(V.previewFqdn('NAS', 'marcbackes.net'), 'nas.marcbackes.net');
+    assert.equal(V.previewFqdn('', 'example.org'), 'example.org');
+    assert.equal(V.previewFqdn('@', 'example.org'), 'example.org');
+    assert.equal(V.previewFqdn('NAS', 'example.org'), 'nas.example.org');
   });
   it('validSubdomain', () => {
     for (const ok of ['', '@', 'nas', 'a.b', 'my-host', 'x1']) assert.equal(V.validSubdomain(ok), true, ok);
@@ -345,7 +345,7 @@ describe('zones-view: withoutRemoved', () => {
     const nas = V.pageZones(out).flatMap((z) => z.hosts).find((h) => h.id === 5);
     assert.equal(nas.entry_count, 1);
     assert.equal(nas.enabled_count, 1);
-    assert.equal(V.countEntries(byDomain(V.pageZones(out), 'domaincaster.com')).entries, 1);
+    assert.equal(V.countEntries(byDomain(V.pageZones(out), 'example.net')).entries, 1);
     // the loaded data stays as it was (a failed delete shows the row again)
     assert.deepEqual(entryIds(data, 5), [201, 202]);
     assert.equal(ids(out).length, ids(data).length);
@@ -362,8 +362,8 @@ describe('zones-view: withoutRemoved', () => {
   it('drops a whole host and leaves the other zones alone', () => {
     const data = zonesFixture();
     const out = V.withoutRemoved(data, { hosts: new Set([5]), entries: new Set() });
-    assert.deepEqual(byDomain(V.pageZones(out), 'domaincaster.com').hosts, []);
-    assert.deepEqual(hostIds([byDomain(V.pageZones(out), 'marcbackes.net')]), hostIds([byDomain(V.pageZones(data), 'marcbackes.net')]));
+    assert.deepEqual(byDomain(V.pageZones(out), 'example.net').hosts, []);
+    assert.deepEqual(hostIds([byDomain(V.pageZones(out), 'example.org')]), hostIds([byDomain(V.pageZones(data), 'example.org')]));
     assert.equal(out.gateways, data.gateways);
   });
 });

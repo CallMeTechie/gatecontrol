@@ -4392,7 +4392,7 @@ await gc.groups.leadersOf(12, { groupId: 7 });
 ### The plugin's own groups (`"manage"`)
 
 ```js
-const g = await gc.groups.ensure({ key: 'family', name: 'Familie Backes', kind: 'family',
+const g = await gc.groups.ensure({ key: 'family', name: 'Familie Muster', kind: 'family',
   members: [{ userId: 12, role: 'parent' }, { userId: 15, role: 'child' }] });
 // → the group as get() answers it + { created, added, removed, changed }
 await gc.groups.ensure({ key: 'team-a', name: 'Team A', kind: 'team', parentKey: 'org', members: [] });

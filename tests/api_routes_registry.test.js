@@ -12,15 +12,15 @@ afterEach(teardown);
 
 test('create with unverified public base → 400 field error', async () => {
   const res = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf)
-    .send({ domain: 'nas.domaincaster.com', target_ip: '1.1.1.1', target_port: 80, route_type: 'http' });
+    .send({ domain: 'nas.example.net', target_ip: '1.1.1.1', target_port: 80, route_type: 'http' });
   assert.equal(res.status, 400);
   assert.ok(res.body.fields && res.body.fields.domain);
 });
 
 test('create with verified public base → 201', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   const res = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf)
-    .send({ domain: 'nas.domaincaster.com', target_ip: '1.1.1.1', target_port: 80, route_type: 'http' });
+    .send({ domain: 'nas.example.net', target_ip: '1.1.1.1', target_port: 80, route_type: 'http' });
   assert.equal(res.status, 201);
 });
 

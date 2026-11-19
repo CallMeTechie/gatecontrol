@@ -24,7 +24,7 @@ Domain** einen exakten A-Record
 
 in die dnsmasq addn-hosts-Datei (`/data/dns/peers.hosts`). Dies gilt für **alle** Routen
 (HTTP und L4), unabhängig vom Außen-Schalter. Exakte Namen, kein Wildcard-Eintrag — dadurch
-bleiben Peer-FQDNs wie `server.marcbackes.net` unangetastet.
+bleiben Peer-FQDNs wie `server.example.org` unangetastet.
 
 Auch die übrigen Typen bleiben innen: `/data/dns/internal.servers` (dnsmasq
 `servers-file=`, neben `peers.hosts`, beim selben SIGHUP neu gelesen) enthält je
@@ -152,7 +152,7 @@ WHERE route_type = 'l4' AND external_enabled = 1 ORDER BY l4_listen_port;
 ```
 
 > **Warnung — Self-Lockout:** Verwaltungs- und Notfall-L4-Routen — SSH
-> `ssh.domaincaster.com:2022` (NAS-Zugang), RDP (3389/13389/2024) — über die der Host
+> `ssh.example.net:2022` (NAS-Zugang), RDP (3389/13389/2024) — über die der Host
 > selbst administriert wird, sollten **nur dann** auf „nur intern" gestellt werden, wenn
 > VPN-Zugang dauerhaft sichergestellt ist; vorzugsweise einen externen Notfallpfad offen
 > lassen. Wer eine solche Route intern-only schaltet, während er extern darauf angewiesen

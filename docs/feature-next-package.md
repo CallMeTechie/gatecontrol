@@ -106,7 +106,7 @@ angefragt; WAF und Scanner-Sperre greifen dort heute nicht.
    Zonen-Ansicht, im Domain-Dialog, in der Problem-Anzeige und in der
    Schnellsuche (`command-palette.js` sucht künftig auch in Etiketten). Die
    Migration übernimmt für L4-Routen den alten `routes.domain`-Wert als Etikett,
-   wenn er nicht dem FQDN des Hosts entspricht (Beispiel `ssh918.domaincaster.com`
+   wenn er nicht dem FQDN des Hosts entspricht (Beispiel `ssh918.example.net`
    → Etikett „ssh918“). Im Editor ein Feld „Name“; leer = wie bisher Port/Ziel.
    `GET /api/v1/zones` liefert `entry.label`.
 

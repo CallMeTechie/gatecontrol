@@ -22,22 +22,22 @@ beforeEach(async () => {
 afterEach(teardown);
 
 test('PUT accepts a verified base domain + prefix and GET reflects it', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   const agent = getAgent(); const csrf = getCsrf();
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
-    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(200);
+    .send({ base_domain: 'example.net', prefix: 'home' }).expect(200);
   const get = await agent.get('/api/v1/settings/portal').expect(200);
-  assert.equal(get.body.data.base_domain, 'domaincaster.com');
-  assert.equal(get.body.data.effectiveHost, 'home.domaincaster.com');
+  assert.equal(get.body.data.base_domain, 'example.net');
+  assert.equal(get.body.data.effectiveHost, 'home.example.net');
   assert.equal(get.body.data.isPublic, true);
 });
 
 test('PUT accepts a verified public domain with NO GC_CADDY_EMAIL configured (ACME needs no account email)', async () => {
   assert.equal(require('../config/default').caddy.email, '', 'precondition: caddy email is unset for this test');
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   const agent = getAgent(); const csrf = getCsrf();
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
-    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(200);
+    .send({ base_domain: 'example.net', prefix: 'home' }).expect(200);
   const get = await agent.get('/api/v1/settings/portal').expect(200);
   assert.equal(get.body.data.isPublic, true);
 });
@@ -51,11 +51,11 @@ test('PUT rejects an unverified base domain (400)', async () => {
 // Regression: a verified apex says nothing about <prefix>.<apex>. Committing an
 // unresolvable portal host started a 30-day production-ACME retry loop in Caddy.
 test('PUT rejects a verified base whose composed host has no DNS record (400)', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  domains._setResolverForTest(async () => []);            // NXDOMAIN for home.domaincaster.com
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  domains._setResolverForTest(async () => []);            // NXDOMAIN for home.example.net
   const agent = getAgent(); const csrf = getCsrf();
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
-    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(400);
+    .send({ base_domain: 'example.net', prefix: 'home' }).expect(400);
   // and nothing was persisted — the ACME policy must never see the bad host
   const get = await agent.get('/api/v1/settings/portal').expect(200);
   assert.equal(get.body.data.base_domain, '');
@@ -70,16 +70,16 @@ test('widget toggles still work (no regression)', async () => {
 });
 
 test('partial PUT preserves the other host field (no silent base_domain reset)', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   const agent = getAgent(); const csrf = getCsrf();
   // First: set both base_domain and prefix
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
-    .send({ base_domain: 'domaincaster.com', prefix: 'home' }).expect(200);
+    .send({ base_domain: 'example.net', prefix: 'home' }).expect(200);
   // Then: update only prefix, omitting base_domain
   await agent.put('/api/v1/settings/portal').set('X-CSRF-Token', csrf)
     .send({ prefix: 'vpn' }).expect(200);
-  // Verify: base_domain is still 'domaincaster.com', NOT reset to ''
+  // Verify: base_domain is still 'example.net', NOT reset to ''
   const get = await agent.get('/api/v1/settings/portal').expect(200);
-  assert.equal(get.body.data.base_domain, 'domaincaster.com');
-  assert.equal(get.body.data.effectiveHost, 'vpn.domaincaster.com');
+  assert.equal(get.body.data.base_domain, 'example.net');
+  assert.equal(get.body.data.effectiveHost, 'vpn.example.net');
 });

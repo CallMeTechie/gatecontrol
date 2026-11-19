@@ -228,43 +228,43 @@ describe('the portal', () => {
 });
 
 describe('visibility (gc.profile.get)', () => {
-  let jenny, paul, kid, stranger;
+  let erika, paul, kid, stranger;
   before(() => {
-    jenny = H.makeUser('pf-jenny');
+    erika = H.makeUser('pf-erika');
     paul = H.makeUser('pf-paul');
     kid = H.makeUser('pf-kid');
     stranger = H.makeUser('pf-stranger');
-    family(jenny, kid);
-    profile.update(jenny, { firstName: 'Jenny', lastName: 'Backes', about: 'Hallo', birthday: { date: '1985-03-14', yearHidden: true },
+    family(erika, kid);
+    profile.update(erika, { firstName: 'Erika', lastName: 'Mustermann', about: 'Hallo', birthday: { date: '1985-03-14', yearHidden: true },
       visibility: { firstName: 'all', lastName: 'family', about: 'self', birthday: 'family' } });
-    profile.addPhone(jenny, { kind: 'mobile', number: N1, visibility: 'none' });
-    profile.addPhone(jenny, { kind: 'work', number: N2, visibility: 'family' });
-    profile.addPhone(jenny, { kind: 'home', number: N3, visibility: 'all' });
+    profile.addPhone(erika, { kind: 'mobile', number: N1, visibility: 'none' });
+    profile.addPhone(erika, { kind: 'work', number: N2, visibility: 'family' });
+    profile.addPhone(erika, { kind: 'home', number: N3, visibility: 'all' });
   });
   const all = ['firstName', 'lastName', 'about', 'birthday', 'phones'];
 
   it('self / family / everybody; "Niemand" never — not even for the person herself; the year stays hidden', () => {
-    const self = profile.viewFor(jenny, jenny, all);
-    assert.deepEqual([self.firstName, self.lastName, self.about], ['Jenny', 'Backes', 'Hallo']);
+    const self = profile.viewFor(erika, erika, all);
+    assert.deepEqual([self.firstName, self.lastName, self.about], ['Erika', 'Mustermann', 'Hallo']);
     assert.deepEqual(self.phones.map((p) => p.number), [N2, N3]);
-    const fam = profile.viewFor(jenny, kid, all);
-    assert.deepEqual([fam.firstName, fam.lastName, 'about' in fam], ['Jenny', 'Backes', false]);
+    const fam = profile.viewFor(erika, kid, all);
+    assert.deepEqual([fam.firstName, fam.lastName, 'about' in fam], ['Erika', 'Mustermann', false]);
     assert.deepEqual(fam.birthday, { date: '--03-14', month: 3, day: 14, year: null });
     assert.deepEqual(fam.phones.map((p) => p.number), [N2, N3]);
-    const other = profile.viewFor(jenny, paul, all);
+    const other = profile.viewFor(erika, paul, all);
     assert.deepEqual(Object.keys(other).sort(), ['firstName', 'phones', 'userId']);
     assert.deepEqual(other.phones.map((p) => p.number), [N3]);
-    assert.deepEqual(profile.viewFor(jenny, null, ['firstName']), { userId: jenny, firstName: 'Jenny' });
-    assert.equal(profile.viewFor(jenny, null, ['firstName', 'lastName']).lastName, undefined);
+    assert.deepEqual(profile.viewFor(erika, null, ['firstName']), { userId: erika, firstName: 'Erika' });
+    assert.equal(profile.viewFor(erika, null, ['firstName', 'lastName']).lastName, undefined);
   });
 
   it('the host API: only the declared fields; a viewer counts only inside that person\'s request', async () => {
     const p = PLUGIN({ profile: ['firstName', 'lastName'] });
-    await assert.rejects(hostApi.handle(PLUGIN({}), 'profile.get', { id: jenny }), (e) => e.code === 'ERR_PROFILE_DENIED');
+    await assert.rejects(hostApi.handle(PLUGIN({}), 'profile.get', { id: erika }), (e) => e.code === 'ERR_PROFILE_DENIED');
     // the plugin names the family member as viewer, but no request of hers is in flight
-    assert.deepEqual(await hostApi.handle(p, 'profile.get', { id: jenny, viewer: kid }), { userId: jenny, firstName: 'Jenny' });
-    assert.deepEqual(await asPerson(kid, () => hostApi.handle(p, 'profile.get', { id: jenny, viewer: kid })), { userId: jenny, firstName: 'Jenny', lastName: 'Backes' });
-    const ph = await asPerson(stranger, () => hostApi.handle(PLUGIN({ profile: ['phones'] }), 'profile.get', { id: jenny, viewer: stranger }));
+    assert.deepEqual(await hostApi.handle(p, 'profile.get', { id: erika, viewer: kid }), { userId: erika, firstName: 'Erika' });
+    assert.deepEqual(await asPerson(kid, () => hostApi.handle(p, 'profile.get', { id: erika, viewer: kid })), { userId: erika, firstName: 'Erika', lastName: 'Mustermann' });
+    const ph = await asPerson(stranger, () => hostApi.handle(PLUGIN({ profile: ['phones'] }), 'profile.get', { id: erika, viewer: stranger }));
     assert.deepEqual(ph.phones, [{ kind: 'home', number: N3, confirmed: false }]);
     db.prepare("UPDATE users SET enabled = 0 WHERE id = ?").run(paul);
     assert.equal(await hostApi.handle(p, 'profile.get', { id: paul }), null);
@@ -320,7 +320,7 @@ describe('administrators', () => {
 });
 
 describe('gc.bridges.matchAccounts (version 8)', () => {
-  let viewer, jenny, paul, otto;
+  let viewer, erika, paul, otto;
   const S = 'gc.internal';
   const call = (userId) => asPerson(userId, () => hostApi.handle(PLUGIN({}), 'bridges.matchAccounts', { userId, network: 'whatsapp' }));
   const contactOf = (number) => bridges._eventsOf().contactRef('whatsapp', `@whatsapp_${number.slice(1)}:${S}`);
@@ -329,7 +329,7 @@ describe('gc.bridges.matchAccounts (version 8)', () => {
     bridges._reset();
     bridges._runtime.wake = () => {};
     viewer = H.makeUser('pf-viewer');
-    jenny = H.makeUser('pf-mj');
+    erika = H.makeUser('pf-mj');
     paul = H.makeUser('pf-mp');
     otto = H.makeUser('pf-mo');
     bridge.logins.set(`@gc_${viewer}:${S}`, [{ id: 'login-v', name: '+4915100000099', state_event: 'CONNECTED', timestamp: Date.now() }]);
@@ -337,36 +337,36 @@ describe('gc.bridges.matchAccounts (version 8)', () => {
   });
 
   it('consent off → nothing; on → the pairing only (no number, no hash)', async () => {
-    profile.addPhone(jenny, { kind: 'mobile', number: N1 });
+    profile.addPhone(erika, { kind: 'mobile', number: N1 });
     assert.deepEqual((await call(viewer)).matches, []);
-    consent(jenny, { phone: 1 });
+    consent(erika, { phone: 1 });
     const r = await call(viewer);
-    assert.deepEqual(r, { matches: [{ contactId: contactOf(N1), userId: jenny, strength: 'medium', via: 'profile_phone' }] });
+    assert.deepEqual(r, { matches: [{ contactId: contactOf(N1), userId: erika, strength: 'medium', via: 'profile_phone' }] });
     assert.doesNotMatch(JSON.stringify(r), /15100000|whatsapp_|gc\.internal/);
     // "Zum Erkennen nutzen" off for that number → nothing
-    db.prepare('UPDATE user_phones SET use_for_recognition = 0 WHERE user_id = ?').run(jenny);
+    db.prepare('UPDATE user_phones SET use_for_recognition = 0 WHERE user_id = ?').run(erika);
     assert.deepEqual((await call(viewer)).matches, []);
   });
 
   it('confirmed → strong; unconfirmed not at all with "nur bestätigte"; disabled accounts never', async () => {
-    consent(jenny, { phone: 1 });
+    consent(erika, { phone: 1 });
     consent(paul, { phone: 1 });
-    const a = profile.addPhone(jenny, { kind: 'mobile', number: N1 });
+    const a = profile.addPhone(erika, { kind: 'mobile', number: N1 });
     profile.addPhone(paul, { kind: 'mobile', number: N2 });
-    profile.adminConfirmPhone(jenny, a.id, { actorId: 1 });
+    profile.adminConfirmPhone(erika, a.id, { actorId: 1 });
     profile.setSettings({ confirmedOnly: true });
     try {
-      assert.deepEqual((await call(viewer)).matches.map((m) => [m.userId, m.strength]), [[jenny, 'strong']]);
+      assert.deepEqual((await call(viewer)).matches.map((m) => [m.userId, m.strength]), [[erika, 'strong']]);
     } finally { profile.setSettings({ confirmedOnly: false }); }
-    db.prepare('UPDATE users SET enabled = 0 WHERE id = ?').run(jenny);
+    db.prepare('UPDATE users SET enabled = 0 WHERE id = ?').run(erika);
     assert.deepEqual((await call(viewer)).matches.map((m) => m.userId), [paul]);
   });
 
   it('a number in two accounts is never used — and never the viewer', async () => {
-    consent(jenny, { phone: 1 });
+    consent(erika, { phone: 1 });
     consent(paul, { phone: 1 });
     consent(viewer, { phone: 1 });
-    profile.addPhone(jenny, { kind: 'mobile', number: N1 });
+    profile.addPhone(erika, { kind: 'mobile', number: N1 });
     profile.addPhone(paul, { kind: 'mobile', number: N1 });
     profile.addPhone(viewer, { kind: 'mobile', number: N3 });
     assert.deepEqual((await call(viewer)).matches, []);

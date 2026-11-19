@@ -7,7 +7,7 @@
 // /load and overwrite the live production config. On 2026-06-25 a dev run in
 // a `.claude` worktree (no NODE_ENV=test) did exactly that, replacing the 18
 // real routes with test-seed routes (x*.0.example.com) for ~90s and breaking
-// TLS for domaincaster.com (ERR_SSL_PROTOCOL_ERROR).
+// TLS for example.net (ERR_SSL_PROTOCOL_ERROR).
 //
 // The NODE_ENV==='test' guard in caddyAdminClient/caddyConfig only protects
 // processes that remember to set it. This module adds a stronger, config-

@@ -202,6 +202,8 @@
   "vn.stale_hint": "Der Name stammt aus einer zurückgespielten Sicherung, und das Gerät hat ihn seitdem nicht bestätigt.",
   "vn.hint_ok": "Erreichbar als {{fqdn}}.",
   "vn.hint_ok_both": "Erreichbar als {{fqdn}} und weiter als {{legacy}}.",
+  "vn.hint_ok_gw": "Name des Gateways im VPN: {{fqdn}}.",
+  "vn.hint_ok_gw_both": "Name des Gateways im VPN: {{fqdn}}, weiterhin auch {{legacy}}.",
   "vn.hint_agent": "Vom Gerät gemeldet. Wenn du den Namen änderst, gilt deiner, und das Gerät überschreibt ihn nicht mehr.",
   "vn.hint_stale": "Aus einer zurückgespielten Sicherung, vom Gerät noch nicht bestätigt. Wenn du den Namen änderst, gilt deiner.",
   "vn.hint_empty": "Ohne Namen ist das Gerät im VPN nur über seine Adresse erreichbar.",

@@ -230,7 +230,7 @@ describe('read-only sources', () => {
 
   it('plugin groups are read-only for admins (members too)', () => {
     const src = 'plugin:gatecontrol-familie';
-    const f = groups.create({ kind: 'family', name: uniq('Familie Backes'), source: src, externalId: 'family' + seq });
+    const f = groups.create({ kind: 'family', name: uniq('Familie Muster'), source: src, externalId: 'family' + seq });
     const u = user('p');
     code(() => groups.setMember(f.id, u, 'parent'), 'READ_ONLY');
     groups.setMember(f.id, u, 'parent', { source: src, owner: src });

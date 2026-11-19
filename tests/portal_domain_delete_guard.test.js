@@ -10,8 +10,8 @@ beforeEach(async () => { await setup(); getDb = require('../src/db/connection').
 afterEach(teardown);
 
 test('DELETE is blocked while the portal uses the domain', async () => {
-  const info = getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  settings.set('portal.base_domain', 'domaincaster.com');
+  const info = getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  settings.set('portal.base_domain', 'example.net');
   const agent = getAgent(); const csrf = getCsrf();
   const res = await agent.delete('/api/v1/settings/domains/' + info.lastInsertRowid).set('X-CSRF-Token', csrf);
   assert.ok([400, 409].includes(res.status), `expected 400/409, got ${res.status}`);

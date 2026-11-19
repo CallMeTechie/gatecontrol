@@ -164,8 +164,8 @@ describe('command palette: pure core', () => {
     { key: 'page:/certificates', kind: 'page', label: 'SSL / Zertifikate', sub: 'Sicherheit', showEmpty: true },
     { key: 'gateway:84', kind: 'gateway', label: 'DS918 Gateway', sub: '10.8.0.2' },
     { key: 'setting:backup', kind: 'setting', label: 'Backup', sub: 'Einstellungen', keywords: ['backup'] },
-    { key: 'host:1', kind: 'host', label: 'nas.domaincaster.com', sub: '192.168.2.228', keywords: ['nas', '5001'] },
-    { key: 'entry:9', kind: 'entry', ownOnly: true, label: 'HTTPS 443 → 5001', sub: 'nas.domaincaster.com', keywords: ['5001', 'http https'] },
+    { key: 'host:1', kind: 'host', label: 'nas.example.net', sub: '192.168.2.228', keywords: ['nas', '5001'] },
+    { key: 'entry:9', kind: 'entry', ownOnly: true, label: 'HTTPS 443 → 5001', sub: 'nas.example.net', keywords: ['5001', 'http https'] },
     { key: 'peer:3', kind: 'peer', label: 'Müller Laptop', sub: '10.8.0.9' },
   ].map(P.prep);
 
@@ -197,7 +197,7 @@ describe('command palette: pure core', () => {
   });
 
   it('empty query: recent first, then pages; groups capped', () => {
-    const recent = [{ key: 'host:1', kind: 'host', label: 'nas.domaincaster.com' }];
+    const recent = [{ key: 'host:1', kind: 'host', label: 'nas.example.net' }];
     const g = P.search(items, '', { recent });
     assert.deepEqual(g.map((x) => x.group), ['recent', 'pages']);
     const many = Array.from({ length: 20 }, (_, i) => P.prep({ key: 'page:' + i, kind: 'page', label: 'Seite ' + i, showEmpty: true }));
@@ -233,7 +233,7 @@ describe('command palette: pure core', () => {
 
   it('item builders from /zones, /peers, /gateways', () => {
     const zones = {
-      zones: [{ domain_id: 2, hosts: [{ id: 5, fqdn: 'nas.domaincaster.com', subdomain: 'nas', lan_host: '192.168.2.228', description: 'DS218+',
+      zones: [{ domain_id: 2, hosts: [{ id: 5, fqdn: 'nas.example.net', subdomain: 'nas', lan_host: '192.168.2.228', description: 'DS218+',
         entries: [{ id: 201, route_type: 'http', https_enabled: 1, target_kind: 'gateway', target_lan_port: 5001 },
           { id: 202, route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '4450', target_kind: 'gateway', target_lan_port: 445 },
           { id: 203, route_type: 'l4', rdp_owned: true, l4_listen_port: '3392' }] }] }],

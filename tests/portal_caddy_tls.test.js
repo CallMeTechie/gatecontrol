@@ -24,7 +24,7 @@ test('internal default host uses the internal issuer', async () => {
   assert.ok(internalSubjects(cfg).some(s => /^home\./.test(s)));
 });
 
-const PORTAL_HOST = 'home.domaincaster.com';
+const PORTAL_HOST = 'home.example.net';
 
 // Collect every route object in the config (deep), preserving array order.
 function allRoutes(cfg) {
@@ -67,8 +67,8 @@ function findPortalRoutes(cfg) {
 }
 
 test('verified public portal host uses ACME (not forced-internal)', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  settings.set('portal.base_domain', 'domaincaster.com');
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
   const cfg = await buildCaddyConfig();
   // Exact array membership (not String.includes) — these are subject lists, and an

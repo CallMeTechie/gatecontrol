@@ -6,9 +6,9 @@ const assert = require('node:assert/strict');
 const { assembleRouteDomain, isValidPrefix } = require('../public/js/routeDomain');
 
 test('assembleRouteDomain joins prefix + base; empty prefix = apex', () => {
-  assert.equal(assembleRouteDomain('nas', 'domaincaster.com'), 'nas.domaincaster.com');
-  assert.equal(assembleRouteDomain('', 'domaincaster.com'), 'domaincaster.com');
-  assert.equal(assembleRouteDomain(' NAS ', 'Domaincaster.com'), 'nas.domaincaster.com');
+  assert.equal(assembleRouteDomain('nas', 'example.net'), 'nas.example.net');
+  assert.equal(assembleRouteDomain('', 'example.net'), 'example.net');
+  assert.equal(assembleRouteDomain(' NAS ', 'Example.net'), 'nas.example.net');
   assert.equal(assembleRouteDomain('a.b', 'example.com'), 'a.b.example.com');
   assert.equal(assembleRouteDomain('nas', ''), '');
 });

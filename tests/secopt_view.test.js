@@ -32,14 +32,14 @@ describe('secopt: alias labels', () => {
   });
 
   it('aliasFqdn is relative to the host FQDN', () => {
-    assert.equal(S.aliasFqdn('www', 'jennybackes.de'), 'www.jennybackes.de');
+    assert.equal(S.aliasFqdn('www', 'example.edu'), 'www.example.edu');
     assert.equal(S.aliasFqdn('WWW', 'App.Example.com.'), 'www.app.example.com');
     assert.equal(S.aliasFqdn('www', ''), 'www');
   });
 
   it('hostAliases reads arrays and JSON text, prefers alias_fqdns, defaults to redirect', () => {
-    assert.deepEqual(S.hostAliases({ fqdn: 'jennybackes.de', aliases: ['www'], alias_mode: 'redirect', alias_fqdns: ['www.jennybackes.de'] }),
-      { labels: ['www'], mode: 'redirect', fqdns: ['www.jennybackes.de'] });
+    assert.deepEqual(S.hostAliases({ fqdn: 'example.edu', aliases: ['www'], alias_mode: 'redirect', alias_fqdns: ['www.example.edu'] }),
+      { labels: ['www'], mode: 'redirect', fqdns: ['www.example.edu'] });
     assert.deepEqual(S.hostAliases({ fqdn: 'app.x.de', aliases: '["www","WWW","shop"]', alias_mode: 'serve' }),
       { labels: ['www', 'shop'], mode: 'serve', fqdns: ['www.app.x.de', 'shop.app.x.de'] });
     assert.deepEqual(S.hostAliases({ fqdn: 'x.de', aliases: null }), { labels: [], mode: 'redirect', fqdns: [] });
@@ -56,7 +56,7 @@ describe('secopt: alias labels', () => {
   });
 
   it('www checkbox of a new "@" host: only for apex + HTTP, never when www is taken', () => {
-    const zone = { domain: 'jennybackes.de', hosts: [{ subdomain: '@', fqdn: 'jennybackes.de', aliases: [] }] };
+    const zone = { domain: 'example.edu', hosts: [{ subdomain: '@', fqdn: 'example.edu', aliases: [] }] };
     assert.equal(S.wwwTaken(zone), false);
     assert.equal(S.wwwTaken({ domain: 'x.de', hosts: [{ subdomain: 'www', fqdn: 'www.x.de' }] }), true);
     assert.equal(S.wwwTaken({ domain: 'x.de', hosts: [{ subdomain: 'app', fqdn: 'app.x.de', aliases: ['www'], alias_fqdns: ['www.app.x.de'] }] }), false, 'www.app.x.de is not www.x.de');
@@ -237,8 +237,8 @@ describe('secopt: error mapping', () => {
 
 describe('tls-ui: CAA recommendation (§G)', () => {
   it('caaInfo normalises caa_status / caa_suggestion', () => {
-    assert.deepEqual(TG.caaInfo({ caa_status: 'none', caa_suggestion: 'jennybackes.de. CAA 0 issue "letsencrypt.org"' }),
-      { status: 'none', suggestion: 'jennybackes.de. CAA 0 issue "letsencrypt.org"' });
+    assert.deepEqual(TG.caaInfo({ caa_status: 'none', caa_suggestion: 'example.edu. CAA 0 issue "letsencrypt.org"' }),
+      { status: 'none', suggestion: 'example.edu. CAA 0 issue "letsencrypt.org"' });
     assert.deepEqual(TG.caaInfo({ caa_status: 'allows', caa_suggestion: 'ignored' }), { status: 'allows', suggestion: null });
     assert.deepEqual(TG.caaInfo({ caa_status: 'blocks' }), { status: 'blocks', suggestion: null });
     assert.equal(TG.caaInfo({ caa_status: null }), null, 'check ended before the CAA lookup');

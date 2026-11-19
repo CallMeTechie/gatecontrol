@@ -32,15 +32,15 @@ afterEach(() => { domains._setServerIpsForTest(null); teardown(); });
 const ROUTE = { target_ip: '203.0.113.10', target_port: 8080, https_enabled: true };
 
 test('GET /tls/status, preflight and retry', async () => {
-  dnsMap['jenny.example.com'] = { a: [V4], aaaa: [FOREIGN6] };
-  const created = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf).send({ ...ROUTE, domain: 'jenny.example.com' });
+  dnsMap['web.example.com'] = { a: [V4], aaaa: [FOREIGN6] };
+  const created = await agent.post('/api/v1/routes').set('X-CSRF-Token', csrf).send({ ...ROUTE, domain: 'web.example.com' });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.deepEqual(created.body.tls, { state: 'paused', code: 'aaaa_without_ipv6', detail: `AAAA ${FOREIGN6} but this server has no IPv6 address` });
   assert.equal(created.body.route.tls, undefined, 'route row itself carries no tls');
 
   let res = await agent.get('/api/v1/tls/status').expect(200);
   assert.equal(res.body.ok, true);
-  const h = res.body.hosts.find((x) => x.host === 'jenny.example.com');
+  const h = res.body.hosts.find((x) => x.host === 'web.example.com');
   assert.ok(h, 'host listed');
   assert.equal(h.state, 'paused'); assert.equal(h.kind, 'acme'); assert.equal(h.route_id, created.body.route.id);
   assert.equal(h.paused_reason, 'preflight'); assert.equal(h.last_error_code, 'preflight:aaaa_without_ipv6');
@@ -52,20 +52,20 @@ test('GET /tls/status, preflight and retry', async () => {
   assert.equal(res.body.summary.acme_email_missing, true);
   assert.deepEqual(res.body.settings, { max_attempts: 3 });
 
-  res = await agent.get('/api/v1/tls/preflight/jenny.example.com').expect(200);
+  res = await agent.get('/api/v1/tls/preflight/web.example.com').expect(200);
   assert.equal(res.body.result.code, 'aaaa_without_ipv6');
   await agent.get('/api/v1/tls/preflight/bad host!').expect(400);
 
-  res = await agent.post('/api/v1/tls/jenny.example.com/retry').set('X-CSRF-Token', csrf).expect(409);
+  res = await agent.post('/api/v1/tls/web.example.com/retry').set('X-CSRF-Token', csrf).expect(409);
   assert.equal(res.body.ok, false); assert.equal(res.body.code, 'PREFLIGHT_FAILED'); assert.equal(res.body.result.code, 'aaaa_without_ipv6');
 
-  dnsMap['jenny.example.com'] = { a: [V4], aaaa: [] };
-  res = await agent.post('/api/v1/tls/jenny.example.com/retry').set('X-CSRF-Token', csrf).expect(200);
-  assert.equal(res.body.status.state, 'pending'); assert.equal(res.body.status.host, 'jenny.example.com');
+  dnsMap['web.example.com'] = { a: [V4], aaaa: [] };
+  res = await agent.post('/api/v1/tls/web.example.com/retry').set('X-CSRF-Token', csrf).expect(200);
+  assert.equal(res.body.status.state, 'pending'); assert.equal(res.body.status.host, 'web.example.com');
 
   // zones view carries entry.tls and host.tls_problem
   res = await agent.get('/api/v1/zones').expect(200);
-  const host = res.body.zones.flatMap((z) => z.hosts).concat(res.body.unassigned).find((x) => x.fqdn === 'jenny.example.com');
+  const host = res.body.zones.flatMap((z) => z.hosts).concat(res.body.unassigned).find((x) => x.fqdn === 'web.example.com');
   assert.ok(host);
   assert.equal(host.tls_problem, false);
   assert.equal(host.entries[0].tls.state, 'pending');

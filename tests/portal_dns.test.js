@@ -18,9 +18,9 @@ test('publishes internal default home host by default', () => {
   assert.match(dns.renderHostsContent(), /10\.8\.0\.1\thome\.gc\.internal/);
 });
 test('publishes the configured public portal host -> gateway IP', () => {
-  settings.set('portal.base_domain', 'domaincaster.com');
+  settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
   const c = dns.renderHostsContent();
-  assert.match(c, /10\.8\.0\.1\thome\.domaincaster\.com/);
+  assert.match(c, /10\.8\.0\.1\thome\.example\.net/);
   assert.doesNotMatch(c, /home\.gc\.internal/);   // old entry gone
 });

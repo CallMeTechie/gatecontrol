@@ -202,6 +202,8 @@
   "vn.stale_hint": "The name comes from a restored backup, and the device has not confirmed it since.",
   "vn.hint_ok": "Reachable as {{fqdn}}.",
   "vn.hint_ok_both": "Reachable as {{fqdn}} and still as {{legacy}}.",
+  "vn.hint_ok_gw": "The gateway's name in the VPN: {{fqdn}}.",
+  "vn.hint_ok_gw_both": "The gateway's name in the VPN: {{fqdn}}, still also {{legacy}}.",
   "vn.hint_agent": "Reported by the device. If you change the name, yours applies and the device no longer overwrites it.",
   "vn.hint_stale": "From a restored backup, not yet confirmed by the device. If you change the name, yours applies.",
   "vn.hint_empty": "Without a name the device is only reachable by its address in the VPN.",

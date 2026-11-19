@@ -280,7 +280,10 @@
       else if (st.state === 'taken') rich(hint, st.suggestion ? 'vn.err_taken_suggest' : 'vn.err_taken', { name: st.name, owner: st.owner, suggestion: st.suggestion });
       else if (st.state === 'empty') hint.textContent = t('vn.hint_empty');
       else {
-        rich(hint, cfg.custom ? 'vn.hint_ok_both' : 'vn.hint_ok', { fqdn: fqdn(st.name), legacy: fqdn(st.name, cfg.legacy) });
+        // a gateway: the name is no address for the devices (the note below
+        // says only the server reaches it), so the line names it instead
+        var okKey = opts.gateway ? 'vn.hint_ok_gw' : 'vn.hint_ok';
+        rich(hint, cfg.custom ? okKey + '_both' : okKey, { fqdn: fqdn(st.name), legacy: fqdn(st.name, cfg.legacy) });
         var saved = device && device.hostname && String(device.hostname).toLowerCase() === st.name;
         if (saved && (device.hostname_source === 'agent' || device.hostname_source === 'stale')) {
           hint.appendChild(document.createElement('br'));
