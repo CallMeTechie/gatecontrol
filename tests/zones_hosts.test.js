@@ -142,9 +142,11 @@ describe('domain zones: hosts service', () => {
 
   it('adds an entry with the host target; port conflict → 409 with suggestion', async () => {
     const host = domainZones.getHost(routeRows(await hostIdOf('nas.example.com'))[0].bundle_id);
-    const entry = await hosts.addEntry(host.id, { type: 'udp', target_port: 5353, listen_port: 5353 });
+    // TCP: a gateway forwards no UDP (UDP_VIA_GATEWAY)
+    await assert.rejects(hosts.addEntry(host.id, { type: 'udp', target_port: 5353, listen_port: 5353 }), (err) => err.code === 'UDP_VIA_GATEWAY');
+    const entry = await hosts.addEntry(host.id, { type: 'tcp', target_port: 5353, listen_port: 5353 });
     assert.equal(entry.route_type, 'l4');
-    assert.equal(entry.l4_protocol, 'udp');
+    assert.equal(entry.l4_protocol, 'tcp');
     assert.equal(entry.bundle_id, host.id);
     assert.equal(entry.target_lan_host, '192.168.1.10');
     assert.equal(entry.external_enabled, 1);

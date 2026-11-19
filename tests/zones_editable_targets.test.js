@@ -95,12 +95,16 @@ describe('PUT /api/routes/:id — editable target of an existing entry', () => {
   test('TCP entry: listen port, protocol and target port are editable', async () => {
     const host = await createHost('rdp', [{ type: 'tcp', target_port: 3389, listen_port: 33891 }]);
     const id = host.entries[0].id;
+    // UDP is no option behind a gateway (it forwards TCP only): 400, nothing written.
+    const udp = await PUT('/routes/' + id, { l4_protocol: 'udp' });
+    assert.equal(udp.status, 400, JSON.stringify(udp.body));
+    assert.equal(udp.body.code, 'UDP_VIA_GATEWAY');
     const res = await PUT('/routes/' + id, {
-      route_type: 'l4', l4_protocol: 'udp', l4_listen_port: '33892', target_port: '3390', target_lan_port: 3390,
+      route_type: 'l4', l4_protocol: 'tcp', l4_listen_port: '33892', target_port: '3390', target_lan_port: 3390,
     });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const r = routeRow(id);
-    assert.equal(r.l4_protocol, 'udp');
+    assert.equal(r.l4_protocol, 'tcp');
     assert.equal(r.l4_listen_port, '33892');
     assert.equal(r.target_port, 3390);
     assert.equal(r.target_lan_port, 3390);
@@ -117,8 +121,11 @@ describe('PUT /api/routes/:id — editable target of an existing entry', () => {
     assert.equal(res.body.conflict.conflictRouteId, a.entries[0].id);
     assert.ok(res.body.conflict.suggestedPort > 2201);
     assert.equal(routeRow(b.entries[0].id).l4_listen_port, '2202', 'nothing written');
-    // Same port on the other protocol is free.
-    await PUT('/routes/' + b.entries[0].id, { l4_protocol: 'udp', l4_listen_port: '2201' }).expect(200);
+    // UDP on the same port: behind a gateway that is refused for UDP itself
+    // (UDP_VIA_GATEWAY), not as a port conflict.
+    const udp = await PUT('/routes/' + b.entries[0].id, { l4_protocol: 'udp', l4_listen_port: '2201' });
+    assert.equal(udp.status, 400, JSON.stringify(udp.body));
+    assert.equal(udp.body.code, 'UDP_VIA_GATEWAY');
     // Re-saving an entry with its own port is no conflict.
     await PUT('/routes/' + a.entries[0].id, { l4_listen_port: '2201', description: 'x' }).expect(200);
   });
@@ -201,16 +208,16 @@ describe('POST /api/v1/domains/:id/hosts — several entries at once', () => {
     const host = await createHost('multi', [
       { type: 'http', target_port: 5001, backend_https: true },
       { type: 'tcp', target_port: 22, listen_port: 2322 },
-      { type: 'udp', target_port: 53, listen_port: 5353 },
+      { type: 'tcp', target_port: 53, listen_port: 5353 },
     ], { external_enabled: true });
     const rows = members(host.id);
     assert.equal(rows.length, 3);
     assert.deepEqual(rows.map((r) => r.route_type).sort(), ['http', 'l4', 'l4']);
     assert.ok(rows.every((r) => r.external_enabled === 1), 'external_enabled from the dialog, not the zone default (0)');
     assert.ok(rows.every((r) => r.target_lan_host === host.lan_host));
-    const udp = rows.find((r) => r.l4_protocol === 'udp');
-    assert.equal(udp.target_lan_port, 53);
-    assert.equal(udp.target_port, 53);
+    const dns = rows.find((r) => r.l4_listen_port === '5353');
+    assert.equal(dns.target_lan_port, 53);
+    assert.equal(dns.target_port, 53);
   });
 
   test('without external_enabled the zone default applies; a non-boolean is refused', async () => {
