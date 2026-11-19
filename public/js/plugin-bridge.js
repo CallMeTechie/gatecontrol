@@ -509,29 +509,41 @@
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
     // GC.viewport: the height this frame can take without the page scrolling.
-    // The end of the page's content (viewport coordinates): the lowest of
-    // body's children with their bottom margins, plus body's own padding and
-    // margin — not scrollHeight, which a body with min-height: 100vh (the
-    // portal) never lets go below the window.
-    function contentBottom() {
+    // What stands below the frame: from the frame up to body, the siblings
+    // after it (a list, a footer) with their bottom margins, plus each
+    // ancestor's bottom padding and border — not the ancestors' own bottoms,
+    // which a min-height fills up to the window (body of the portal, .app of
+    // the admin pages: min-height: 100vh). That filler is no content: counted,
+    // the frame was told its own height while the page is shorter than the
+    // window (a plugin's dialog kept to it was cut short).
+    const px = (v) => parseFloat(v) || 0;
+    function inFlow(el) {
+      if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return false;
+      const cs = getComputedStyle(el);
+      return cs.display !== 'none' && cs.position !== 'fixed' && cs.position !== 'absolute';
+    }
+    function belowFrame() {
       const body = document.body;
-      if (!body) return 0;
-      let end = body.getBoundingClientRect().top;
-      for (const el of body.children) {
-        if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
-        const cs = getComputedStyle(el);
-        if (cs.display === 'none' || cs.position === 'fixed' || cs.position === 'absolute') continue;
-        end = Math.max(end, el.getBoundingClientRect().bottom + (parseFloat(cs.marginBottom) || 0));
+      const bottom = frame.getBoundingClientRect().bottom;
+      let end = bottom + px(getComputedStyle(frame).marginBottom);
+      let el = frame;
+      while (body && el !== body && el.parentElement) {
+        const p = el.parentElement;
+        for (let s = el.nextElementSibling; s; s = s.nextElementSibling) {
+          if (inFlow(s)) end = Math.max(end, s.getBoundingClientRect().bottom + px(getComputedStyle(s).marginBottom));
+        }
+        const cs = getComputedStyle(p);
+        end += px(cs.paddingBottom) + px(cs.borderBottomWidth) + px(cs.marginBottom);
+        el = p;
       }
-      const bs = getComputedStyle(body);
-      return end + (parseFloat(bs.paddingBottom) || 0) + (parseFloat(bs.borderBottomWidth) || 0) + (parseFloat(bs.marginBottom) || 0);
+      return Math.max(0, end - bottom);
     }
     let lastView = '';
     function sendViewport(force) {
       if (!frame.isConnected || !frame.offsetParent) return; // not shown (another tab): later
       const r = frame.getBoundingClientRect();
       const top = r.top + window.scrollY;
-      const below = Math.max(0, contentBottom() - r.bottom);
+      const below = belowFrame();
       const height = Math.max(200, Math.min(20000, Math.floor(window.innerHeight - top - below)));
       const width = Math.max(0, Math.floor(r.width));
       const key = height + 'x' + width;
@@ -562,14 +574,36 @@
     // the way the plugin dims its own frame, so the dialog reads as a dialog
     // of the whole page. A shadow of an element laid over the frame, above
     // everything and click-through, so the frame stays usable.
+    // The part left out is the frame where it can be seen: below the page's
+    // sticky header (admin topbar, portal header) and above the bottom
+    // navigation (admin, narrow window). A frame taller than the window slides
+    // under the header when the page scrolls; left out there, the
+    // see-through header stayed undimmed — a light band over the dialog.
     let dim = null;
+    function barEdge(sel, side) {
+      const el = document.querySelector(sel);
+      if (!el || !el.getClientRects().length) return null;
+      const b = el.getBoundingClientRect();
+      if (!b.height || !b.width) return null;
+      return side === 'top' ? b.bottom : b.top;
+    }
     function placeDim() {
       if (!dim) return;
       const r = frame.getBoundingClientRect();
-      dim.style.top = r.top + 'px';
+      const head = barEdge('.topbar, .pt-header', 'top');
+      const foot = barEdge('.bottom-nav', 'bottom');
+      const top = Math.max(r.top, head != null && head > 0 ? head : r.top);
+      const bottom = Math.max(top, Math.min(r.bottom, foot != null && foot < window.innerHeight ? foot : r.bottom));
+      dim.style.top = top + 'px';
       dim.style.left = r.left + 'px';
       dim.style.width = r.width + 'px';
-      dim.style.height = r.height + 'px';
+      dim.style.height = (bottom - top) + 'px';
+      // a cut edge is straight: rounded there, the corners would show the frame's area under the bar
+      const fs = getComputedStyle(frame);
+      dim.style.borderTopLeftRadius = top > r.top ? '0' : fs.borderTopLeftRadius;
+      dim.style.borderTopRightRadius = top > r.top ? '0' : fs.borderTopRightRadius;
+      dim.style.borderBottomLeftRadius = bottom < r.bottom ? '0' : fs.borderBottomLeftRadius;
+      dim.style.borderBottomRightRadius = bottom < r.bottom ? '0' : fs.borderBottomRightRadius;
     }
     function setModal(open) {
       if (open && !dim) {
@@ -578,7 +612,6 @@
         dim.setAttribute('aria-hidden', 'true');
         Object.assign(dim.style, {
           position: 'fixed', zIndex: '2147483000', pointerEvents: 'none',
-          borderRadius: getComputedStyle(frame).borderRadius,
           boxShadow: '0 0 0 200vmax rgba(5, 8, 12, 0.55)',
         });
         document.body.appendChild(dim);
@@ -667,6 +700,10 @@
     });
     frame.addEventListener('load', () => { setModal(false); sendTheme(); sendViewport(true); });
     new MutationObserver(sendTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    // A frame that loaded before this script ran sent its gc-hello and fired its load to nobody: tell it now
+    // (a frame still loading drops this and gets both on its own load).
+    sendTheme();
+    sendViewport(true);
   }
 
   function init() { document.querySelectorAll('iframe[data-plugin-frame]').forEach(attach); }
