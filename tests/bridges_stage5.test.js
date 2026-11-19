@@ -220,7 +220,10 @@ describe('history', () => {
     assert.deepEqual(await call('bridges.history.ack', { seqs: [first.seq] }), { ok: true, pending: 1 });
     assert.deepEqual((await backlog()).map((e) => e.text), ['zwei']);
     // sealed in the database like the inbox
-    assert.doesNotMatch(JSON.stringify(db.prepare('SELECT payload FROM bridge_backlog').all()), /zwei/);
+    for (const { payload } of db.prepare('SELECT payload FROM bridge_backlog').all()) {
+      assert.match(payload, /^[A-Za-z0-9+/]+={0,2}$/); // not /zwei/ on the base64: a random ciphertext has it now and then
+      assert.doesNotMatch(Buffer.from(payload, 'base64').toString('latin1'), /zwei/);
+    }
   });
 });
 
