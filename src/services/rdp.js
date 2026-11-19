@@ -582,6 +582,11 @@ async function _syncLinkedL4Route(rdpId, previousL4RouteId) {
     l4_tls_mode: 'none',
     target_port: listenPort,                   // legacy NOT NULL column — mirror listen_port
     enabled: !!rdp.enabled,
+    // The gateway only sends a magic packet for a MAC of its config (its
+    // WoL whitelist = wol_mac of its routes). Without these the RDP wake
+    // through the gateway / a pool member was refused (mac_not_whitelisted).
+    wol_enabled: !!(rdp.wol_enabled && rdp.wol_mac_address),
+    wol_mac: rdp.wol_mac_address || null,
     description: `auto-created for RDP route "${rdp.name}"`,
   };
 
@@ -809,7 +814,9 @@ async function update(id, data) {
     data.gateway_listen_port !== undefined ||
     data.host !== undefined ||
     data.port !== undefined ||
-    data.enabled !== undefined;
+    data.enabled !== undefined ||
+    data.wol_enabled !== undefined ||
+    data.wol_mac_address !== undefined;
 
   if (gatewayRelevantChanged) {
     try {
