@@ -12,20 +12,49 @@ const activity = require('./activity');
 const logger = require('../utils/logger');
 const dns = require('./dns');
 
-// ─── Target Exclusivity Validation ──────────────────────
+// ─── Gateway target: pinned gateway XOR pool ───────────
+//
+// A gateway route forwards through a pinned gateway (target_peer_id) OR a
+// gateway pool (target_pool_id), never both: Caddy dials the pool when both
+// are set while getGatewayConfig hands the listener (and the WoL MAC) to the
+// pinned gateway as well. Violations are 400 with a field error (err.fields,
+// routes API) and keep the messages the API maps (conflicting_target,
+// target_pool_not_found, target_pool_empty, target_required).
 
-function validateTargetExclusivity(data) {
-  if (data.target_peer_id != null && data.target_pool_id != null) {
-    throw new Error('conflicting_target: route cannot have both target_peer_id and target_pool_id');
+const hasTarget = (v) => v !== undefined && v !== null && v !== '';
+
+function targetError(code, field, message) {
+  const err = codedServiceError(400, code, message);
+  err.fields = { [field]: message };
+  return err;
+}
+
+function assertPoolUsable(poolId) {
+  const gatewayPool = require('./gatewayPool');
+  const id = parseInt(poolId, 10);
+  if (!Number.isInteger(id) || !gatewayPool.getPool(id)) {
+    throw targetError('TARGET_POOL_NOT_FOUND', 'target_pool_id', 'target_pool_not_found: gateway pool not found');
   }
-  if (data.target_pool_id != null) {
-    const gatewayPool = require('./gatewayPool');
-    const pool = gatewayPool.getPool(data.target_pool_id);
-    if (!pool) throw new Error('target_pool_not_found');
-    if (gatewayPool.listMembers(data.target_pool_id).length === 0) {
-      throw new Error('target_pool_empty');
-    }
+  if (gatewayPool.listMembers(id).length === 0) {
+    throw targetError('TARGET_POOL_EMPTY', 'target_pool_id', 'target_pool_empty: gateway pool has no members');
   }
+}
+
+/**
+ * Check the gateway target of a route as it will be stored (create: the
+ * input; update: the merged row). peer/pool are the effective values,
+ * poolChanged = the pool is newly chosen (a stored pool that lost its members
+ * later does not block an unrelated edit).
+ */
+function assertGatewayTarget({ gateway, peer, pool, poolChanged }) {
+  if (hasTarget(peer) && hasTarget(pool)) {
+    throw targetError('TARGET_CONFLICT', 'target_pool_id', 'conflicting_target: choose either a gateway (target_peer_id) or a gateway pool (target_pool_id), not both');
+  }
+  if (!gateway) return;
+  if (!hasTarget(peer) && !hasTarget(pool)) {
+    throw targetError('TARGET_REQUIRED', 'target_peer_id', 'target_required: a gateway route needs a gateway (target_peer_id) or a gateway pool (target_pool_id)');
+  }
+  if (hasTarget(pool) && poolChanged) assertPoolUsable(pool);
 }
 
 // ─── Gateway push ───────────────────────────────────────
@@ -410,7 +439,10 @@ async function create(data, opts = {}) {
   validateIpFilter(data, { routeType });
   validateL4ConnRate(data, { routeType });
 
-  validateTargetExclusivity(data);
+  assertGatewayTarget({
+    gateway: (data.target_kind || 'peer') === 'gateway',
+    peer: data.target_peer_id, pool: data.target_pool_id, poolChanged: true,
+  });
 
   const targetKind = data.target_kind || 'peer';
   const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
@@ -648,7 +680,7 @@ async function update(id, data, opts = {}) {
   const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
   if (!route) throw new Error('Route not found');
 
-  const clear = Array.isArray(opts.clear) ? opts.clear : [];
+  const clear = new Set(Array.isArray(opts.clear) ? opts.clear : []);
   for (const f of clear) {
     if (!Object.prototype.hasOwnProperty.call(CLEARABLE_ON_UPDATE, f)) throw new Error('Field cannot be cleared: ' + f);
     if (data[f] != null) throw new Error('conflicting_target: ' + f + ' is both set and cleared');
@@ -822,7 +854,31 @@ async function update(id, data, opts = {}) {
   validateIpFilter(data, { routeType });
   validateL4ConnRate(data, { routeType, current: route });
 
-  validateTargetExclusivity(data);
+  // Gateway target (pinned gateway XOR pool), judged on the merged row: the
+  // UPDATE below keeps a stored value per COALESCE, so choosing one target
+  // clears the other — also when the patch names it as null (the form sends
+  // target_peer_id: null + target_pool_id). Both chosen → 400; a row from
+  // before this rule with both keeps the pool (what Caddy dialled) and drops
+  // the stale gateway on the next save.
+  const gatewayAfter = (data.target_kind !== undefined ? (data.target_kind || 'peer') : (route.target_kind || 'peer')) === 'gateway';
+  const setsPeer = hasTarget(data.target_peer_id);
+  const setsPool = hasTarget(data.target_pool_id);
+  if (setsPeer && setsPool) assertGatewayTarget({ peer: data.target_peer_id, pool: data.target_pool_id });
+  if (gatewayAfter) {
+    if (setsPool) clear.add('target_peer_id');
+    else if (setsPeer) clear.add('target_pool_id');
+    else if (hasTarget(route.target_peer_id) && hasTarget(route.target_pool_id)) clear.add('target_peer_id');
+    const touched = data.target_kind !== undefined || data.target_peer_id !== undefined
+      || data.target_pool_id !== undefined || clear.size > 0;
+    if (touched) {
+      assertGatewayTarget({
+        gateway: true,
+        peer: clear.has('target_peer_id') ? null : (setsPeer ? data.target_peer_id : route.target_peer_id),
+        pool: clear.has('target_pool_id') ? null : (setsPool ? data.target_pool_id : route.target_pool_id),
+        poolChanged: setsPool && String(parseInt(data.target_pool_id, 10)) !== String(route.target_pool_id),
+      });
+    }
+  }
 
   // A plain (no-TLS) TCP/UDP listener whose port, protocol or type changes —
   // or that gets switched on — must not take a port another enabled entry

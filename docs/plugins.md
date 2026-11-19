@@ -5067,7 +5067,11 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
   (px; `null` until known — an older GateControl never sets it), the CSS
   variable `--gc-viewport-height` on the frame's root and a `gc:viewport`
   event on `window` (`detail` = the same object). Use it with a fallback,
-  e.g. `height: var(--gc-viewport-height, 640px)`; at least 200 px. A kiosk
+  e.g. `height: var(--gc-viewport-height, 640px)`; at least 200 px. "Below
+  it" is real content only (what follows the frame, the page's bottom
+  padding) — not the filler a page's `min-height: 100vh` adds (older
+  versions told a frame on a page shorter than the window about its own
+  height or less). A kiosk
   device's portal has no footer and a short bottom margin, so a wall gets
   as much of the screen as possible.
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
@@ -5076,7 +5080,11 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
   height) and shrinks again. A dialog drawn as a fixed backdrop covering the
   frame (e.g. `.modal-overlay { position: fixed; inset: 0 }`) makes
   GateControl dim its own page around the frame as well, so the dialog reads
-  as one of the whole page.
+  as one of the whole page. The sticky header and the bottom navigation are
+  dimmed too where the frame lies under them (a dialog taller than the
+  window scrolls the page; older versions left them light there — a light
+  band over the dialog). A dialog kept to `--gc-viewport-height` that
+  scrolls inside avoids the page scrolling at all.
 
 ## Quick actions
 

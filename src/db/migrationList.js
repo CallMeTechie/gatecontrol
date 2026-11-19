@@ -4372,6 +4372,24 @@ const migrations = [
   },
   {
     version: 159,
+    name: 'gateway_target_peer_xor_pool',
+    // A gateway route goes through a pinned gateway OR a gateway pool, never
+    // both (services/routes.js assertGatewayTarget, services/rdp.js
+    // gatewayTargetErrors). Before that rule a switch gateway → pool kept the
+    // gateway next to the pool (routes.update set the target per COALESCE):
+    // Caddy dialled the pool, but getGatewayConfig still gave the old gateway
+    // the listener and the WoL MAC. Such rows keep the pool — the target Caddy
+    // used — and drop the gateway: routes.target_peer_id and
+    // rdp_routes.gateway_peer_id become NULL where a pool is set. Data only,
+    // idempotent; no detect (a database without migration history runs it).
+    sql: `
+      UPDATE routes SET target_peer_id = NULL, updated_at = datetime('now')
+        WHERE target_pool_id IS NOT NULL AND target_peer_id IS NOT NULL;
+      UPDATE rdp_routes SET gateway_peer_id = NULL, updated_at = datetime('now')
+        WHERE gateway_pool_id IS NOT NULL AND gateway_peer_id IS NOT NULL;`,
+  },
+  {
+    version: 160,
     name: 'pihole_only_tokens_removed',
     // Migration 147 took the Pi-hole scopes out of the stored tokens; a token
     // that only had Pi-hole rights was left with an empty list and can do

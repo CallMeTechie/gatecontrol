@@ -1231,6 +1231,9 @@ async function restoreBackup(backup) {
       const row = { ...r };
       row.peer_id = r.peer_name ? (peerIdMap.get(r.peer_name) || null) : null;
       row.target_peer_id = r.target_peer_name ? (peerIdMap.get(r.target_peer_name) || null) : null;
+      // Gateway OR pool (migration 159): a backup from before that rule may
+      // carry both — the pool was the target Caddy used, the gateway goes.
+      if (row.target_pool_id != null) row.target_peer_id = null;
       if (row.bundle_id != null) row.bundle_id = bundleIdMap.get(row.bundle_id) || null;
       if (row.enabled === undefined) row.enabled = 1;
       row.circuit_breaker_status = 'closed';
@@ -1289,6 +1292,7 @@ async function restoreBackup(backup) {
       try {
         const row = { ...rr };
         row.gateway_peer_id = rr.gateway_peer_name ? (peerIdMap.get(rr.gateway_peer_name) || null) : null;
+        if (row.gateway_pool_id != null) row.gateway_peer_id = null; // pool wins (migration 159)
         row.user_ids = remapIdList(row.user_ids, remapUsers);
         dynamicInsert(db, 'rdp_routes', ['gateway_peer_name'], row);
       } catch (e) {
