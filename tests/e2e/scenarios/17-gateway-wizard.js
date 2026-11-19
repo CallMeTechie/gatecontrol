@@ -259,13 +259,28 @@ module.exports = (ctx) => {
       const pairedEnv = paired.status() === 200 ? (await paired.json()).envContent : '';
       const gwToken = (/^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(pairedEnv) || [])[1] || '';
       step('redeemed by the gateway → gateway.env', !!gwToken);
+      // The live events of the server (gc:gateway) ask for the status again — two of them while the
+      // assistant already knows "redeemed" (on CI they came whenever they came: 12.11., PR #476). Each
+      // answer used to plan its own "go on to step 4"; the late one took the assistant back to step 4
+      // after "Anleitung nochmal" and the file way. Here in a fixed order: the second event right after
+      // the answer to the first.
+      const statusAnswer = () => page.waitForResponse((r) => r.url().includes(`/api/v1/gateways/${GW.home}/setup-status`), { timeout: 8000 }).catch(() => null);
+      let answered = statusAnswer();
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
+      await answered;
+      answered = statusAnswer();
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
       step('the assistant goes on by itself (step 4)', await stepShown(page, 4) || await until(page, () => {
         const sec = [...document.querySelectorAll('#gwz-overlay .gwz-step')].filter((x) => !x.hidden);
         return sec.length === 1 && sec[0].dataset.step === '4';
       }, null, 12000));
+      await answered;
       await page.click('#gwz-back');
       step('"Anleitung nochmal" → back at the setup page way with a fresh code', await wayShown(page, 'code')
         && await until(page, (old) => { const t = document.getElementById('gwz-cw-code').textContent; return /^[A-F0-9]{4}-/.test(t) && t !== old; }, c2.code));
+      // what was planned for the code before is gone: nothing takes the assistant on (it went on after 1.2 s)
+      await page.waitForTimeout(2000);
+      step('… and stays there: no late "go on" of the code before', await wayShown(page, 'code'));
       await page.setViewportSize({ width: 390, height: 844 });
       const ovCw = await overflow(page);
       step('390 px: no horizontal scrolling in the setup page way', ovCw <= 0, `overflow ${ovCw}px`);
