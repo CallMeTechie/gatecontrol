@@ -349,8 +349,12 @@ describe('the neutral events', () => {
     const room = '!m7:gc.internal';
     await annaAndKim(room);
     await hs.push('t-m7', { events: [msg(room, KIM, 'streng geheim eins'), msg(room, KIM, 'streng geheim zwei'), msg(room, KIM, 'drei')] });
-    const raw = db.prepare('SELECT payload FROM bridge_inbox').all().map((r) => r.payload).join('\n');
-    assert.doesNotMatch(raw, /geheim|Kim|message/, 'no readable text or name in the server’s database');
+    // sealed: base64 only (a regex over the base64 text would hit "Kim" in a random ciphertext now and then),
+    // and not the plain text in base64 either
+    for (const { payload } of db.prepare('SELECT payload FROM bridge_inbox').all()) {
+      assert.match(payload, /^[A-Za-z0-9+/]+={0,2}$/, 'no readable text or name in the server’s database');
+      assert.doesNotMatch(Buffer.from(payload, 'base64').toString('latin1'), /geheim|Kim|message/);
+    }
     const first = await call('bridges.events.pull', { limit: 2 });
     assert.equal(first.events.length, 2);
     assert.equal(first.more, true);

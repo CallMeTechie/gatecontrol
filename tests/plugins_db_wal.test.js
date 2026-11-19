@@ -228,7 +228,9 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     assert.equal(slow.status.slow, true);
     assert.ok(slow.hint && slow.hint.ms >= 80);
     assert.equal(slow.probeFileLeft, false, 'the probe file is removed at stop');
-    const fast = child('probe', 0);
+    // a fast disk: no delay and no real sync either — the runner's own disk took ~60 ms a sync on a busy
+    // CI machine (PR #521, 19.11.) and the probe rightly called it slow
+    const fast = child('probe', 0, 0, { FAKE_FSYNC_NOSYNC: '1' });
     t.diagnostic(`no delay: ${JSON.stringify(fast.status)}`);
     assert.equal(fast.hint, null, JSON.stringify(fast));
   });
