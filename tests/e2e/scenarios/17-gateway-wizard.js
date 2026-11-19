@@ -49,7 +49,7 @@ function enableSeededGateways(ids) {
 }
 
 module.exports = (ctx) => {
-  const { BASE, FIXTURES, step, visible, shot, api } = ctx;
+  const { BASE, FIXTURES, step, visible, shot, api, loadFresh } = ctx;
   const until = (page, fn, arg, ms = 8000) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true).catch(() => false);
   const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const theme = async (page, mode) => {
@@ -339,16 +339,21 @@ module.exports = (ctx) => {
       const env3 = await (await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: fresh.body.code } })).json();
       const token3 = tokenOf(env3.envContent);
       step('the gateway reports in (heartbeat with the capability setup-page)', (await beat(token3)).status() === 200);
-      // a full load of the detail address (not a hash change of the page that is open plus a
-      // reload): what the page shows depends on the address it is loaded with, nothing before it
-      await page.goto('about:blank');
-      await page.goto(BASE + `/gateways#gw/${GW.home}`);
+      // a full load of the detail address (run.js loadFresh): what the page shows depends on the
+      // address it is loaded with, nothing before it
+      await loadFresh(page, BASE + `/gateways#gw/${GW.home}`);
       const detailUp = await until(page, () => !!document.querySelector('#gw-detail-view #gw-more-btn'), null, 12000);
-      step('the detail view of the gateway opens at #gw/<id>', detailUp, detailUp ? '' : JSON.stringify(await page.evaluate(() => {
-        const v = (id) => { const n = document.getElementById(id); return n ? !n.hidden : null; };
-        const o = document.getElementById('gwz-overlay');
-        return { url: location.pathname + location.hash, detail: v('gw-detail-view'), fleet: v('fleet-view'), wizard: o ? o.style.display : null };
-      })));
+      step('the detail view of the gateway opens at #gw/<id>', detailUp, detailUp ? '' : JSON.stringify({
+        ...await page.evaluate(() => {
+          const v = (id) => { const n = document.getElementById(id); return n ? !n.hidden : null; };
+          const o = document.getElementById('gwz-overlay');
+          return { url: location.pathname + location.hash, detail: v('gw-detail-view'), fleet: v('fleet-view'), wizard: o ? o.style.display : null };
+        }),
+        // loaded with the hash or not, and who changed the address since (run.js navLog)
+        nav: await ctx.navLog(page),
+        // the list the page routes against: is the gateway in it right now?
+        listed: ((await api(page, 'GET', '/api/v1/gateways')).body || { gateways: [] }).gateways.map((g) => g.peer_id),
+      }));
       await page.click('#gw-more-btn');
       step('"Mehr" has "Zugang erneuern"', await until(page, () => !!document.querySelector('#gw-more-menu [data-act="gm-renew"]')));
       await page.click('#gw-more-menu [data-act="gm-renew"]');
@@ -405,8 +410,7 @@ module.exports = (ctx) => {
       const namesTel = { zones: ['gc.internal'], primary: 'gc.internal', forward: true, routed: true, lastOkAt: null, lastError: { at: Date.now(), code: 'timeout' }, failures: 2, down: true };
       await beatNames(namesTel);
       await api(page, 'PUT', `/api/v1/gateways/${GW.home}/dns`, { enabled: true, vpnNames: true });
-      await page.goto(BASE + `/gateways#gw/${GW.home}/features`);
-      await page.reload();
+      await loadFresh(page, BASE + `/gateways#gw/${GW.home}/features`);
       await until(page, () => !!document.querySelector('[data-fgroup="wide"] [data-feature="vpnnames"] [data-vpnnames-problem]'), null, 12000);
       const texts = { de: require('../../../src/i18n/de.json'), en: require('../../../src/i18n/en.json') };
       const measure = () => page.evaluate(() => {

@@ -50,7 +50,7 @@ function devices(now) {
 }
 
 module.exports = (ctx) => {
-  const { BASE, FIXTURES, step, shot, api } = ctx;
+  const { BASE, FIXTURES, step, shot, api, loadFresh } = ctx;
   const until = (page, fn, arg, ms = 8000) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true).catch(() => false);
   const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const theme = async (page, mode) => {
@@ -109,8 +109,7 @@ module.exports = (ctx) => {
       try {
         // ── an older gateway: no capability `print` ──
         step('print: heartbeat of a 1.23.0 gateway (no capability print)', await heartbeat('1.23.0', CAPS) === 200);
-        await page.goto(`${BASE}/gateways#gw/${GW}/features`);
-        await page.reload();
+        await loadFresh(page, `${BASE}/gateways#gw/${GW}/features`);
         await theme(page, 'dark');
         await goFeatures(page, GW);
         step('print: group "Geräte im Heimnetz" with the row "Drucken & Scannen"', await until(page, () => {

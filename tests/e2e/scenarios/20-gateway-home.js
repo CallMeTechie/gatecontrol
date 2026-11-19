@@ -48,7 +48,7 @@ function devices(now) {
 }
 
 module.exports = (ctx) => {
-  const { BASE, FIXTURES, step, visible, shot, api, allow } = ctx;
+  const { BASE, FIXTURES, step, visible, shot, api, allow, loadFresh } = ctx;
   const until = (page, fn, arg, ms = 8000) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true).catch(() => false);
   const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const theme = async (page, mode) => {
@@ -131,9 +131,8 @@ module.exports = (ctx) => {
         step('home: a speed test (for "schneller als Server")', await gw('/inetq', { samples: [], outages: [], speedtests: [{ at: now - 60 * MIN, downMbps: 100, upMbps: 40, bytes: 3e8 }] }) === 200);
 
         // ── tab "Funktionen": the rows of phase 3b ──
-        await page.goto(`${BASE}/gateways#gw/${GW}/features`);
-        // only the hash changed: load the page again so it comes in German
-        await page.reload();
+        // a full load (not only the hash): the page comes in German
+        await loadFresh(page, `${BASE}/gateways#gw/${GW}/features`);
         await theme(page, 'dark');
         step('home: nine tabs with Funktionen, DNS-Filter, Zwischenspeicher and Funk', await until(page, () => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,radio,edge,mqtt'));
         step('home: switched-off functions: their tabs muted with "· aus"', await until(page, () => {

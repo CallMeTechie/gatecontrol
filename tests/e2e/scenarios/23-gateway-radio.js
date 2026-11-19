@@ -49,7 +49,7 @@ function radioTel(now, ble) {
 }
 
 module.exports = (ctx) => {
-  const { BASE, FIXTURES, step, shot, api } = ctx;
+  const { BASE, FIXTURES, step, shot, api, loadFresh } = ctx;
   const until = (page, fn, arg, ms = 12000) => page.waitForFunction(fn, arg, { timeout: ms }).then(() => true).catch(() => false);
   const overflow = (page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const theme = async (page, mode) => {
@@ -112,8 +112,7 @@ module.exports = (ctx) => {
       try {
         // ── an older gateway: no capability `radio` ──
         step('radio: heartbeat of a 1.24.0 gateway (no capability radio)', await heartbeat('1.24.0', CAPS, null) === 200);
-        await page.goto(`${BASE}/gateways#gw/${GW}/features`);
-        await page.reload();
+        await loadFresh(page, `${BASE}/gateways#gw/${GW}/features`);
         await theme(page, 'dark');
         await goTab(page, GW, 'features');
         step('radio: the row "Funk (Zigbee, Bluetooth, Thread)" in "Geräte im Heimnetz", after "Drucken & Scannen", "Kameras" and "Lokale KI"', await until(page, () => {
