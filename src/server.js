@@ -426,6 +426,11 @@ async function start() {
   // longer than Node's 5-minute requestTimeout: the server allows the upload
   // deadline, middleware/requestDeadline.js keeps 5 minutes for every other body.
   server.requestTimeout = require('./middleware/requestDeadline').UPLOAD_DEADLINE_MS;
+  // Idle keep-alive connections: Node closes them later than Caddy (2 min) —
+  // see services/caddyAppUpstream.js (ECONNRESET / "socket hang up" when both
+  // meet). headersTimeout (60 s) is unchanged: it only runs while a request's
+  // headers arrive, not while a connection is idle.
+  server.keepAliveTimeout = require('./services/caddyAppUpstream').APP_KEEP_ALIVE_MS;
 }
 
 start().catch((err) => {
