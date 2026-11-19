@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.1] — 2026-11-19
+
+### Fixes
+- wackelige Tests deterministisch, drei echte Fehler im Produkt behoben (#526)
+
+---
+
 ## [1.299.0] — 2026-11-18
 
 ### Features
