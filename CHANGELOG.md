@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.302.2] — 2026-11-19
+
+### Fixes
+- eigene Zeile für Gateways im Dialog „Name und Gruppe“, echte Domains in Doku/Tests ersetzt (#536)
+
+---
+
 ## [1.302.1] — 2026-11-19
 
 ### Fixes
