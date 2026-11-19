@@ -10,7 +10,11 @@
  *     200 { ok: true, plugins: [{ id, name, version, tab: { label, icon } | null }] }
  *   ALL /api/v1/client/plugins/:id/api/<path>     forwarded to the plugin's request()
  *     <the plugin's answer>
- *     404 { ok: false, code: 'not_found' }     unknown, not usable or no permissions.app
+ *     404 { ok: false, code: 'not_found', reason: 'plugin_unavailable' }
+ *                                              unknown, not usable (disabled, unlicensed, not
+ *                                              installed) or no permissions.app — the core's
+ *                                              answer; a plugin's own 404 never carries this
+ *                                              reason (the core drops it from plugin answers)
  *     403 { ok: false, code: 'no_user' }       token without an owner
  *     413 { ok: false, code: 'too_large' }     JSON body over 64 KB
  *     429 { ok: false, code: 'rate_limited' }
@@ -64,6 +68,11 @@ const logger = require('../../../utils/logger');
 // in app.js before the body parser runs).
 const MAX_BODY_BYTES = 64 * 1024;
 
+// The core's 404 for a plugin the app cannot use (not installed, disabled, unlicensed, no
+// permissions.app): `code` stays 'not_found' for older apps, `reason` tells it apart from a
+// plugin's own 404 ("not found" inside the plugin) — docs/plugins.md "App".
+const UNAVAILABLE = Object.freeze({ ok: false, code: 'not_found', reason: 'plugin_unavailable' });
+
 const router = Router();
 // previews (GET|HEAD …/media/<mediaId>/preview) have a budget of their own
 const PREVIEW_PATH_RE = /^\/[^/]+\/media\/[^/]+\/preview\/?$/;
@@ -88,7 +97,7 @@ function bodyBytes(body) {
   try { return Buffer.byteLength(JSON.stringify(body), 'utf8'); } catch { return Infinity; }
 }
 
-const forward = forwarder((req) => req.appViewer.user, (req) => req.params.id, { langOf: (req) => viewerLang(req, req.appViewer) });
+const forward = forwarder((req) => req.appViewer.user, (req) => req.params.id, { langOf: (req) => viewerLang(req, req.appViewer), unavailable: true });
 
 // ─── Media (plugin.json `media`, services/plugins/media.js) ─────
 // The body is the file itself (Content-Type from the plugin's `types`,
@@ -101,7 +110,8 @@ function mediaGuard(req, res) {
   if (!requireClientToken(req, res)) return null;
   res.set('Cache-Control', 'no-store');
   const p = appPlugins.pluginById(String(req.params.id || ''));
-  if (!p || !media.declOf(p)) { res.status(404).json({ ok: false, code: 'not_found' }); return null; }
+  if (!p) { res.status(404).json(UNAVAILABLE); return null; }
+  if (!media.declOf(p)) { res.status(404).json({ ok: false, code: 'not_found' }); return null; }
   const v = tokenViewer(req);
   if (!v) { res.status(403).json({ ok: false, code: 'no_user' }); return null; }
   return { p, v };
@@ -161,7 +171,7 @@ router.put('/:id/media/:mediaId/preview', async (req, res) => {
 router.all('/:id/api/*', (req, res, next) => {
   if (!requireClientToken(req, res)) return undefined;
   res.set('Cache-Control', 'no-store');
-  if (!appPlugins.pluginById(String(req.params.id || ''))) return res.status(404).json({ ok: false, code: 'not_found' });
+  if (!appPlugins.pluginById(String(req.params.id || ''))) return res.status(404).json(UNAVAILABLE);
   const v = tokenViewer(req);
   if (!v) return res.status(403).json({ ok: false, code: 'no_user' });
   if (bodyBytes(req.body) > MAX_BODY_BYTES) return res.status(413).json({ ok: false, code: 'too_large' });

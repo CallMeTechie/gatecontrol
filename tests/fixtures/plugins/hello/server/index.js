@@ -34,6 +34,8 @@ module.exports = {
     switch (req.path) {
       case '/ping':
         return { json: { ok: true, method: req.method, user: req.user, query: req.query, body: req.body, lang: req.lang } };
+      case '/fake-unavailable': // tests/plugins_app.test.js: a plugin cannot pose as the core's 404
+        return { status: 404, json: { ok: false, code: 'not_found', reason: 'plugin_unavailable', error: 'Nicht gefunden' } };
       case '/fetch':
         try {
           const r = await gc.http.fetch(String(req.query.url || ''), { timeoutMs: 3000 });

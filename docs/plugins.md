@@ -5694,11 +5694,25 @@ GET /api/v1/client/plugins
 
 ALL /api/v1/client/plugins/:id/api/<path>     GET POST PUT PATCH DELETE
   → the plugin's request({ method, path, query, body, user, lang }) answer
-  404 { ok: false, code: 'not_found' }     unknown plugin, not usable, no permissions.app
+  404 { ok: false, code: 'not_found', reason: 'plugin_unavailable' }
+                                           unknown plugin, not usable (disabled, unlicensed,
+                                           not installed), no permissions.app
   403 { ok: false, code: 'no_user' }       token without an owner
   413 { ok: false, code: 'too_large' }     JSON body over 64 KB
   502 / 503 / 504                          plugin_error / not_running / timeout (like the portal)
 ```
+
+**Core 404 or plugin 404?** Both have HTTP 404 and `code: 'not_found'`. The
+core's own answer (the plugin is not installed, disabled, without a licence,
+or has no `permissions.app`) also carries `reason: 'plugin_unavailable'`
+(since 1.301.0; also on `PUT|GET …/media…` for such a plugin). An app treats
+it like "this plugin is not there" (hide the feature, reload
+`GET /api/v1/client/plugins` or `permissions`); any other 404 is the
+plugin's own "not found" (a device, an item inside the plugin). The reason is
+reserved: in the apps' route the core drops `reason: 'plugin_unavailable'`
+from a plugin's own answers, so a plugin cannot pose as the core. Older
+servers send no `reason` — there an app can only guess (the core's 404 has no
+`error` text; plugins usually send one).
 
 The install dialog shows "App: Daten für die GateControl-App bereitstellen"
 and, with `ui.app`, "App-Tab „<label>“" under *Oberfläche*; the plugin's
