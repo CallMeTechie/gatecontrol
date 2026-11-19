@@ -34,9 +34,6 @@ const SCOPE_MAP = [
   ['/api/v1/client', 'client'],
   // Gateway scope
   ['/api/v1/gateway', 'gateway'],
-  // Removed Pi-hole integration: the app tokens reach the 410 answer
-  // (routes/api/index.js) instead of a scope error
-  ['/api/v1/pihole', 'client'],
   // Server resource scopes
   ['/api/v1/peers', 'peers'],
   ['/api/v1/routes', 'routes'],

@@ -41,10 +41,6 @@ router.get('/permissions', (req, res) => {
       traffic: hasScope('client:traffic'),
       dns: hasScope('client:dns'),
       rdp: hasScope('client:rdp') && hasFeature('remote_desktop'),
-      // The Pi-hole integration is gone. The two flags stay in the answer, always
-      // false: app versions that still have a Pi-hole view hide it on `false`.
-      pihole: false,
-      piholeControl: false,
     },
     scopes,
     // DNS protection of the VPN devices: null, or the plugin that serves the apps

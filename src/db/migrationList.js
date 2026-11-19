@@ -4370,6 +4370,18 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'user_places') && tableExists(db, 'user_place_usage'),
   },
+  {
+    version: 159,
+    name: 'pihole_only_tokens_removed',
+    // Migration 147 took the Pi-hole scopes out of the stored tokens; a token
+    // that only had Pi-hole rights was left with an empty list and can do
+    // nothing. It is deleted now, with an activity entry each ("token_deleted",
+    // source system); unused setup codes without any scope go too.
+    // services/piholeRemoval.js dropEmptyTokens(), which purge() also runs at
+    // every start and after a restore.
+    sql: `DELETE FROM client_enrollment_codes WHERE consumed_at IS NULL AND scopes = '[]';`,
+    run: (db) => { require('../services/piholeRemoval').dropEmptyTokens(db); },
+  },
 ];
 
 module.exports = { migrations };

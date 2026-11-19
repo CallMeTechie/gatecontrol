@@ -106,9 +106,5 @@ router.use('/ai', require('./ai'));
 for (const [path, plugin] of [['/smarthome', 'gatecontrol-smarthome'], ['/midea', 'gatecontrol-midea'], ['/skoda', 'gatecontrol-skoda']]) {
   router.use(path, (req, res) => res.status(410).json({ ok: false, code: 'moved_to_plugin', plugin }));
 }
-// The Pi-hole integration is gone (replaced by the DNS protection, a plugin
-// with permissions.vpnDns). Older apps still ask /pihole/summary & co. while
-// their Pi-hole view is open: one clear answer instead of a 404 page.
-router.use('/pihole', (req, res) => res.status(410).json({ ok: false, code: 'pihole_removed', error: 'The Pi-hole integration was removed. Replacement: the DNS protection plugin.' }));
 
 module.exports = router;

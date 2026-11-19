@@ -1680,8 +1680,6 @@ async function vpnDnsCall(plugin, op, args) {
       if (op === 'log') return vd.log(a.query);
       return await vd.test(a.domain, a.who);
     }
-    // obsolete (the Pi-hole integration is gone): answered for older plugins, nothing happens
-    if (op === 'releasePihole') return vd.releasePihole();
     const ctx = vpnDnsActor(plugin, a);
     if (VPN_DNS_ADMIN.has(op)) {
       need(ctx.actor.role === 'admin', 'ERR_NOT_ADMIN', 'only an administrator');
@@ -2739,7 +2737,7 @@ async function handle(plugin, api, args, ctx) {
     // DNS protection of the VPN devices (permissions.vpnDns, vpnDns.js)
     case 'vpnDns.status': case 'vpnDns.catalog': case 'vpnDns.get': case 'vpnDns.set': case 'vpnDns.devices': case 'vpnDns.lists':
     case 'vpnDns.refreshLists': case 'vpnDns.stats': case 'vpnDns.test': case 'vpnDns.pauses': case 'vpnDns.pause': case 'vpnDns.resume':
-    case 'vpnDns.restart': case 'vpnDns.releasePihole': case 'vpnDns.log': case 'vpnDns.clearLog': case 'vpnDns.homes':
+    case 'vpnDns.restart': case 'vpnDns.log': case 'vpnDns.clearLog': case 'vpnDns.homes':
       return vpnDnsCall(plugin, api.slice('vpnDns.'.length), args);
     // messenger bridges (permissions.bridges, services/bridges)
     case 'bridges.status': case 'bridges.configure': case 'bridges.login.flows': case 'bridges.login.start': case 'bridges.login.step':

@@ -76,17 +76,16 @@ describe('role cap and enrollment defaults', () => {
     assert.deepEqual(withPi, ['client']);
   });
 
-  it('the old Pi-hole API answers 410 to an app token (and to one that still names the scopes)', async () => {
+  it('the old Pi-hole API is gone: an app token has no scope for it', async () => {
     require('../src/services/license')._overrideForTest({ api_tokens: true });
     const id = await makeUser('pi-member');
     const p = peer('pi-phone', '10.8.0.201', id);
     const raw = tokens().create({ name: 'pi', scopes: ['client'], userId: id, peerId: p }, '127.0.0.1').rawToken;
     const r = (m, url) => supertest(app)[m](url).set('Authorization', `Bearer ${raw}`);
     for (const url of ['/api/v1/pihole/summary', '/api/v1/pihole/top-clients', '/api/v1/pihole/health']) {
-      const res = await r('get', url).expect(410);
-      assert.deepEqual({ ok: res.body.ok, code: res.body.code }, { ok: false, code: 'pihole_removed' });
+      await r('get', url).expect(403);
     }
-    assert.equal((await r('post', '/api/v1/pihole/blocking').send({ enabled: false }).expect(410)).body.code, 'pihole_removed');
+    await r('post', '/api/v1/pihole/blocking').send({ enabled: false }).expect(403);
   });
 });
 

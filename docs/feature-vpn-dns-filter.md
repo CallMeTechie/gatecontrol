@@ -123,21 +123,25 @@ chain (`RANK = ['vpnfilter']` in `services/dnsChain.js`).
   every start and after a restore) delete the settings `pihole_config` (URLs,
   app passwords), `pihole_blocking_desired`, `portal.widget.pihole` and take
   the scopes `pihole` / `pihole:control` out of the stored API tokens and
-  setup codes. An installation that had Pi-hole set up gets the activity entry
+  setup codes. A token left without any scope (it only had Pi-hole rights)
+  is deleted, with an activity entry `token_deleted` each, and so is an unused
+  setup code without any scope (`dropEmptyTokens()`, migration 159 for the
+  installations 147 had already cleaned). An installation that had Pi-hole set up gets the activity entry
   `pihole_integration_removed` and a dashboard notice with a link to the
   plugin (or its catalogue entry) until an administrator closes it (`POST
   /api/v1/system/notices/pihole-removed/dismiss`).
 - **Licence:** the feature key `pihole_integration` is retired
   (`RETIRED_FEATURES` in `services/license.js`): a licence token that still
   carries it stays valid, the key is not taken over.
-- **Apps:** `GET /api/v1/client/permissions` keeps `permissions.pihole` and
-  `permissions.piholeControl`, always `false` (older app versions hide their
-  Pi-hole view on that); `/api/v1/pihole/*` answers `410 { ok: false, code:
-  'pihole_removed' }`.
-- **Plugins:** `gc.vpnDns.releasePihole()` stays as a call that does nothing
-  and answers `{ configured: false, wantsChain: false, chain: 'off', targets:
-  [] }`; `status().pihole` always is that object, `status().chain` is only
-  ever `'filter'` or `'default'`.
+- **Apps:** `GET /api/v1/client/permissions` has no `permissions.pihole` /
+  `permissions.piholeControl` any more (up to 1.300.0 they were sent as
+  `false`; a missing flag is "no" to every app version), and `/api/v1/pihole/*`
+  is gone (up to 1.300.0: `410 pihole_removed`; now 404, or 403 for an API
+  token, as any unknown address). Android has had no Pi-hole view since 1.106.0,
+  the Windows apps never had one.
+- **Plugins:** `status().pihole` and `gc.vpnDns.releasePihole()` are gone (up
+  to 1.300.0 "not set up" and a call that did nothing); `status().chain` is
+  only ever `'filter'` or `'default'`.
 - **Web:** `/pihole` leads to the dashboard, `/settings/pihole` to the
   settings start page.
 

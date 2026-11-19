@@ -7,7 +7,10 @@
 //   - migration 147 runs it; the server runs it again at every start
 //   - the notice: only for administrators, with a link to the plugin, closed
 //     for everybody by POST /api/v1/system/notices/pihole-removed/dismiss
-//   - outside: /api/v1/pihole/* → 410, permissions.pihole(Control) false,
+//   - a token left without any scope (it only had Pi-hole rights) is deleted
+//     with an activity entry; migration 159 does it for the installations
+//     that migration 147 already cleaned
+//   - outside: /api/v1/pihole/* and permissions.pihole(Control) are gone,
 //     the page /pihole → dashboard, the retired licence key is ignored
 // dnsmasq: tests/pihole_removal_dnsmasq.test.js.
 
@@ -48,7 +51,7 @@ function oldInstallation(config = CONFIG) {
 
 describe('purge(): what an installation with Pi-hole still carries', () => {
   it('a fresh database: nothing to do, no entry, no notice', () => {
-    assert.deepEqual(removal.purge(db), { configured: false, settings: 0, tokens: 0 });
+    assert.deepEqual(removal.purge(db), { configured: false, settings: 0, tokens: 0, dropped: 0 });
     assert.equal(setting(removal.NOTICE_KEY), null);
     assert.deepEqual(entries(), []);
     assert.equal(removal.notice(), null);
@@ -57,22 +60,24 @@ describe('purge(): what an installation with Pi-hole still carries', () => {
 
   it('Pi-hole was set up: settings and credentials deleted, scopes taken out, one entry, the notice pending', () => {
     oldInstallation();
-    const tokens = require('../src/services/tokens');
     const ins = db.prepare("INSERT INTO api_tokens (name, token_hash, scopes) VALUES (?, ?, ?)");
     const a = ins.run('App: phone', 'h-a', JSON.stringify(['client', 'client:services', 'pihole', 'pihole:control'])).lastInsertRowid;
     const b = ins.run('stats script', 'h-b', JSON.stringify(['pihole'])).lastInsertRowid;
     const c = ins.run('untouched', 'h-c', JSON.stringify(['read-only'])).lastInsertRowid;
     db.prepare('INSERT INTO client_enrollment_codes (code_hash, scopes, expires_at) VALUES (?, ?, ?)').run('code-1', JSON.stringify(['client', 'pihole']), Date.now() + 60000);
 
-    assert.deepEqual(removal.purge(db), { configured: true, settings: 3, tokens: 3 });
+    assert.deepEqual(removal.purge(db), { configured: true, settings: 3, tokens: 3, dropped: 1 });
     for (const key of removal.SETTINGS) assert.equal(setting(key), null, key);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM settings WHERE value LIKE '%enc:v1:0011223344%'").get().n, 0, 'no credential left in the settings');
     const scopes = (id) => JSON.parse(db.prepare('SELECT scopes FROM api_tokens WHERE id = ?').get(id).scopes);
     assert.deepEqual(scopes(a), ['client', 'client:services']);
-    assert.deepEqual(scopes(b), [], 'a token that only had Pi-hole rights can do nothing any more');
+    assert.equal(db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(b), undefined, 'a token that only had Pi-hole rights is deleted');
     assert.deepEqual(scopes(c), ['read-only']);
     assert.equal(db.prepare("SELECT scopes FROM client_enrollment_codes WHERE code_hash = 'code-1'").get().scopes, '["client"]');
-    assert.equal(tokens.checkScope(scopes(b), '/api/v1/dashboard/stats', 'GET'), false);
+    const gone = db.prepare("SELECT message, source, severity, details FROM activity_log WHERE event_type = 'token_deleted' AND details LIKE '%pihole_removed%'").all();
+    assert.equal(gone.length, 1);
+    assert.match(gone[0].message, /^API token "stats script" deleted: it only had rights of the removed Pi-hole integration$/);
+    assert.deepEqual([gone[0].source, gone[0].severity, JSON.parse(gone[0].details).tokenId], ['system', 'warning', Number(b)]);
 
     assert.equal(setting(removal.NOTICE_KEY), '1');
     const log = entries();
@@ -81,7 +86,7 @@ describe('purge(): what an installation with Pi-hole still carries', () => {
     assert.match(log[0].message, /^The Pi-hole integration was removed/);
 
     // again (the next start of the server): nothing more happens
-    assert.deepEqual(removal.purge(db), { configured: false, settings: 0, tokens: 0 });
+    assert.deepEqual(removal.purge(db), { configured: false, settings: 0, tokens: 0, dropped: 0 });
     assert.equal(entries().length, 1, 'the entry is written once');
     db.prepare("DELETE FROM api_tokens WHERE token_hash IN ('h-a', 'h-b', 'h-c')").run();
     db.prepare("DELETE FROM client_enrollment_codes WHERE code_hash = 'code-1'").run();
@@ -91,13 +96,13 @@ describe('purge(): what an installation with Pi-hole still carries', () => {
     removal.dismiss();
     db.prepare('DELETE FROM activity_log WHERE event_type = ?').run(removal.EVENT);
     oldInstallation(JSON.stringify({ enabled: false, manage_dns_chain: true, instances: [] }));
-    assert.deepEqual(removal.purge(db), { configured: false, settings: 3, tokens: 0 });
+    assert.deepEqual(removal.purge(db), { configured: false, settings: 3, tokens: 0, dropped: 0 });
     assert.equal(setting('pihole_config'), null);
     assert.equal(setting(removal.NOTICE_KEY), null);
     assert.deepEqual(entries(), []);
     // only the portal switch was ever stored
     put('portal.widget.pihole', '0');
-    assert.deepEqual(removal.purge(db), { configured: false, settings: 1, tokens: 0 });
+    assert.deepEqual(removal.purge(db), { configured: false, settings: 1, tokens: 0, dropped: 0 });
     assert.deepEqual(entries(), []);
   });
 
@@ -120,6 +125,36 @@ describe('purge(): what an installation with Pi-hole still carries', () => {
     assert.match(server, /chain\.refresh\(\); chain\.start\(\);/, 'and the DNS chain is refreshed at every start');
     const backup = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'backup.js'), 'utf8');
     assert.match(backup, /require\('\.\/piholeRemoval'\)\.purge\(db\)/, 'a restore does not bring the credentials back');
+  });
+});
+
+describe('migration 159: tokens left without any scope', () => {
+  it('deletes them with one activity entry each; unused setup codes without a scope go too, everything else stays', () => {
+    db.prepare("DELETE FROM activity_log WHERE event_type = 'token_deleted'").run();
+    const ins = db.prepare('INSERT INTO api_tokens (name, token_hash, scopes) VALUES (?, ?, ?)');
+    const empty = ins.run('Pi-hole widget', 'h-e', '[]').lastInsertRowid;
+    const kept = ins.run('App: tablet', 'h-k', JSON.stringify(['client'])).lastInsertRowid;
+    const code = db.prepare('INSERT INTO client_enrollment_codes (code_hash, scopes, expires_at, consumed_at) VALUES (?, ?, ?, ?)');
+    code.run('code-open', '[]', Date.now() + 60000, null);
+    code.run('code-used', '[]', Date.now() + 60000, Date.now());
+    code.run('code-ok', '["client"]', Date.now() + 60000, null);
+
+    const m = require('../src/db/migrationList').migrations.find((x) => x.version === 159);
+    assert.equal(m.name, 'pihole_only_tokens_removed');
+    db.transaction(() => { db.exec(m.sql); m.run(db); })();
+
+    assert.equal(db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(empty), undefined);
+    assert.ok(db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(kept));
+    const codes = db.prepare("SELECT code_hash FROM client_enrollment_codes WHERE code_hash LIKE 'code-%' ORDER BY code_hash").all().map((r) => r.code_hash);
+    assert.deepEqual(codes, ['code-ok', 'code-used'], 'an unused code without a scope would only mint such a token');
+    const log = db.prepare("SELECT message, source, severity FROM activity_log WHERE event_type = 'token_deleted'").all();
+    assert.deepEqual(log, [{ message: 'API token "Pi-hole widget" deleted: it only had rights of the removed Pi-hole integration', source: 'system', severity: 'warning' }]);
+    // idempotent: the next start finds nothing
+    assert.equal(removal.dropEmptyTokens(db), 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'token_deleted'").get().n, 1);
+    assert.equal(db.prepare("SELECT 1 AS x FROM migration_history WHERE name = 'pihole_only_tokens_removed'").get().x, 1, 'migration 159 ran');
+    db.prepare("DELETE FROM api_tokens WHERE token_hash = 'h-k'").run();
+    db.prepare("DELETE FROM client_enrollment_codes WHERE code_hash LIKE 'code-%'").run();
   });
 });
 
@@ -156,26 +191,24 @@ describe('the dashboard notice', () => {
 });
 
 describe('to the outside', () => {
-  it('the old API: 410 with a code, for a session and for an API token; the settings API is gone', async () => {
+  it('the old API is gone, the settings API too', async () => {
     for (const url of ['/api/v1/pihole/summary', '/api/v1/pihole/history', '/api/v1/pihole/top-domains', '/api/v1/pihole/top-clients', '/api/v1/pihole/query-types', '/api/v1/pihole/health']) {
-      const r = await agent.get(url).expect(410);
-      assert.deepEqual({ ok: r.body.ok, code: r.body.code }, { ok: false, code: 'pihole_removed' }, url);
+      await agent.get(url).expect(404);
     }
-    assert.equal((await agent.post('/api/v1/pihole/blocking').set('X-CSRF-Token', csrf).send({ enabled: false }).expect(410)).body.code, 'pihole_removed');
+    await agent.post('/api/v1/pihole/blocking').set('X-CSRF-Token', csrf).send({ enabled: false }).expect(404);
     await agent.get('/api/v1/settings/pihole').expect(404);
     for (const url of ['/api/v1/portal/pihole', '/api/v1/portal/pihole/owner', '/api/v1/portal/pihole/household']) {
       assert.equal((await agent.get(url)).status, 404, url);
     }
   });
 
-  it('the apps: permissions.pihole and piholeControl stay in the answer and are false, whatever the token says', async () => {
+  it('the apps: permissions.pihole and piholeControl are gone (a missing flag is "no" to every app version)', async () => {
     require('../src/services/license')._overrideForTest({ api_tokens: true });
     const tokens = require('../src/services/tokens');
     const raw = tokens.create({ name: 'old app', scopes: ['full-access'] }, '127.0.0.1').rawToken;
     const r = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', raw).expect(200);
-    assert.equal(r.body.permissions.pihole, false);
-    assert.equal(r.body.permissions.piholeControl, false);
-    assert.equal((await supertest(app).get('/api/v1/pihole/summary').set('X-API-Token', raw).expect(410)).body.code, 'pihole_removed');
+    assert.ok(!('pihole' in r.body.permissions) && !('piholeControl' in r.body.permissions));
+    await supertest(app).get('/api/v1/pihole/summary').set('X-API-Token', raw).expect(404);
     assert.throws(() => tokens.create({ name: 'x', scopes: ['client', 'pihole'] }, '127.0.0.1'), /Scope no longer exists: pihole/);
     assert.ok(!tokens.VALID_SCOPES.includes('pihole') && !tokens.VALID_SCOPES.includes('pihole:control'));
   });

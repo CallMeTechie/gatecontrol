@@ -1275,15 +1275,6 @@ function chainNow() {
   return st.provider === 'vpnfilter' ? 'filter' : 'default';
 }
 
-/**
- * `status().pihole` — kept for the plugins that were written against servers
- * with the Pi-hole integration (gatecontrol-dns up to 1.1.x reads it for its
- * moving dialog): the integration is gone, so there is never a Pi-hole.
- */
-function piholeInfo() {
-  return { configured: false, wantsChain: false, chain: 'off', targets: [] };
-}
-
 function listsView() {
   const tel = (run.svc && run.svc.lists) || {};
   const s = get();
@@ -1333,7 +1324,6 @@ function status(now = Date.now()) {
     state: st,
     since: st === 'off' ? null : iso(st === 'starting' ? run.wantedAt : chain.since),
     chain: chainNow(),
-    pihole: piholeInfo(),
     pause: all ? pauseView(all) : null,
     pauses: pauseRows(now).filter((r) => r.scope !== 'all').length,
     service: serviceView(),
@@ -1462,15 +1452,6 @@ async function restart(ctx = {}) {
   return { restarting: true, how };
 }
 
-/**
- * gc.vpnDns.releasePihole() — kept so that plugins written against servers
- * with the Pi-hole integration keep working (it was the last step of moving
- * over). There is no Pi-hole chain any more: nothing to do, never an error.
- */
-function releasePihole() {
-  return piholeInfo();
-}
-
 // ─── Events ────────────────────────────────────────────────────────────
 
 /** What the dashboard notice needs (GET /api/v1/vpn-dns/status, event `vpn_dns`): null when there is nothing to say. */
@@ -1561,7 +1542,7 @@ module.exports = {
   normalize, validate, get, set,
   resolve, profileOfUser, filterConfig, internalNames,
   pause, resume, pauses, sweepPauses, suspended,
-  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, BLOCK_KINDS,
+  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, notice, clientInfo, clientPlugin, installedPlugin, BLOCK_KINDS,
   homeInternetOf, homeInternetChanged, homeChanged, homes, stored, SHARED, reconcile, pluginsChanged, refreshSoon, tick, start, stop, firewallWant, syncFirewall, networkChanged, ingest, retention, control, dir, filterPort, writeConfig,
   _run: run, _resetForTest, _hookMs: null,
 };
