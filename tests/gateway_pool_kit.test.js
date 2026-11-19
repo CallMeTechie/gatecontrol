@@ -206,8 +206,8 @@ describe('gateway-pool-kit: "Zustand" names the missing listeners of TCP/UDP rou
     const c = PK.healthChecks(g, { status: 'degraded' });
     assert.deepEqual(c.map((x) => [x.tone, x.key]), [['warn', 'gwp.state.l4_port_in_use'], ['ok', 'gwp.state.tunnel'], ['ok', 'gwp.state.synced']]);
     assert.deepEqual(c[0].params, { route: 'dns.example.com', proto: 'UDP', port: 5335, code: 'EADDRINUSE' });
-    assert.equal(texts(c, de)[0], 'Route „dns.example.com“ (UDP 5335): Port 5335 ist auf diesem Gateway schon von einem anderen Dienst belegt – die Weiterleitung läuft hier nicht. Wähle in der Route einen anderen Listen-Port. (Reserve für DS218+)');
-    assert.match(texts(c, en)[0], /^Route “dns\.example\.com” \(UDP 5335\): port 5335 is already taken .* Choose a different listen port in the route\. \(reserve for DS218\+\)$/);
+    assert.equal(texts(c, de)[0], 'Route „dns.example.com“ (UDP 5335): Port 5335 ist auf diesem Gateway schon von einem anderen Dienst belegt – die Weiterleitung läuft hier nicht. Wähle in der Route einen anderen Listen-Port. Läuft das Gateway auf demselben Rechner wie der GateControl-Server, muss der Server im Host-Netz laufen (network_mode: host) – dann bedient er solche Routen selbst. (Reserve für DS218+)');
+    assert.match(texts(c, en)[0], /^Route “dns\.example\.com” \(UDP 5335\): port 5335 is already taken .* Choose a different listen port in the route\. .*network_mode: host.* \(reserve for DS218\+\)$/);
     assert.equal(PK.overall(c), 'warn');
   });
 

@@ -339,9 +339,16 @@ module.exports = (ctx) => {
       const env3 = await (await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: fresh.body.code } })).json();
       const token3 = tokenOf(env3.envContent);
       step('the gateway reports in (heartbeat with the capability setup-page)', (await beat(token3)).status() === 200);
+      // a full load of the detail address (not a hash change of the page that is open plus a
+      // reload): what the page shows depends on the address it is loaded with, nothing before it
+      await page.goto('about:blank');
       await page.goto(BASE + `/gateways#gw/${GW.home}`);
-      await page.reload();
-      await until(page, () => document.querySelector('#gw-detail-view #gw-more-btn'));
+      const detailUp = await until(page, () => !!document.querySelector('#gw-detail-view #gw-more-btn'), null, 12000);
+      step('the detail view of the gateway opens at #gw/<id>', detailUp, detailUp ? '' : JSON.stringify(await page.evaluate(() => {
+        const v = (id) => { const n = document.getElementById(id); return n ? !n.hidden : null; };
+        const o = document.getElementById('gwz-overlay');
+        return { url: location.pathname + location.hash, detail: v('gw-detail-view'), fleet: v('fleet-view'), wizard: o ? o.style.display : null };
+      })));
       await page.click('#gw-more-btn');
       step('"Mehr" has "Zugang erneuern"', await until(page, () => !!document.querySelector('#gw-more-menu [data-act="gm-renew"]')));
       await page.click('#gw-more-menu [data-act="gm-renew"]');
