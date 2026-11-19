@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.7] — 2026-11-19
+
+### Fixes
+- RDP-Route über einen Gateway-Pool direkt anlegen, Wechsel Gateway <-> Pool sauber (#527)
+
+---
+
 ## [1.299.6] — 2026-11-19
 
 ### Fixes
