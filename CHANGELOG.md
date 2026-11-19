@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.301.0] — 2026-11-19
+
+### Features
+- Kern-404 der App-Plugin-API mit reason „plugin_unavailable“ (#535)
+
+---
+
 ## [1.300.3] — 2026-11-19
 
 ### Fixes
