@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.2] — 2026-11-19
+
+### Fixes
+- LDAPS/StartTLS mit Server ohne Zwischenzertifikat – hinterlegtes Zwischenzertifikat genügt, Test sagt, was hilft (#522)
+
+---
+
 ## [1.299.1] — 2026-11-19
 
 ### Fixes
