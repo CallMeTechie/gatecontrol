@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.300.3] — 2026-11-19
+
+### Fixes
+- Pi-hole-Reste entfernt – Kompatibilitätsfelder, 410-Route, Tokens ohne Rechte, lanFetch (#534)
+
+---
+
 ## [1.300.2] — 2026-11-19
 
 ### Fixes
