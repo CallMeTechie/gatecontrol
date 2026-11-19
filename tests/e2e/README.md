@@ -194,6 +194,17 @@ scenarios/33-rdp-pool.js RDP-Route über einen Gateway-Pool: eigene lizenzierte 
                         „Home-Gateway“ mit den Gruppen Gateways / Gateway-Pools, Route
                         direkt auf dem Pool anlegen, Bearbeiten zeigt den Pool, Wechsel
                         Pool → Gateway → Pool (RDP-Zeile und TCP-Route halten nur das Ziel)
+scenarios/35-route-targets.js Domains / Routen: Ziele und Zeilenaktionen, eigene lizenzierte
+                        App (TCP/UDP, Pools): Eintrags-Editor mit Gruppen Gateways /
+                        Gateway-Pools, Wechsel Gateway → Pool → Gateway (nur ein Ziel
+                        gespeichert), gelöschtes Gateway (Hinweis, 400 TARGET_REQUIRED am
+                        Feld, neues Gateway speichert), UDP hinter Gateway (API 400
+                        UDP_VIA_GATEWAY, UDP gesperrt in Editor / „Weiterleitung
+                        hinzufügen“ / „Neuer Host“, älterer Eintrag „wirkt nicht“),
+                        verlorene Antwort nach Anlegen (page.route: Liste neu geladen,
+                        Formular zu, Hinweis statt Fehler, nichts doppelt), Zeilenmenü
+                        beim Scrollen, Löschen mit 202 „wird noch übernommen“ und
+                        Routen-Ereignis „failed“
 scenarios/34-plugin-dialog-dim.js Plugin-Dialog höher als das Fenster: Fixture-Plugin
                         dialog-demo (unsigniert installiert, am Ende entfernt). Gescrollt
                         liegt der Rahmen unter der Kopfzeile: die Abdunklung spart den

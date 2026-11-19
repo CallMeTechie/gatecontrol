@@ -265,8 +265,18 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
 
 - **Fehlercodes:** `HOST_EXISTS`, `DOMAIN_CONFLICT`, `HOST_HAS_HTTP` und
   `BUNDLE_PORT_CONFLICT` (409, mit `conflict`); `DOMAIN_UNVERIFIED`,
-  `DOMAIN_COLLISION`, `ZONE_NO_GATEWAY` und `LAN_HOST_REQUIRED` (400);
-  `NOT_FOUND` (404).
+  `DOMAIN_COLLISION`, `ZONE_NO_GATEWAY`, `LAN_HOST_REQUIRED` und
+  `UDP_VIA_GATEWAY` (400, übersetzter Text); `NOT_FOUND` (404).
+- **UDP hinter Gateway/Pool:** Das Gateway leitet nur TCP weiter. Ein
+  UDP-Eintrag auf einem Gateway- oder Pool-Ziel wird abgelehnt (400
+  `UDP_VIA_GATEWAY`): beim Anlegen eines Hosts, beim Hinzufügen eines
+  Eintrags, bei `PUT /api/routes/:id` (Feldfehler `l4_protocol`) und beim
+  Zielwechsel der Domain / „Override lösen“ (UDP-Einträge mit Peer-Ziel).
+  Ältere Zeilen mit dieser Kombination bleiben bearbeitbar (abgelehnt wird nur
+  der Wechsel hinein) und tragen in der Liste die Notiz „wirkt nicht“
+  (`V.isUdpViaGateway`). Caddy wählt für UDP-Einträge das Upstream-Netz
+  ausdrücklich (`udp/host:port`, `l4.upstreamDial`) – ohne Präfix wählt
+  caddy-l4 TCP.
 - **`applyGateway`:** beendet laufende Failover (`original_peer_id` wird
   geleert). Wechsel von Peer auf Gateway oder Pool verlangt, dass jeder Eintrag
   eine LAN-Adresse hat.
@@ -339,6 +349,23 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   `target_port` **und** `target_lan_port`. Ein belegter Port zeigt den
   Vorschlag des Servers. Löschen einer Weiterleitung und „Host löschen“ fragen
   nach. Unberührte Entwürfe folgen neuen Daten (SSE, Eintrags-Editor).
+- „Weiterleitung hinzufügen“ lädt die Seitendaten auch nach einem Fehler neu.
+  Steht der Eintrag danach in den Daten (Antwort verloren, oder angelegt und
+  ein späterer Schritt scheiterte), schließt das Formular und der Fehler
+  erscheint nur als Hinweis („… ist angelegt – aber: …“) – ein zweiter Klick
+  legt nichts doppelt an. „Neuer Host“ ebenso (Host mit der gewünschten
+  Adresse, der vorher nicht da war).
+- Löschen: `DELETE /api/routes/:id` wartet höchstens
+  `GC_CADDY_ANSWER_BUDGET_MS` (Standard 3000) auf den Caddy-Sync. Danach 202
+  `{ ok: true, pending: true }` („gelöscht – wird noch übernommen“); der Sync
+  läuft mit demselben Rollback weiter. Scheitert er, ist die Zeile wieder da,
+  und das Routen-Ereignis trägt `sync: 'failed'` + `route_id` → Hinweis
+  „Löschen konnte nicht übernommen werden“. Jeder Sync schreibt seine Phasen
+  ins Log (`ms: { queue, read, build, load, verify, tls, total }`, ab 2 s als
+  Warnung „Caddy config sync slow“).
+- Zeilenmenü (`.rt-more`, `openMenu`): wandert beim Scrollen mit seinem Knopf
+  mit und schließt erst, wenn der Knopf aus dem sichtbaren Bereich gescrollt
+  ist; Scrollen im Menü selbst ändert nichts.
 
 ### „Neuer Host“
 
@@ -357,6 +384,15 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   Verwerfen. Bereiche: Ziel & Ports, Zugriff, Anmeldung, Sicherheit,
   Zuverlässigkeit, Header, Branding, Diagnose. HTTPS-Bereiche sind bei TCP/UDP
   ausgegraut („nur HTTPS“).
+- Eigenes Gateway-Ziel: ein Feld mit den Gruppen „Gateways“ und
+  „Gateway-Pools“ (Wert `pool:<id>`, Pools aus `GET /zones` → `pools`) wie
+  beim RDP-„Home-Gateway“. Gespeichert wird `target_peer_id` oder
+  `target_pool_id` + `target_peer_id: null` (der Server löscht das andere
+  Ziel, #533); ein unveränderter Pool wird nicht mitgeschickt. Ohne Ziel
+  (Gateway gelöscht) steht ein Hinweis am Feld, die 400 `TARGET_REQUIRED`
+  des Servers landet als Feldfehler dort.
+- UDP bei Gateway-Ziel: der UDP-Knopf ist gesperrt (Titel mit Grund); ein
+  älterer UDP-Eintrag hinter einem Gateway zeigt „wirkt nicht“.
 - Das Overlay hängt am `<body>` (z-index 1050 über den großen Dialogen 1000,
   kleine Rückfragen 1100).
 - Header: Vorlagen als Karten (Sicherheits-Header, CORS, CSP, neu:

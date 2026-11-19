@@ -110,9 +110,11 @@
             </div>
             <div class="rt-field" id="edit-route-gateway-fields">
               <label class="rt-label" for="edit-route-gateway-peer">{{ t('route_gateway_peer') }}</label>
-              <select id="edit-route-gateway-peer" class="rt-select">
+              <select id="edit-route-gateway-peer" class="rt-select" data-group-gateways="{{ t('zones.gw_group_gateways') }}" data-group-pools="{{ t('zones.gw_group_pools') }}">
                 <option value="">—</option>
               </select>
+              {# Gateway/pool deleted: the entry needs a new target (400 TARGET_REQUIRED on save). #}
+              <small class="rt-hint rt-err" id="ee-gateway-missing" role="status" style="display:none">{{ t('entry_editor.gateway_missing') }}</small>
             </div>
             <div class="rt-field" id="edit-route-peer-fields">
               <label class="rt-label" for="edit-route-peer">{{ t('routes.target_peer') }}</label>

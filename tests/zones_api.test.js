@@ -188,7 +188,8 @@ test('PUT /domains/:id/defaults only affects new entries', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.zone.default_external_enabled, false);
   const host = (await zoneView(zoneId)).hosts.find((h) => h.fqdn === 'app.example.com');
-  const entry = await POST(`/hosts/${host.id}/entries`, { type: 'udp', target_port: 5353, listen_port: 5353 });
+  // TCP: a gateway forwards no UDP (UDP_VIA_GATEWAY, tests/udp_via_gateway.test.js)
+  const entry = await POST(`/hosts/${host.id}/entries`, { type: 'tcp', target_port: 5353, listen_port: 5353 });
   assert.equal(entry.status, 201, JSON.stringify(entry.body));
   assert.equal(entry.body.entry.external_enabled, 0);
   assert.equal(entry.body.entry.target_peer_id, gw3, 'zone target');

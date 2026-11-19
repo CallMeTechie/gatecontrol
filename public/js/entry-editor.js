@@ -615,14 +615,59 @@
     });
   }
 
-  function renderEditGatewayOptions(select, selectedId) {
+  // Gateway pools of the zones page data (GET /zones → pools: [{ id, name }]),
+  // the same list the target select of the domain settings offers.
+  function pagePools() {
+    var data = window.GCZonesPage && window.GCZonesPage.getData && window.GCZonesPage.getData();
+    return (data && Array.isArray(data.pools)) ? data.pools : [];
+  }
+
+  // Target select of a gateway entry: the gateways and — when there are any —
+  // the gateway pools, as two groups (same shape as the "Home-Gateway" select
+  // of an RDP route and the target select of the domain settings). A pool is
+  // the value "pool:<id>". A stored pool the list does not know (any more)
+  // stays selectable under its number, so an unrelated edit keeps it.
+  function renderEditGatewayOptions(select, route) {
+    var r = route || {};
+    var selected = r.target_pool_id != null ? 'pool:' + r.target_pool_id : String(r.target_peer_id || '');
+    var pools = pagePools().slice();
+    if (r.target_pool_id != null && !pools.some(function (p) { return String(p.id) === String(r.target_pool_id); })) {
+      pools.push({ id: r.target_pool_id, name: '#' + r.target_pool_id });
+    }
     select.textContent = '';
     select.appendChild(el('option', { value: '', text: '—' }));
+    var gwParent = select;
+    if (pools.length) {
+      gwParent = el('optgroup', { label: select.getAttribute('data-group-gateways') || 'Gateways' });
+      select.appendChild(gwParent);
+    }
     state.peers.filter(function (p) { return p.peer_type === 'gateway'; }).forEach(function (p) {
-      var opt = el('option', { value: String(p.id), text: p.name });
-      if (String(selectedId || '') === String(p.id)) opt.selected = true;
-      select.appendChild(opt);
+      gwParent.appendChild(el('option', { value: String(p.id), text: p.name }));
     });
+    if (pools.length) {
+      var og = el('optgroup', { label: select.getAttribute('data-group-pools') || 'Gateway pools' });
+      pools.forEach(function (p) { og.appendChild(el('option', { value: 'pool:' + p.id, text: p.name })); });
+      select.appendChild(og);
+    }
+    select.value = selected;
+    if (select.value !== selected) select.value = '';
+  }
+
+  // { peer, pool } of the gateway select ("<peer id>" or "pool:<id>").
+  function gatewaySelection() {
+    var v = (byId('edit-route-gateway-peer') || {}).value || '';
+    if (v.indexOf('pool:') === 0) return { peer: null, pool: parseInt(v.slice(5), 10) };
+    return { peer: v ? parseInt(v, 10) : null, pool: null };
+  }
+
+  // A gateway entry without a target: its gateway (or pool) was deleted. The
+  // server answers a save with 400 TARGET_REQUIRED — say so up front.
+  function syncGatewayMissing() {
+    var hint = byId('ee-gateway-missing');
+    if (!hint) return;
+    var own = !state.zoneManaged && targetKindNow() === 'gateway';
+    var sel = gatewaySelection();
+    hint.style.display = own && sel.peer == null && sel.pool == null ? '' : 'none';
   }
 
   // Peer <select> for backend / mirror rows: "name (ip)".
@@ -1131,19 +1176,35 @@
       });
     }
   }
+  // UDP behind a gateway or pool: the gateway forwards TCP only (UDP
+  // forwarding is deferred), the server refuses the combination (400
+  // UDP_VIA_GATEWAY). An entry from before that rule may still have it — it
+  // keeps it on an unrelated save, but has no effect.
+  function udpViaGatewayNow() { return kindNow() === 'udp' && targetKindNow() === 'gateway'; }
+  function routeWasUdpViaGateway() {
+    var r = state.route;
+    return !!r && r.route_type === 'l4' && r.l4_protocol === 'udp' && (r.target_kind || 'peer') === 'gateway';
+  }
   function syncKindButtons() {
     var group = byId('ee-kind-group');
     if (!group) return;
     var otherHttp = hostHasOtherHttp();
     var l4ok = l4Allowed();
+    var gateway = targetKindNow() === 'gateway';
     var cur = kindNow();
     var hint = byId('ee-kind-hint');
     group.querySelectorAll('[data-value]').forEach(function (b) {
       var v = b.dataset.value;
-      b.disabled = v !== cur && (v === 'http' ? otherHttp : !l4ok);
-      b.title = b.disabled ? (v === 'http' ? T('entry.err_http_taken', '') : T('entry.l4_locked', '')) : '';
+      var udpOff = v === 'udp' && gateway;
+      b.disabled = v !== cur && (v === 'http' ? otherHttp : (!l4ok || udpOff));
+      b.title = b.disabled ? (v === 'http' ? T('entry.err_http_taken', '') : udpOff && l4ok ? T('entry.udp_via_gateway', '') : T('entry.l4_locked', '')) : '';
     });
-    if (hint) hint.textContent = otherHttp && cur !== 'http' ? T('entry.err_http_taken', '') : '';
+    if (hint) {
+      var udpGw = udpViaGatewayNow();
+      hint.textContent = udpGw ? T(routeWasUdpViaGateway() ? 'entry.udp_no_effect' : 'entry.udp_via_gateway', '')
+        : (otherHttp && cur !== 'http' ? T('entry.err_http_taken', '') : '');
+      hint.classList.toggle('rt-hint-warn', udpGw);
+    }
   }
 
   // ─── Target block: zone-managed vs. own target ────────────
@@ -1168,6 +1229,7 @@
         name.appendChild(el('span', { class: 'rt-muted', text: ' · ' + T('entry_editor.from_domain', 'from the domain') }));
       }
     }
+    syncGatewayMissing();
     var lanHint = byId('ee-lan-hint');
     if (lanHint) {
       var h = ctxHost();
@@ -1266,7 +1328,7 @@
     if (editPeerSelect) renderEditPeerOptions(editPeerSelect, route.peer_id);
 
     var gwPeerSelect = byId('edit-route-gateway-peer');
-    if (gwPeerSelect) renderEditGatewayOptions(gwPeerSelect, route.target_peer_id);
+    if (gwPeerSelect) renderEditGatewayOptions(gwPeerSelect, route);
 
     var tkSelect = byId('edit-route-target-kind');
     if (tkSelect) tkSelect.value = route.target_kind || 'peer';
@@ -1326,6 +1388,8 @@
     if (editPeerSelect) editPeerSelect.addEventListener('change', updateTargetKindVisibility);
     var tkSelect = byId('edit-route-target-kind');
     if (tkSelect) tkSelect.addEventListener('change', function () { updateTargetKindVisibility(); syncKindButtons(); });
+    var gwSelect = byId('edit-route-gateway-peer');
+    if (gwSelect) gwSelect.addEventListener('change', function () { syncGatewayMissing(); renderFlow(); });
     var wolCb = byId('edit-route-wol-enabled');
     if (wolCb) wolCb.addEventListener('change', syncWolMacVisibility);
 
@@ -2661,9 +2725,14 @@
     var target;
     if (state.zoneManaged && zoneTargetOf()) target = zoneTargetOf();
     else if (tk === 'gateway') {
-      var gsel = byId('edit-route-gateway-peer');
-      var gp = gsel && state.peers.find(function (x) { return String(x.id) === String(gsel.value); });
-      target = { kind: state.route && state.route.target_pool_id != null ? 'pool' : 'gateway', name: gp ? gp.name : (state.route && state.route.target_peer_name) || '?' };
+      var gs = gatewaySelection();
+      if (gs.pool != null) {
+        var pl = pagePools().find(function (x) { return String(x.id) === String(gs.pool); });
+        target = { kind: 'pool', name: pl ? pl.name : '#' + gs.pool };
+      } else {
+        var gp = gs.peer != null && state.peers.find(function (x) { return String(x.id) === String(gs.peer); });
+        target = { kind: 'gateway', name: gp ? gp.name : '?' };
+      }
     } else {
       target = { kind: 'peer', name: '' };
     }
@@ -3321,7 +3390,9 @@
       var lanHostEl = byId('edit-route-lan-host');
       var wolEnabledEl = byId('edit-route-wol-enabled');
       var wolMacEl = byId('edit-route-wol-mac');
-      out.target_peer_id = gwPeerEl && gwPeerEl.value ? parseInt(gwPeerEl.value, 10) : null;
+      var gwSel = gatewaySelection();
+      out.target_peer_id = gwPeerEl ? gwSel.peer : null;
+      out.target_pool_id = gwPeerEl ? gwSel.pool : null;
       out.target_lan_host = lanHostEl ? lanHostEl.value.trim() : null;
       out.target_lan_port = out.target_port ? parseInt(out.target_port, 10) : null;
       out.wol_enabled = !!(wolEnabledEl && wolEnabledEl.checked);
@@ -3370,6 +3441,9 @@
       return;
     }
     if (target.lanHost !== undefined && !target.lanHost) { fail(T('host.err_lan_required', 'LAN address required'), 'target'); return; }
+    // UDP through a gateway/pool: new combinations are refused (the server
+    // says so too); an entry that already had it may keep it.
+    if (udpViaGatewayNow() && !routeWasUdpViaGateway()) { fail(T('entry.udp_via_gateway', 'A gateway forwards TCP only'), 'target'); return; }
     if (basic_auth_enabled && !basic_auth_user) {
       fail(T('entry_editor.err_basic_user', 'Basic auth needs a user name'), 'auth');
       return;
@@ -3493,7 +3567,17 @@
         payload.wol_enabled = target.wol_enabled;
         payload.wol_mac = target.wol_mac;
         if (!state.zoneManaged) {
-          payload.target_peer_id = target.target_peer_id;
+          // Gateway OR pool (routes.update clears the other one). An unchanged
+          // pool is left out, so an unrelated edit needs no pool licence.
+          var r0 = state.route || {};
+          if (target.target_pool_id != null) {
+            if (r0.target_kind !== 'gateway' || String(r0.target_pool_id) !== String(target.target_pool_id)) {
+              payload.target_pool_id = target.target_pool_id;
+              payload.target_peer_id = null;
+            }
+          } else {
+            payload.target_peer_id = target.target_peer_id;
+          }
           payload.target_lan_host = target.target_lan_host;
         }
         // Don't leak the peer-fields' target_ip/peer_id into a gateway route
@@ -3545,7 +3629,13 @@
             target_port: 'edit-route-port',
             description: 'edit-route-desc',
             target_ip: 'edit-route-ip',
+            // Gateway target (TARGET_REQUIRED / _CONFLICT / _POOL_*): the one select.
+            target_peer_id: 'edit-route-gateway-peer',
+            target_pool_id: 'edit-route-gateway-peer',
+            // UDP_VIA_GATEWAY: the type control.
+            l4_protocol: 'ee-kind-group',
           });
+          if (data.fields.target_peer_id || data.fields.target_pool_id || data.fields.l4_protocol) goSection('target');
           window.showError('edit-route-error', data.error);
         } else {
           var sec = /HOST_HAS_HTTP|TYPE_/.test(String(data.code || '')) ? 'target' : null;

@@ -410,6 +410,13 @@ function usableZoneTarget(zone) {
   return t;
 }
 
+// A gateway forwards TCP only (routes.js, UDP_VIA_GATEWAY): no UDP entry on
+// a gateway or pool target.
+function assertNoUdpEntry(target, protocols) {
+  if (!target || target.kind === 'peer' || !protocols.includes('udp')) return;
+  throw httpError(400, 'udp_via_gateway: a gateway forwards TCP only — a UDP entry needs a VPN peer as its target', 'UDP_VIA_GATEWAY');
+}
+
 function resolveEntries(input) {
   if (Array.isArray(input.entries) && input.entries.length > 0) return input.entries;
   if (input.template) return hostTemplates.expand(input.template);
@@ -478,6 +485,7 @@ async function create(domainId, input = {}) {
   }
 
   const { http, l4 } = toBundleExposures(resolveEntries(input));
+  assertNoUdpEntry(target, l4.map((e) => e.l4_protocol));
   if (http) assertDomainFree(db, { domain: fqdn, routeType: 'http' });
   for (const e of l4) {
     if (e.l4_tls_mode !== 'none') {
@@ -714,6 +722,7 @@ async function addEntry(hostId, input) {
     throw httpError(400, 'The host has no peer or gateway target', 'ZONE_NO_GATEWAY');
   }
   domainZones.validateTarget(target, db);
+  assertNoUdpEntry(target, [entry.type]);
 
   const lead = members.find((r) => r.target_kind === 'gateway' && r.target_lan_host) || null;
   const lanHost = lead ? lead.target_lan_host : null;
@@ -790,6 +799,7 @@ async function clearOverride(hostId) {
   domainZones.validateTarget(target, db);
 
   const rows = membersOf(db, host.id).filter((r) => !isRdpOwned(db, r));
+  domainZones.assertNoUdpBehindGateway(rows, target);
   domainZones.assertLanHosts(rows, target);
   const oldTargets = rows.map(routeTarget);
   const setOverride = db.prepare('UPDATE service_bundles SET gateway_override = ? WHERE id = ?');

@@ -42,6 +42,15 @@
     if (zone && zone.gateway && (zone.gateway.kind === 'gateway' || zone.gateway.kind === 'pool') && GC.features.gateway_tcp_routing === false) return false;
     return true;
   }
+  // New entries of this host go through a gateway or pool (server:
+  // hosts.entryTarget): the zone's target unless the host deviates, else the
+  // host's own entries. A gateway forwards TCP only — no UDP there
+  // (UDP_VIA_GATEWAY).
+  function viaGateway(host, zone) {
+    if (zone && zone.gateway && zone.gateway.kind && !(host && host.gateway_override)) return zone.gateway.kind !== 'peer';
+    const e = host && (host.entries || []).find((x) => !x.rdp_owned);
+    return !!e && e.target_kind === 'gateway';
+  }
   function blockedPorts() {
     const root = document.getElementById('zn-zones');
     return String((root && root.dataset.l4Blocked) || '').split(',').map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n));
@@ -56,7 +65,7 @@
     HOST_EXISTS: 'host.err_exists', HOST_HAS_HTTP: 'entry.err_http_taken', TYPE_DOMAIN_REQUIRED: 'entry.err_no_domain',
     TYPE_LISTEN_PORT_REQUIRED: 'entry.err_listen_port', LAN_HOST_REQUIRED: 'host.err_lan_required',
     DOMAIN_CONFLICT: 'host.err_domain_conflict', DOMAIN_UNVERIFIED: 'host.err_domain_unverified', LABEL_INVALID: 'entry.err_label',
-    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name',
+    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name', UDP_VIA_GATEWAY: 'entry.udp_locked_gateway',
   };
   function serverText(err) {
     const code = err && err.data && err.data.code;
@@ -77,6 +86,7 @@
     else if (n.id === 'tls_sni') text = 'TLS-SNI';
     else if (n.id === 'hsts') text = 'HSTS';
     else text = t('zones.note_' + n.id);
+    if (n.id === 'udp_gateway') return el('span', { class: 'rt-note rt-note-amber', text, title: t('zones.note_udp_gateway_hint') });
     return el('span', { class: 'rt-note', text });
   }
 
@@ -404,10 +414,11 @@
   function addForm(host, zone) {
     const a = hs.adding;
     const hasHttp = (host.entries || []).some((x) => !V.isL4(x));
+    const viaGw = viaGateway(host, zone);
     const typeSel = el('select', { class: 'rt-select', dataset: { rtKey: 'add-type' } }, [
       el('option', { value: 'http', text: 'HTTPS', disabled: hasHttp }),
       el('option', { value: 'tcp', text: 'TCP', disabled: !l4Allowed(zone) }),
-      el('option', { value: 'udp', text: 'UDP', disabled: !l4Allowed(zone) }),
+      el('option', { value: 'udp', text: 'UDP', disabled: !l4Allowed(zone) || viaGw, title: viaGw ? t('entry.udp_locked_gateway') : null }),
     ]);
     typeSel.value = a.type;
     typeSel.addEventListener('change', () => { a.type = typeSel.value; a.error = null; a.conflict = null; renderHost(); });
@@ -427,6 +438,7 @@
           submit,
         ]),
       ]),
+      viaGw && l4Allowed(zone) ? el('small', { class: 'rt-hint', text: t('entry.udp_locked_gateway') }) : null,
       a.type === 'http' ? el('label', { class: 'rt-check' }, [
         el('input', { type: 'checkbox', checked: a.backend, on: { change: (ev) => { a.backend = ev.target.checked; } } }),
         t('entry.backend_https'),
@@ -447,6 +459,11 @@
       if (!V.validPort(a.outer, true)) { a.error = t('entry.err_listen_port'); renderHost(); return; }
       body.listen_port = /^\d+$/.test(a.outer) ? parseInt(a.outer, 10) : a.outer;
     }
+    // Entries before the request: after an error the page data is reloaded
+    // anyway (like a delete, runDelete) — a lost or late answer, or a server
+    // that wrote the entry and failed afterwards, must not leave the dialog
+    // claiming "not created" (a retry would then add it twice).
+    const before = new Set((host.entries || []).map((x) => x.id));
     UI.busy(btn, true);
     try {
       const res = await UI.call(api.post('/api/v1/hosts/' + host.id + '/entries', body));
@@ -455,14 +472,30 @@
       const TG = window.GCTlsUI;
       const tls = TG && TG.tlsFromResponse(res);
       if (tls && tls.state === 'paused') hs.notice = TG.noticeEl({ host: host.fqdn, tls, reason: TG.pausedReason(tls), onClose: () => { hs.notice = null; } });
-      await ctx().reload();
+      await reloadQuietly();
     } catch (err) {
-      if (!hs || !hs.adding) return;
+      await reloadQuietly();
+      const f = findHost(host.id);
+      const made = f && (f.host.entries || []).find((x) => !before.has(x.id) && V.entryKind(x) === a.type
+        && String(V.entryTargetPort(x)) === String(body.target_port));
+      if (made) {
+        // It is there: the form goes, the error is only a note.
+        if (hs && hs.adding === a) { hs.adding = null; renderHost(); }
+        warnToast(t('entry.created_with_error', { host: host.fqdn || V.hostLabel(host), error: serverText(err) }));
+        return;
+      }
+      if (!hs || hs.adding !== a) { UI.toastError(err); return; }
       const c = UI.portConflict(err);
       if (c) { a.conflict = c; a.error = null; } else { a.error = serverText(err); }
       renderHost();
     } finally { UI.busy(btn, false); }
   }
+  // Reload of the page data that never throws (its own error is not the one
+  // the user needs to see).
+  async function reloadQuietly() {
+    try { await ctx().reload(); } catch (_) { /* the page shows its own load error */ }
+  }
+  function warnToast(msg) { if (window.showToast) window.showToast(msg, 'warning'); }
 
   // ── Delete (immediately, with confirmation) ──
   // The server deletes the row first and answers only after the Caddy sync,
@@ -474,8 +507,14 @@
     const done = c.removing ? c.removing(o.ids) : () => {};
     let failure = null;
     try {
-      await UI.call(api.del(o.url));
-      UI.toastOk(o.okText);
+      const res = await UI.call(api.del(o.url));
+      // 202 { pending }: deleted, the Caddy sync is still running (routes
+      // API, answer budget). A failed sync brings the entry back and says so
+      // on the routes event (pendingDeletes below).
+      if (res.pending) {
+        (o.ids && o.ids.entries || []).forEach((id) => pendingDeletes.add(Number(id)));
+        UI.toastOk(t('entry.delete_pending'));
+      } else UI.toastOk(o.okText);
     } catch (err) { failure = err; }
     done();
     await c.reload();
@@ -484,6 +523,16 @@
     UI.toastError(failure);
     return false;
   }
+
+  // Entry deletes answered with 202 (sync still running): a routes event
+  // with sync 'failed' for one of them means the entry is back.
+  const pendingDeletes = new Set();
+  document.addEventListener('gc:routes', (ev) => {
+    const d = ev && ev.detail;
+    if (!d || d.sync !== 'failed' || !pendingDeletes.has(Number(d.route_id))) return;
+    pendingDeletes.delete(Number(d.route_id));
+    if (window.showToast) window.showToast(t('entry.delete_failed_restored'), 'error');
+  });
 
   async function deleteEntry(e, host, zone, btn) {
     const line = V.entryLine(e);
@@ -900,12 +949,13 @@
 
   function stepEntries(zone) {
     const l4ok = l4Allowed(zone);
+    const viaGw = viaGateway(null, zone);
     const rows = nh.entries.map((e, i) => {
       const otherHttp = nh.entries.some((x, j) => j !== i && x.type === 'http');
       const typeSeg = UI.seg([
         { value: 'http', label: 'HTTPS', disabled: otherHttp, title: otherHttp ? t('entry.err_http_taken') : null },
         { value: 'tcp', label: 'TCP', disabled: !l4ok },
-        { value: 'udp', label: 'UDP', disabled: !l4ok },
+        { value: 'udp', label: 'UDP', disabled: !l4ok || viaGw, title: viaGw ? t('entry.udp_locked_gateway') : null },
       ], e.type, (v) => {
         const was = e.type;
         e.type = v;
@@ -952,6 +1002,7 @@
       stepHead(3, 'rt-nh-s3', t('entry.section')),
       el('div', { class: 'rt-nh-entries' }, [rows, addBtn]),
       !l4ok ? el('div', { class: 'rt-hint' }, [t('entry.l4_locked'), ' ', UI.proChip()]) : null,
+      l4ok && viaGw ? el('div', { class: 'rt-hint', text: t('entry.udp_locked_gateway') }) : null,
       fieldErr('entries') ? el('div', { class: 'rt-hint rt-err', text: fieldErr('entries') }) : null,
     ]);
   }
@@ -1020,22 +1071,38 @@
     const SO = window.GCSecOptUI;
     const www = SO && SO.wwwAliasFields({ sub: nh.sub, www: nh.www, type: nh.entries.some((e) => e.type === 'http') ? 'http' : 'tcp' }, zone);
     if (www) Object.assign(r.body, www);
+    // Hosts of the zone before the request: after an error the page data is
+    // reloaded too. A host that exists afterwards was created (lost answer,
+    // or created and a later step failed — e.g. the www alias): the dialog
+    // closes, the error stays as a note, and a second click cannot create a
+    // duplicate or run into "host exists".
+    const fqdnWanted = V.previewFqdn(r.body.subdomain, zone.domain);
+    const zoneHosts = () => { const z = pageZones().find((x) => x.domain_id === zone.domain_id); return (z && z.hosts) || []; };
+    const before = new Set(zoneHosts().map((h) => h.id));
     nh.busy = true;
     UI.busy(btn, true);
     try {
       const res = await UI.call(api.post('/api/v1/domains/' + zone.domain_id + '/hosts', r.body));
       const created = res.host || {};
-      const fqdn = created.fqdn || V.previewFqdn(r.body.subdomain, zone.domain);
+      const fqdn = created.fqdn || fqdnWanted;
       UI.toastOk(t('host.created', { host: fqdn }));
       const TG = window.GCTlsUI;
       const tls = TG && TG.tlsFromResponse(res);
       if (tls && tls.state === 'paused' && window.showToast) window.showToast(TG.t('tls.created_paused', { host: fqdn, reason: TG.pausedReason(tls) }), 'warning');
       nh.busy = false;
       nh.dlg.close(true);
-      await ctx().reload();
+      await reloadQuietly();
       if (created.id != null && window.GCZonesPage && window.GCZonesPage.flashHost) window.GCZonesPage.flashHost(created.id);
     } catch (err) {
-      if (!nh) return;
+      await reloadQuietly();
+      const made = zoneHosts().find((h) => !before.has(h.id) && h.fqdn === fqdnWanted);
+      if (made) {
+        if (nh) { nh.busy = false; nh.dlg.close(true); }
+        warnToast(t('host.created_with_error', { host: fqdnWanted, error: serverText(err) }));
+        if (window.GCZonesPage && window.GCZonesPage.flashHost) window.GCZonesPage.flashHost(made.id);
+        return;
+      }
+      if (!nh) { UI.toastError(err); return; }
       nh.busy = false;
       UI.busy(btn, false);
       const c = UI.portConflict(err);

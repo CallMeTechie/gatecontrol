@@ -1335,11 +1335,32 @@ let lastGoodConfig = null;
 // stale-previousConfig clobber. Mirrors peers.js:_wgRewriteChain.
 let _syncChain = Promise.resolve();
 function syncToCaddy() {
-  _syncChain = _syncChain.then(_syncToCaddyInner, _syncToCaddyInner);
+  const queuedAt = Date.now();
+  const run = () => _syncToCaddyInner({ queuedAt });
+  _syncChain = _syncChain.then(run, run);
   return _syncChain;
 }
 
-async function _syncToCaddyInner() {
+// A sync above this many ms is logged as a warning with its phases.
+const SLOW_SYNC_MS = 2000;
+
+// Phase timings of one sync (ms): queue = waiting for the syncs in front of
+// it, read = GET /config/ (owner check, rollback copy), build, load = POST
+// /load, verify = GET /config/ again, tls = local TLS self-test (+ restart).
+// Logged with every sync, as a warning when slow — what a slow route delete
+// waited for shows up in the server log.
+function _logSyncTiming(timing, startedAt) {
+  const ms = { ...timing.ms, total: Date.now() - startedAt };
+  if (timing.queuedAt != null) ms.queue = startedAt - timing.queuedAt;
+  const slow = ms.total + (ms.queue || 0) >= SLOW_SYNC_MS;
+  logger[slow ? 'warn' : 'info']({ ms }, slow ? 'Caddy config sync slow' : 'Caddy config synced and verified');
+}
+
+async function _syncToCaddyInner(timing = {}) {
+  const startedAt = Date.now();
+  timing.ms = {};
+  let mark = startedAt;
+  const lap = (name) => { const now = Date.now(); timing.ms[name] = now - mark; mark = now; };
   // Production-safety: skip sync in test env. caddyAdminClient's
   // caddyApi() also guards individually, but skipping the whole sync
   // here avoids even building the config and spares test runs from
@@ -1354,6 +1375,7 @@ async function _syncToCaddyInner() {
   } catch (err) {
     readError = err;
   }
+  lap('read');
 
   // Ownership guard: never overwrite a Caddy that belongs to a DIFFERENT
   // GateControl instance. The container runs network_mode: host, so
@@ -1377,6 +1399,7 @@ async function _syncToCaddyInner() {
   }
 
   const caddyConfig = buildCaddyConfig();
+  lap('build');
 
   // 1. Persist runtime.json FIRST so a Caddy restart always recovers
   //    the latest intended config even if /load corrupts live state.
@@ -1387,6 +1410,7 @@ async function _syncToCaddyInner() {
     method: 'POST',
     body: JSON.stringify(caddyConfig),
   });
+  lap('load');
 
   if (result === null) {
     throw new Error('Caddy admin API is not reachable — route saved but not deployed. Restart Caddy or retry later.');
@@ -1395,6 +1419,7 @@ async function _syncToCaddyInner() {
   try {
     const check = await caddyApi('/config/');
     if (!check) throw new Error('Config verification failed');
+    lap('verify');
 
     // 3. Real TLS self-test — admin API answering is not enough. Caddy
     //    can accept /load and still reject every TLS handshake with
@@ -1416,8 +1441,9 @@ async function _syncToCaddyInner() {
       }
     }
 
+    lap('tls');
     lastGoodConfig = caddyConfig;
-    logger.info('Caddy config synced and verified');
+    _logSyncTiming(timing, startedAt);
   } catch (verifyErr) {
     logger.error({ error: verifyErr.message }, 'Caddy config verification failed — rolling back');
     if (previousConfig) {

@@ -287,6 +287,7 @@
     if (!menuState) return;
     const m = menuState;
     menuState = null;
+    if (m.raf) cancelAnimationFrame(m.raf);
     m.node.remove();
     document.removeEventListener('mousedown', m.outside, true);
     document.removeEventListener('keydown', m.key, true);
@@ -299,6 +300,21 @@
     menuCloseHooks.slice().forEach((fn) => { try { fn(); } catch (_) { /* ignore */ } });
   }
   function menuOpen() { return !!menuState; }
+  // Anchor still visible: in the window and not clipped away by a scrolling
+  // ancestor (the page body, a dialog body).
+  function anchorInView(anchor) {
+    if (!anchor || !document.contains(anchor)) return false;
+    const r = anchor.getBoundingClientRect();
+    if (!r.width && !r.height) return false;
+    if (r.bottom <= 0 || r.top >= window.innerHeight || r.right <= 0 || r.left >= window.innerWidth) return false;
+    for (let n = anchor.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const oy = window.getComputedStyle(n).overflowY;
+      if (oy !== 'auto' && oy !== 'scroll' && oy !== 'hidden') continue;
+      const p = n.getBoundingClientRect();
+      if (r.bottom <= p.top || r.top >= p.bottom) return false;
+    }
+    return true;
+  }
   function onMenuClosed(fn) { menuCloseHooks.push(fn); }
   function openMenu(anchor, items) {
     const same = menuState && menuState.anchor === anchor;
@@ -314,15 +330,19 @@
       }, [it.icon ? icon(it.icon, 14) : null, el('span', { text: it.label }), it.sub ? el('span', { class: 'zn-menu-sub', text: it.sub }) : null]);
     }));
     document.body.appendChild(node);
-    const r = anchor.getBoundingClientRect();
-    const w = node.offsetWidth;
-    const h = node.offsetHeight;
-    let left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
-    let top = r.bottom + 4;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
-    if (left < 8) left = 8;
-    node.style.left = left + 'px';
-    node.style.top = top + 'px';
+    // Under (or above) the anchor, inside the window. Runs again on scroll.
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const w = node.offsetWidth;
+      const h = node.offsetHeight;
+      let left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+      let top = r.bottom + 4;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+      if (left < 8) left = 8;
+      node.style.left = left + 'px';
+      node.style.top = top + 'px';
+    };
+    place();
     anchor.setAttribute('aria-expanded', 'true');
     const items$ = () => Array.from(node.querySelectorAll('.zn-menu-item:not([disabled])'));
     const m = {
@@ -339,7 +359,18 @@
           list[n].focus();
         } else if (e.key === 'Tab') { closeMenu(); }
       },
-      scroll: (e) => { if (!node.contains(e.target)) closeMenu(); },
+      // Scrolling the page (or a dialog) moves the menu along with its
+      // anchor; it only closes once the anchor itself is scrolled out of
+      // sight. Scrolling inside the menu does nothing. One update per frame.
+      scroll: (e) => {
+        if (node.contains(e.target) || m.raf) return;
+        m.raf = requestAnimationFrame(() => {
+          m.raf = 0;
+          if (menuState !== m) return;
+          if (!anchorInView(anchor)) closeMenu();
+          else place();
+        });
+      },
       resize: () => closeMenu(),
     };
     menuState = m;

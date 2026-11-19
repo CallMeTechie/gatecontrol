@@ -248,6 +248,19 @@ function assertLanHosts(rows, target) {
   }
 }
 
+// UDP entries cannot move behind a gateway or pool: the gateway forwards TCP
+// only (routes.js, UDP_VIA_GATEWAY). Entries that already sit behind one
+// (from before that rule) do not block the move — they had no effect before
+// and have none after.
+function assertNoUdpBehindGateway(rows, target) {
+  if (target.kind === 'peer') return;
+  const udp = rows.filter((r) => r.route_type === 'l4' && r.l4_protocol === 'udp' && r.target_kind !== 'gateway');
+  if (udp.length > 0) {
+    throw httpError(400, 'udp_via_gateway: a gateway forwards TCP only — UDP entries cannot move behind it (routes '
+      + udp.map((r) => r.id).join(', ') + ')', 'UDP_VIA_GATEWAY');
+  }
+}
+
 /**
  * Re-target routes (one transaction) and run exactly one Caddy sync; on sync
  * failure every route row is restored from its snapshot and `extraRollback`
@@ -590,6 +603,9 @@ async function applyGateway(domainId, input) {
     SELECT r.* FROM routes r JOIN service_bundles sb ON sb.id = r.bundle_id
     WHERE sb.domain_id = ? AND sb.gateway_override = 0
   `).all(zone.id);
+  // UDP first: an entry without a LAN address could get one, a UDP entry
+  // cannot go behind a gateway at all.
+  assertNoUdpBehindGateway(rows, target);
   assertLanHosts(rows, target);
 
   const before = zoneTarget(zone);
@@ -895,6 +911,7 @@ module.exports = {
   rewriteTargets,
   retarget,
   assertLanHosts,
+  assertNoUdpBehindGateway,
   peersForTargets,
   notifyGateways,
   rebuildDns,

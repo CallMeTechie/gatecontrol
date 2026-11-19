@@ -522,7 +522,7 @@ the reserve steps in instead.
 The gateway is connected, but its self-check reports a problem. The card
 “Status” in the gateway's overview names the reason.
 
-Most often: the gateway cannot open the listen port of a TCP/UDP route. The
+Most often: the gateway cannot open the listen port of a TCP route. The
 card then shows the route, the port and the reason:
 
 - **Port taken:** another service on the gateway's device already uses this
@@ -623,6 +623,13 @@ discovery (they search an IPv4 subnet), the internet quality (targets and
 router over IPv4), the MQTT broker and edge plugins in the home network,
 Wake-on-LAN, printing & scanning and cameras. Switch them off in an IPv6-only
 network – the internet quality would otherwise report a permanent outage.
+
+### A UDP route through a gateway does not arrive
+
+The gateway forwards TCP only – a UDP route behind a gateway or pool has no
+effect. New ones cannot be created that way any more; older ones show “no
+effect” in the list. Switch them to TCP or use a VPN peer as the target
+([chapter 5](05-features.md#routes-through-a-gateway-or-a-pool)).
 
 ## DNS protection
 

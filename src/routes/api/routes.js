@@ -147,6 +147,7 @@ const VALIDATION_ERROR_MAP = {
   'target_pool_not_found': 'error.routes.target_pool_not_found',
   'target_pool_empty': 'error.routes.target_pool_empty',
   'target_required': 'error.routes.target_required',
+  'udp_via_gateway': 'error.routes.udp_via_gateway',
 };
 
 // Field error of the gateway target (services/routes.js assertGatewayTarget):
@@ -871,9 +872,29 @@ router.put('/:id',
 /**
  * DELETE /api/routes/:id — Delete route
  */
+// Resolves true when `job` settles within `ms` (rejects with its error),
+// false when it is still running then. ms <= 0: wait for the job.
+function settledWithin(job, ms) {
+  if (!(ms > 0)) return job.then(() => true);
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); });
+  return Promise.race([job.then(() => true), late]).finally(() => clearTimeout(timer));
+}
+
+// The row is deleted at once; the answer waits for the Caddy sync only up to
+// config.caddy.answerBudgetMs (a slow sync — Caddy busy, a sync queued in
+// front of it, a TLS self-test with restart — kept the page waiting for many
+// seconds). Later: 202 { pending: true }, the sync completes in the
+// background with the same rollback; a failure restores the row and is
+// announced on the routes event (`sync: 'failed'`).
 router.delete('/:id', async (req, res) => {
   try {
-    await routes.remove(req.params.id);
+    const job = routes.remove(req.params.id);
+    const done = await settledWithin(job, config.caddy.answerBudgetMs);
+    if (!done) {
+      job.catch((err) => logger.error({ routeId: req.params.id, error: err.message }, 'Route delete: Caddy sync failed after the answer — route restored'));
+      return res.status(202).json({ ok: true, pending: true });
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to delete route');

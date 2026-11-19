@@ -57,6 +57,25 @@ function assertGatewayTarget({ gateway, peer, pool, poolChanged }) {
   if (hasTarget(pool) && poolChanged) assertPoolUsable(pool);
 }
 
+// ─── UDP behind a gateway ──────────────────────────────
+//
+// The gateway forwards TCP only (UDP forwarding in the gateway is deferred on
+// purpose). A UDP entry on a gateway or pool target would open a listener on
+// the server that leads nowhere — so the move INTO that combination is a 400
+// (UDP_VIA_GATEWAY, field l4_protocol). A row from before this rule is left
+// as it is (it keeps its other edits; the page marks it "has no effect").
+
+function isUdpViaGateway(row) {
+  return !!row && (row.route_type || 'http') === 'l4' && row.l4_protocol === 'udp'
+    && (row.target_kind || 'peer') === 'gateway';
+}
+
+function assertNoUdpViaGateway(next, prev) {
+  if (!isUdpViaGateway(next) || isUdpViaGateway(prev)) return;
+  throw targetError('UDP_VIA_GATEWAY', 'l4_protocol',
+    'udp_via_gateway: a gateway forwards TCP only — a UDP entry needs a VPN peer as its target');
+}
+
 // ─── Gateway push ───────────────────────────────────────
 
 /**
@@ -443,6 +462,7 @@ async function create(data, opts = {}) {
     gateway: (data.target_kind || 'peer') === 'gateway',
     peer: data.target_peer_id, pool: data.target_pool_id, poolChanged: true,
   });
+  assertNoUdpViaGateway({ route_type: routeType, l4_protocol: data.l4_protocol, target_kind: data.target_kind }, null);
 
   const targetKind = data.target_kind || 'peer';
   const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
@@ -879,6 +899,11 @@ async function update(id, data, opts = {}) {
       });
     }
   }
+  assertNoUdpViaGateway({
+    route_type: routeType,
+    l4_protocol: data.l4_protocol !== undefined ? data.l4_protocol : route.l4_protocol,
+    target_kind: data.target_kind !== undefined ? data.target_kind : route.target_kind,
+  }, route);
 
   // A plain (no-TLS) TCP/UDP listener whose port, protocol or type changes —
   // or that gets switched on — must not take a port another enabled entry
@@ -1258,11 +1283,19 @@ async function remove(id) {
   // otherwise a rollback throws away ACLs / IP-filter / bot-blocker
   // config that the admin set up and leaves a half-castrated route.
   // The access rules are restored alongside the row.
-  await withCaddySync(syncToCaddy, () => {
-    reinsertRouteRow(db, route);
-    require('./accessRules').restoreRules(accessRulesSnapshot);
-    if (groupSnapshot.length) require('./groupAccess').setRouteGroups(id, groupSnapshot);
-  }, 'route delete');
+  try {
+    await withCaddySync(syncToCaddy, () => {
+      reinsertRouteRow(db, route);
+      require('./accessRules').restoreRules(accessRulesSnapshot);
+      if (groupSnapshot.length) require('./groupAccess').setRouteGroups(id, groupSnapshot);
+    }, 'route delete');
+  } catch (err) {
+    // The row is back. Pages reload on the routes event; `sync: 'failed'`
+    // tells the one that deleted it (answered 202 before the sync ended,
+    // routes API) to say so.
+    publishRoutesEvent(refs.map((r) => ({ ...r, route_id: Number(id), sync: 'failed' })));
+    throw err;
+  }
 
   if (route.bundle_id) cleanupEmptyBundles(db, [route.bundle_id]);
 
@@ -1645,4 +1678,5 @@ module.exports = {
   BULK_MAX_IDS,
   getForUser,
   resolveCompanionUrl,
+  isUdpViaGateway,
 };
