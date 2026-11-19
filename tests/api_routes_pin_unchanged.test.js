@@ -42,5 +42,7 @@ test('cannot set both target_peer_id AND target_pool_id', async () => {
       target_ip: '0.0.0.0', target_port: 5000, route_type: 'http',
     });
   assert.equal(res.status, 400);
-  assert.match(res.body.error, /conflicting_target/);
+  // Field error with a translated text (services/routes.js assertGatewayTarget).
+  assert.equal(res.body.code, 'TARGET_CONFLICT');
+  assert.ok(res.body.fields && res.body.fields.target_pool_id, JSON.stringify(res.body));
 });

@@ -146,7 +146,19 @@ const VALIDATION_ERROR_MAP = {
   'conflicting_target': 'error.routes.conflicting_target',
   'target_pool_not_found': 'error.routes.target_pool_not_found',
   'target_pool_empty': 'error.routes.target_pool_empty',
+  'target_required': 'error.routes.target_required',
 };
+
+// Field error of the gateway target (services/routes.js assertGatewayTarget):
+// the message starts with the code the map above translates.
+function translatedFields(req, fields) {
+  const out = {};
+  for (const [field, msg] of Object.entries(fields)) {
+    const hit = Object.entries(VALIDATION_ERROR_MAP).find(([pattern]) => /^[a-z_]+$/.test(pattern) && String(msg).startsWith(pattern));
+    out[field] = hit ? req.t(hit[1]) : String(msg);
+  }
+  return out;
+}
 
 function resolveError(req, err, fallbackKey) {
   const msg = err.message || '';
@@ -159,6 +171,11 @@ function resolveError(req, err, fallbackKey) {
       ? req.t('error.bundles.port_conflict', { port: c.port, suggested: c.suggestedPort })
       : req.t('error.bundles.port_conflict_no_free', { port: c.port });
     return { status: 409, error: text, code: err.code || 'BUNDLE_PORT_CONFLICT', conflict: c };
+  }
+  // Gateway target (TARGET_*): 400 with the field error, translated.
+  if (err.statusCode && err.code && err.fields) {
+    const fields = translatedFields(req, err.fields);
+    return { status: err.statusCode, error: Object.values(fields)[0], code: err.code, fields };
   }
   // Coded service errors (HSTS_* from routesValidation): status + code pass through.
   if (err.statusCode && err.code) return { status: err.statusCode, error: msg, code: err.code };
@@ -628,8 +645,8 @@ router.post('/',
     res.status(201).json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create route');
-    const { status, error, code } = resolveError(req, err, 'error.routes.create');
-    res.status(status).json({ ok: false, error, ...(code ? { code } : {}) });
+    const { status, error, code, fields } = resolveError(req, err, 'error.routes.create');
+    res.status(status).json({ ok: false, error, ...(code ? { code } : {}), ...(fields ? { fields } : {}) });
   }
 });
 
@@ -846,8 +863,8 @@ router.put('/:id',
     res.json({ ok: true, route: stripRoute(route), ...tlsOf(route) });
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, 'Failed to update route');
-    const { status, error, code, conflict } = resolveError(req, err, 'error.routes.update');
-    res.status(status).json({ ok: false, error, ...(code ? { code } : {}), ...(conflict ? { conflict } : {}) });
+    const { status, error, code, conflict, fields } = resolveError(req, err, 'error.routes.update');
+    res.status(status).json({ ok: false, error, ...(code ? { code } : {}), ...(conflict ? { conflict } : {}), ...(fields ? { fields } : {}) });
   }
 });
 
