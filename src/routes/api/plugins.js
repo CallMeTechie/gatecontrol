@@ -601,14 +601,18 @@ function forwardPath(raw) {
  * Express handler factory: forward to a plugin's own API. `userOf(req)`
  * returns the acting user ({ id, name, role, portal }) or null (→ 403).
  * `opts.langOf(req)` picks the language handed to the plugin (default: the
- * request's UI language).
+ * request's UI language). `opts.unavailable` (the apps' route): the core's
+ * 404 for a missing plugin carries `reason: 'plugin_unavailable'`, and that
+ * reason is dropped from the plugin's own answers, so an app can tell "no
+ * such plugin" from "not found inside the plugin" (docs/plugins.md "App").
  */
 function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
   const langOf = typeof opts.langOf === 'function' ? opts.langOf : lang;
+  const unavailable = opts.unavailable === true;
   return async (req, res) => {
     const id = String(idOf(req) || '');
     const p = ID_RE.test(id) ? plugins.get(id) : null;
-    if (!p) return res.status(404).json({ ok: false, code: 'not_found', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
+    if (!p) return res.status(404).json({ ok: false, code: 'not_found', ...(unavailable ? { reason: 'plugin_unavailable' } : {}), error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
     if (!FORWARD_METHODS.has(req.method)) return res.status(405).json({ ok: false, code: 'method' });
     const path = forwardPath(req.params[0]);
     if (!path) return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
@@ -629,6 +633,10 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
         : send(null));
       const out = person ? await personContext.run(p.id, user.id, req.method !== 'GET' && req.method !== 'HEAD', call) : await call();
       res.set('Cache-Control', 'no-store');
+      if (unavailable && out.json && typeof out.json === 'object' && !Array.isArray(out.json) && out.json.reason === 'plugin_unavailable') {
+        const { reason: _reserved, ...rest } = out.json; // reserved for the core's own 404
+        return res.status(out.status).json(rest);
+      }
       return res.status(out.status).json(out.json);
     } catch (e) {
       const code = e && e.code === 'ERR_NOT_RUNNING' ? 'not_running' : (e && e.code === 'ERR_TIMEOUT' ? 'timeout' : 'plugin_error');

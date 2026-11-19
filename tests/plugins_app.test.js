@@ -167,7 +167,7 @@ describe('GET /api/v1/client/plugins', () => {
     await agent.post(`${API}/hello-api/disable`).set('X-CSRF-Token', csrf).expect(200);
     try {
       assert.deepEqual((await list(annaDev).expect(200)).body.plugins.map((p) => p.id), ['hello']);
-      assert.deepEqual((await call(annaDev, 'get', 'hello-api', 'ping').expect(404)).body, { ok: false, code: 'not_found' });
+      assert.deepEqual((await call(annaDev, 'get', 'hello-api', 'ping').expect(404)).body, { ok: false, code: 'not_found', reason: 'plugin_unavailable' });
     } finally {
       await agent.post(`${API}/hello-api/enable`).set('X-CSRF-Token', csrf).expect(200);
       assert.equal(await runtime.waitRunning('hello-api'), true);
@@ -218,14 +218,19 @@ describe('ALL /api/v1/client/plugins/:id/api/*', () => {
     assert.deepEqual((await call(annaDev, 'get', 'hello', 'nope').expect(404)).body, { ok: false, error: 'not_found' }, 'the plugin\'s own answer');
   });
 
+  it('reason plugin_unavailable is the core\'s alone: dropped from a plugin\'s own answer (apps only)', async () => {
+    assert.deepEqual((await call(annaDev, 'get', 'hello', 'fake-unavailable').expect(404)).body, { ok: false, code: 'not_found', error: 'Nicht gefunden' });
+    assert.equal((await agent.get(`${API}/hello/api/fake-unavailable`).expect(404)).body.reason, 'plugin_unavailable', 'admin forwarder unchanged');
+  });
+
   it('a hidden tab keeps the API usable', async () => {
     await kv('hello', 'app-hidden', [anna]);
     try { await call(annaDev, 'get', 'hello', 'ping').expect(200); } finally { await kv('hello', 'app-hidden', null); }
   });
 
-  it('404 not_found: unknown plugin, bad id, no permissions.app; 403 no_user without an owner', async () => {
+  it('404 not_found + reason plugin_unavailable: unknown plugin, bad id, no permissions.app; 403 no_user without an owner', async () => {
     for (const id of ['nope', 'hello-np', 'Hello', '_shared']) {
-      assert.deepEqual((await call(annaDev, 'get', id, 'ping').expect(404)).body, { ok: false, code: 'not_found' }, id);
+      assert.deepEqual((await call(annaDev, 'get', id, 'ping').expect(404)).body, { ok: false, code: 'not_found', reason: 'plugin_unavailable' }, id);
     }
     assert.equal(await kvGet('hello-np', 'app-last'), null);
     const noOwner = H.makeDevice(null, { name: 'app-noowner2', app: false });
