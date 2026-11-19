@@ -93,14 +93,14 @@ describe('rdp gateway access-mode — auto-linked L4 route', () => {
     assert.equal(l4After, undefined, 'old L4 route should be removed');
   });
 
-  it('rejects access_mode=gateway without a gateway_peer_id', async () => {
+  it('rejects access_mode=gateway without a gateway_peer_id or gateway_pool_id', async () => {
     await assert.rejects(
       () => rdp.create({
         name: 'rdp-broken', host: '192.168.1.53', port: 3389,
         access_mode: 'gateway',
         credential_mode: 'none',
       }),
-      /gateway peer is required/i
+      /gateway peer or gateway pool is required/i
     );
   });
 
@@ -228,7 +228,7 @@ describe('rdp gateway access-mode — auto-linked L4 route', () => {
     const poolId = Number(pool.createPool({ name: 'rdp-wol-pool', mode: 'failover', failback_cooldown_s: 60 }));
     pool.addMember(poolId, gwPeerId, 10);
     pool.addMember(poolId, gw2.peer.id, 20);
-    // a pool RDP route: created with its gateway, then moved onto the pool (the route keeps gateway_peer_id)
+    // a pool RDP route: created with its gateway, then moved onto the pool (the gateway is cleared)
     const r = await rdp.create({
       name: 'rdp-wol-pool', host: '192.168.1.61', port: 3389,
       access_mode: 'gateway', gateway_peer_id: gwPeerId, gateway_listen_port: 4401,

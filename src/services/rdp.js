@@ -72,6 +72,56 @@ function defaultPortForProtocol(protocol) {
   return PROTOCOL_DEFAULT_PORTS[protocol] || 3389;
 }
 
+/**
+ * Errors of the gateway target of a route with access_mode=gateway: exactly
+ * one of gateway_peer_id (a gateway peer) or gateway_pool_id (an existing
+ * gateway pool with members). {} when it is fine. checkPool=false skips the
+ * pool lookup (an update that leaves a stored pool as it is).
+ */
+function gatewayTargetErrors({ gateway_peer_id: peer, gateway_pool_id: pool }, { checkPool = true } = {}) {
+  const errors = {};
+  const hasPeer = peer !== undefined && peer !== null && peer !== '';
+  const hasPool = pool !== undefined && pool !== null && pool !== '';
+  if (hasPeer && hasPool) {
+    errors.gateway_pool_id = 'conflicting_target: choose either a gateway peer or a gateway pool, not both';
+    return errors;
+  }
+  if (!hasPeer && !hasPool) {
+    errors.gateway_peer_id = 'Gateway peer or gateway pool is required for access_mode=gateway';
+    return errors;
+  }
+  if (hasPeer) {
+    const peerId = Number(peer);
+    if (!Number.isInteger(peerId)) {
+      errors.gateway_peer_id = 'Gateway peer id must be an integer';
+    } else {
+      // Referenced peer must actually be a gateway-peer; otherwise the
+      // L4 auto-link / WoL push / config-push flows all fail at runtime
+      // with a cryptic error instead of this clear config-time message.
+      const row = getDb().prepare('SELECT peer_type FROM peers WHERE id = ?').get(peerId);
+      if (!row) {
+        errors.gateway_peer_id = 'Gateway peer not found';
+      } else if (row.peer_type !== 'gateway') {
+        errors.gateway_peer_id = 'Referenced peer is not a gateway peer';
+      }
+    }
+    return errors;
+  }
+  const poolId = Number(pool);
+  if (!Number.isInteger(poolId)) {
+    errors.gateway_pool_id = 'Gateway pool id must be an integer';
+    return errors;
+  }
+  if (!checkPool) return errors;
+  const gatewayPool = require('./gatewayPool');
+  if (!gatewayPool.getPool(poolId)) {
+    errors.gateway_pool_id = 'gateway_pool_not_found';
+  } else if (gatewayPool.listMembers(poolId).length === 0) {
+    errors.gateway_pool_id = 'gateway_pool_empty';
+  }
+  return errors;
+}
+
 function validateRdpRoute(data, isUpdate = false) {
   const errors = {};
 
@@ -120,28 +170,13 @@ function validateRdpRoute(data, isUpdate = false) {
     errors.access_mode = 'Access mode must be internal, external, both, or gateway';
   }
 
-  // Gateway mode needs a gateway peer + a listen port for the auto-
-  // created L4 route. Host+port (the LAN target) are already covered
-  // by the general RDP-route validation further up.
+  // Gateway mode needs a gateway target (a pinned gateway peer OR a gateway
+  // pool — exactly one) + a listen port for the auto-created L4 route.
+  // Host+port (the LAN target) are already covered by the general
+  // RDP-route validation further up. On update the target is judged on the
+  // merged row in update() (a patch may carry only one of the two fields).
   if (data.access_mode === 'gateway') {
-    if (data.gateway_peer_id === undefined || data.gateway_peer_id === null) {
-      errors.gateway_peer_id = 'Gateway peer is required for access_mode=gateway';
-    } else {
-      const peerId = parseInt(data.gateway_peer_id, 10);
-      if (!Number.isInteger(peerId)) {
-        errors.gateway_peer_id = 'Gateway peer id must be an integer';
-      } else {
-        // Referenced peer must actually be a gateway-peer; otherwise the
-        // L4 auto-link / WoL push / config-push flows all fail at runtime
-        // with a cryptic error instead of this clear config-time message.
-        const row = getDb().prepare('SELECT peer_type FROM peers WHERE id = ?').get(peerId);
-        if (!row) {
-          errors.gateway_peer_id = 'Gateway peer not found';
-        } else if (row.peer_type !== 'gateway') {
-          errors.gateway_peer_id = 'Referenced peer is not a gateway peer';
-        }
-      }
-    }
+    if (!isUpdate) Object.assign(errors, gatewayTargetErrors(data));
     if (data.gateway_listen_port !== undefined && data.gateway_listen_port !== null) {
       const p = parseInt(data.gateway_listen_port, 10);
       if (isNaN(p) || p < 1 || p > 65535) {
@@ -366,17 +401,7 @@ async function create(input) {
     throw err;
   }
 
-  if (data.gateway_peer_id != null && data.gateway_pool_id != null) {
-    throw new Error('conflicting_target: rdp route cannot have both gateway_peer_id and gateway_pool_id');
-  }
-  if (data.gateway_pool_id != null) {
-    const gatewayPool = require('./gatewayPool');
-    const pool = gatewayPool.getPool(data.gateway_pool_id);
-    if (!pool) throw new Error('gateway_pool_not_found');
-    if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
-      throw new Error('gateway_pool_empty');
-    }
-  }
+  // The gateway target (peer XOR pool) is checked by validateRdpRoute above.
 
   // Pre-flight: reject a gateway listen-port collision *before* inserting, so
   // we return a clean 409 with a suggested free port instead of inserting,
@@ -591,7 +616,12 @@ async function _syncLinkedL4Route(rdpId, previousL4RouteId) {
   };
 
   if (previousL4RouteId) {
-    await routesService.update(previousL4RouteId, l4Payload);
+    // routes.update keeps a field it gets as null (COALESCE): name the
+    // gateway target that is no longer used, so a switch peer → pool (or
+    // pool → peer) does not leave the old one next to the new one.
+    await routesService.update(previousL4RouteId, l4Payload, {
+      clear: rdp.gateway_pool_id ? ['target_peer_id'] : ['target_pool_id'],
+    });
     return;
   }
 
@@ -600,8 +630,10 @@ async function _syncLinkedL4Route(rdpId, previousL4RouteId) {
     .run(created.id, rdpId);
 }
 
-async function update(id, data) {
+async function update(id, input) {
   const db = getDb();
+  // A copy: switching the gateway target below adds the cleared field.
+  const data = { ...input };
   const existing = db.prepare('SELECT * FROM rdp_routes WHERE id = ?').get(id);
   if (!existing) throw new Error('RDP route not found');
 
@@ -617,30 +649,34 @@ async function update(id, data) {
   }
   const access = accessFields(data, existing);
 
-  // Validate the merged post-update shape: a PATCH that nulls
-  // gateway_peer_id while access_mode stays 'gateway' would otherwise
-  // be accepted here and then blow up inside _syncLinkedL4Route after
-  // the row has already been persisted.
-  const merged = { ...existing, ...data };
-  if (merged.access_mode === 'gateway') {
-    if (merged.gateway_peer_id == null) {
-      throw new Error('Gateway peer is required for access_mode=gateway');
-    }
-    const peerRow = db.prepare('SELECT peer_type FROM peers WHERE id = ?').get(parseInt(merged.gateway_peer_id, 10));
-    if (!peerRow || peerRow.peer_type !== 'gateway') {
-      throw new Error('Referenced peer is not a gateway peer');
-    }
+  // Gateway target: a pinned gateway peer OR a gateway pool, never both.
+  // Choosing one (non-null) without naming the other switches the route
+  // over — the other one is cleared, in this row and (via the L4 sync
+  // below) in the linked L4 route. A patch that names both non-null is
+  // refused.
+  if (data.gateway_peer_id != null && data.gateway_peer_id !== '' && data.gateway_pool_id === undefined) {
+    data.gateway_pool_id = null;
+  } else if (data.gateway_pool_id != null && data.gateway_pool_id !== '' && data.gateway_peer_id === undefined) {
+    data.gateway_peer_id = null;
+  } else if (data.gateway_peer_id === undefined && data.gateway_pool_id === undefined
+      && existing.gateway_peer_id != null && existing.gateway_pool_id != null) {
+    // A row from before this rule (moved onto a pool, the gateway kept): the
+    // pool is what Caddy and the linked L4 route used — drop the stale peer
+    // on the next save instead of refusing an unrelated edit.
+    data.gateway_peer_id = null;
   }
 
-  if (data.gateway_peer_id != null && data.gateway_pool_id != null) {
-    throw new Error('conflicting_target: rdp route cannot have both gateway_peer_id and gateway_pool_id');
-  }
-  if (data.gateway_pool_id != null) {
-    const gatewayPool = require('./gatewayPool');
-    const pool = gatewayPool.getPool(data.gateway_pool_id);
-    if (!pool) throw new Error('gateway_pool_not_found');
-    if (gatewayPool.listMembers(data.gateway_pool_id).length === 0) {
-      throw new Error('gateway_pool_empty');
+  // Validate the merged post-update shape: a PATCH that nulls the gateway
+  // target while access_mode stays 'gateway' would otherwise be accepted
+  // here and then blow up inside _syncLinkedL4Route after the row has
+  // already been persisted.
+  const merged = { ...existing, ...data };
+  if (merged.access_mode === 'gateway') {
+    const targetErrors = gatewayTargetErrors(merged, { checkPool: data.gateway_pool_id != null });
+    if (Object.keys(targetErrors).length) {
+      const err = new Error(Object.values(targetErrors)[0]);
+      err.fields = targetErrors;
+      throw err;
     }
   }
 
@@ -811,6 +847,7 @@ async function update(id, data) {
   const gatewayRelevantChanged =
     data.access_mode !== undefined ||
     data.gateway_peer_id !== undefined ||
+    data.gateway_pool_id !== undefined ||
     data.gateway_listen_port !== undefined ||
     data.host !== undefined ||
     data.port !== undefined ||
