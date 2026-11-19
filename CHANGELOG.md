@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.300.1] — 2026-11-19
+
+### Fixes
+- kein heller Streifen bei langen Plugin-Dialogen, GC.viewport ohne min-height-Füller (#532)
+
+---
+
 ## [1.300.0] — 2026-11-19
 
 ### Features
