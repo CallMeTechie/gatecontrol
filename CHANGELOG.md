@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.302.1] — 2026-11-19
+
+### Fixes
+- Leerlauf-Verbindungen länger offen als Caddy – kein „socket hang up“ mehr (#539)
+
+---
+
 ## [1.302.0] — 2026-11-19
 
 ### Features
