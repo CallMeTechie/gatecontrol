@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.4] — 2026-11-19
+
+### Fixes
+- interne Namen für jeden Record-Typ intern beantworten (AAAA/HTTPS/MX) (#525)
+
+---
+
 ## [1.299.3] — 2026-11-19
 
 ### Fixes
