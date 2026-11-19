@@ -1221,6 +1221,22 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // L4 config
   if (l4Routes.length > 0) {
     const activeL4Routes = [];
+    // A gateway on this very host (gatewayColocation.js): its tunnel IP is an
+    // address of this host, Caddy's own listener holds the port there — Caddy
+    // dials the LAN target itself instead. One interface scan per build.
+    const colocation = require('./gatewayColocation');
+    let hostAddrs = null;
+    const seenGateways = new Map();
+    const colocated = (ip) => {
+      if (!hostAddrs) hostAddrs = colocation.localAddresses();
+      const on = colocation.isColocatedTunnelIp(ip, hostAddrs);
+      seenGateways.set(String(ip).trim().toLowerCase(), on);
+      return on;
+    };
+    const noDirectTarget = (route, peerIp) => logger.warn(
+      { routeId: route.id, gateway: peerIp },
+      'L4 route: its gateway runs on this host and the LAN target cannot be dialled from here — listener left out',
+    );
     for (const route of l4Routes) {
       // Scheduled access window — denied right now → omit the L4 listener
       // entirely (no static_response possible at layer4; the connection simply
@@ -1233,12 +1249,22 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         // first alive (priority order).
         const resolved = resolveRouteUpstreams(route, { gatewayProxyPort });
         if (resolved.outage) continue;
-        const first = resolved.peers[0];
-        route.target_ip = first.ip;
-        route.target_port = route.l4_listen_port;
-        if (resolved.lb_policy && resolved.peers.length > 1) {
+        // A member on this host: its LAN target directly; none to dial → the
+        // member is left out (never a self-dial into Caddy's own listener).
+        const dials = [];
+        for (const p of resolved.peers) {
+          if (!colocated(p.ip)) { dials.push(p.ip + ':' + route.l4_listen_port); continue; }
+          const direct = colocation.directL4Target(route, p.id);
+          if (direct) dials.push(direct);
+          else noDirectTarget(route, p.ip);
+        }
+        if (dials.length === 0) continue;
+        const sep = dials[0].lastIndexOf(':');
+        route.target_ip = dials[0].slice(0, sep);
+        route.target_port = dials[0].slice(sep + 1);
+        if (resolved.lb_policy && dials.length > 1) {
           // Stash for buildL4Route — non-DB hint, removed before persisting.
-          route._poolUpstreams = resolved.peers.map(p => p.ip + ':' + route.l4_listen_port);
+          route._poolUpstreams = dials;
           route._poolLbPolicy = resolved.lb_policy;
         }
       } else if (route.peer_id && route.allowed_ips) {
@@ -1250,11 +1276,23 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         // tunnel_ip:l4_listen_port and forwards to target_lan_host:
         // target_lan_port on the LAN — so Caddy on the server just
         // needs to hand the connection to the gateway's listener.
-        route.target_ip = route.target_peer_allowed_ips.split('/')[0];
-        route.target_port = route.l4_listen_port;
+        const gwIp = route.target_peer_allowed_ips.split('/')[0];
+        if (colocated(gwIp)) {
+          const direct = colocation.directL4Target(route, route.target_peer_id);
+          if (!direct) { noDirectTarget(route, gwIp); continue; }
+          const sep = direct.lastIndexOf(':');
+          route.target_ip = direct.slice(0, sep);
+          route.target_port = direct.slice(sep + 1);
+        } else {
+          route.target_ip = gwIp;
+          route.target_port = route.l4_listen_port;
+        }
       }
       activeL4Routes.push(route);
     }
+    // The config Caddy loads (built from the database) — what it assumed
+    // about each gateway, for the heartbeat's re-check.
+    if (!Array.isArray(injectedRoutes)) colocation.noteBuilt(seenGateways);
 
     const conflicts = validatePortConflicts(activeL4Routes);
     if (conflicts.length > 0) {

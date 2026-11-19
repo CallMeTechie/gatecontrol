@@ -10395,7 +10395,7 @@
   "gwp.state.restarting": "The gateway stopped and restarts ({{ago}}), expected back by {{time}}",
   "gwp.state.tunnel": "Tunnel is up, last heartbeat {{ago}}",
   "gwp.state.degraded": "The gateway’s self-check reports a problem – see “Load”",
-  "gwp.state.l4_port_in_use": "Route “{{route}}” ({{proto}} {{port}}): port {{port}} is already taken by another service on this gateway – nothing is forwarded here. Choose a different listen port in the route.",
+  "gwp.state.l4_port_in_use": "Route “{{route}}” ({{proto}} {{port}}): port {{port}} is already taken by another service on this gateway – nothing is forwarded here. Choose a different listen port in the route. If the gateway runs on the same machine as the GateControl server, the server must use the host network (network_mode: host) – it then serves such routes itself.",
   "gwp.state.l4_permission_denied": "Route “{{route}}” ({{proto}} {{port}}): the gateway is not allowed to open port {{port}} (permission denied) – nothing is forwarded here. Choose a listen port from 1024 upwards in the route.",
   "gwp.state.l4_address_unavailable": "Route “{{route}}” ({{proto}} {{port}}): port {{port}} cannot be opened yet because the gateway’s tunnel address is not ready. The gateway tries again with every heartbeat.",
   "gwp.state.l4_error": "Route “{{route}}” ({{proto}} {{port}}): port {{port}} cannot be opened on this gateway (error {{code}}) – nothing is forwarded here.",

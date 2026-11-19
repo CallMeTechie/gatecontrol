@@ -168,6 +168,13 @@ function getGatewayConfig(peerId) {
     ORDER BY r.id
   `).all({ me: peerId });
 
+  // A gateway on the server's own host (gatewayColocation.js): Caddy dials
+  // the LAN targets of its TCP/UDP routes itself, and Caddy's listener holds
+  // their ports on this host — a listener of the gateway could never bind
+  // (EADDRINUSE) and is not asked for.
+  const me = db.prepare('SELECT allowed_ips FROM peers WHERE id = ?').get(peerId);
+  const l4ServedByServer = !!(me && require('./gatewayColocation').isColocatedTunnelIp(me.allowed_ips));
+
   // A loopback target (127.0.0.1) means the host of the route's HOME gateway.
   // On any other gateway — the sibling serving it after a failover, or a
   // partner that only checks it as a reserve — it is the home gateway's LAN
@@ -214,7 +221,7 @@ function getGatewayConfig(peerId) {
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
-    l4_routes: l4Routes.map(r => {
+    l4_routes: (l4ServedByServer ? [] : l4Routes).map(r => {
       // Loopback L4 target on a gateway that is not the route's home (failed
       // over to this sibling, or checked by it as a reserve): the home
       // gateway's LAN IP. If the home LAN IP is unknown, omit the listener
@@ -395,6 +402,16 @@ function handleHeartbeat(peerId, health) {
   }
   // it answers (healthy or not): its routes are no case for the offline page
   _setOfflinePage(peerId, false);
+
+  // A gateway on the server's host appeared or went since the last Caddy
+  // config (gatewayColocation.js): its TCP/UDP routes are dialled differently.
+  try {
+    const me = db.prepare('SELECT allowed_ips FROM peers WHERE id = ?').get(peerId);
+    if (me && require('./gatewayColocation').changedSinceBuild(me.allowed_ips)) {
+      logger.info({ peerId }, 'Gateway on this host appeared or went — rebuilding the Caddy config for its TCP/UDP routes');
+      require('./caddySync').requestCaddySync().catch((err) => logger.warn({ err: err.message, peerId }, 'Caddy sync for a gateway on this host failed'));
+    }
+  } catch (err) { logger.debug({ err: err.message, peerId }, 'gateway co-location check failed'); }
 
   // Flap-Metric
   if (sm.flapCountLastHour() > 4) {
