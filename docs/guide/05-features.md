@@ -268,8 +268,8 @@ A profile can hold for both (“holds at home and on the road”, see below).
 - For “parents suspend for their children” and “Pause internet”: the plugin
   “Familie” (1.15.0 or later).
 - For “Link to a home profile”: a home gateway with a DNS filter.
-- For the screen in the apps: Android app 1.105 or later, Windows app 1.84 or
-  later. Older apps do not show it; the portal always works.
+- For the screen in the apps: Android app 1.105 or later, Windows app
+  GateControl Pro 1.84 or later, GateControl Community 1.50 or later. Older apps do not show it; the portal always works.
 
 **Setting up:**
 
@@ -335,7 +335,7 @@ profile can be linked to one profile only.
 
 **Suspending:** When a page does not work, the protection can be switched off
 for a few minutes – in the Android app (1.105 or later), in the Windows app
-(1.84 or later) and in the portal (tab “DNS Protection”). It switches itself
+(Pro 1.84 or later, Community 1.50 or later; card on “Overview” and tray menu) and in the portal (tab “DNS Protection”). It switches itself
 back on. Meanwhile nothing is blocked and nothing is counted for these devices.
 
 Who may suspend for whom?
@@ -358,8 +358,9 @@ person and the duration.
 **“Pause internet” of Family:** When somebody pauses a person's internet in
 the plugin “Familie”, this also holds for that person's VPN devices on the road
 (default: on; can be switched off under “Settings” › “Home network and
-family”). Only entries of “Always allowed” answer then. Overview, device list
-and portal show “Internet paused until …”; “Suspend” is not offered meanwhile,
+family”). Only entries of “Always allowed” answer then. Overview, device list,
+portal and the Windows app (Pro 1.106 or later, Community 1.50 or later; card
+and tray menu) show “Internet paused until …”; “Suspend” is not offered meanwhile,
 and the pause can only be ended in “Familie”.
 
 **Block foreign DNS and DoT:** The switch (card “Make it harder to get
