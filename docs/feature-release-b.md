@@ -31,7 +31,7 @@ Server-Teil.
 ```json
 { "ok": true, "generated_at": "ISO", "summary": { "pass": 7, "fail": 3, "info": 2 },
   "checks": [ { "id": "hsts", "severity": "critical|warning|info", "status": "pass|fail|na",
-    "count": 29, "items": [ { "kind": "route|zone|user|target", "id": 43, "label": "nas.domaincaster.com" } ],
+    "count": 29, "items": [ { "kind": "route|zone|user|target", "id": 43, "label": "nas.example.net" } ],
     "fix": { "type": "api|link|copy", "method": "POST", "url": "/api/v1/routes/bulk",
              "body": { "ids": [43], "set": { "hsts_enabled": true, "hsts_max_age": 31536000 } },
              "href": "/profile#two-factor", "copy": "example.com. CAA 0 issue \"letsencrypt.org\"" } } ] }

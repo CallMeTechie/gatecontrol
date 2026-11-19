@@ -23,13 +23,13 @@ function runMw(hostname) {
 }
 
 test('identity established for the configured public host', () => {
-  settings.set('portal.base_domain', 'domaincaster.com');
+  settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
-  assert.ok(runMw('home.domaincaster.com').portalPeerId);
+  assert.ok(runMw('home.example.net').portalPeerId);
 });
 
 test('identity NOT established for a stale/foreign host', () => {
-  settings.set('portal.base_domain', 'domaincaster.com');
+  settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
   assert.equal(runMw('home.gc.internal').portalPeerId, null);
 });

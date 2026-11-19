@@ -89,13 +89,13 @@ test('verified when A matches and no AAAA exists', async () => {
 });
 
 test('reproduction: A ok, AAAA foreign, server without v6 → failed / aaaa_without_ipv6', async () => {
-  domains._setResolverForTest(resolver({ 'jenny.example.com': { a: [V4], aaaa: [FOREIGN6] } }));
-  const r = await domains.verify('jenny.example.com');
+  domains._setResolverForTest(resolver({ 'web.example.com': { a: [V4], aaaa: [FOREIGN6] } }));
+  const r = await domains.verify('web.example.com');
   assert.equal(r.status, 'failed');
   assert.equal(r.error, 'aaaa_without_ipv6');
   assert.match(r.check.detail, /2001:41d0:301:1::29/);
   assert.equal(r.resolvedIp, FOREIGN6);
-  const row = await domains.add('jenny.example.com');
+  const row = await domains.add('web.example.com');
   assert.equal(row.status, 'failed');
   assert.equal(row.last_error, 'aaaa_without_ipv6');
   assert.equal(JSON.parse(row.check_json).code, 'aaaa_without_ipv6');
@@ -103,8 +103,8 @@ test('reproduction: A ok, AAAA foreign, server without v6 → failed / aaaa_with
 
 test('AAAA foreign while the server has a v6 → aaaa_mismatch naming the foreign address', async () => {
   settings.set('server.public_ipv6', V6);
-  domains._setResolverForTest(resolver({ 'jenny.example.com': { a: [V4], aaaa: [FOREIGN6] } }));
-  const r = await domains.verify('jenny.example.com');
+  domains._setResolverForTest(resolver({ 'web.example.com': { a: [V4], aaaa: [FOREIGN6] } }));
+  const r = await domains.verify('web.example.com');
   assert.equal(r.status, 'failed');
   assert.equal(r.error, 'aaaa_mismatch');
   assert.match(r.check.detail, new RegExp(`AAAA ${FOREIGN6} ≠ ${V6}`));

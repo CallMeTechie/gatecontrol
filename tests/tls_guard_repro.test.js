@@ -1,6 +1,6 @@
 'use strict';
 
-// Reproduction of the jennybackes.de incident (docs/feature-tls-guard.md):
+// Reproduction of the example.edu incident (docs/feature-tls-guard.md):
 // A → this server, AAAA → a foreign server, no server IPv6. The domain check
 // fails with aaaa_without_ipv6, a host created for it is paused before the
 // first Caddy sync, lands in automatic_https.skip and is missing from the
@@ -67,8 +67,8 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
   beforeEach(() => { syncCount = 0; });
 
   it('domain check: A ok, AAAA foreign, no server v6 → failed / aaaa_without_ipv6', async () => {
-    dnsMap = { 'jenny.example.com': { a: [V4], aaaa: [FOREIGN6] }, 'example.com': { a: [V4], aaaa: [] } };
-    const v = await domains.verify('jenny.example.com');
+    dnsMap = { 'web.example.com': { a: [V4], aaaa: [FOREIGN6] }, 'example.com': { a: [V4], aaaa: [] } };
+    const v = await domains.verify('web.example.com');
     assert.equal(v.status, 'failed');
     assert.equal(v.error, 'aaaa_without_ipv6');
     assert.match(v.check.detail, /2001:41d0:301:1::29/);
@@ -76,15 +76,15 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
 
   it('hosts.create: the host is created, paused with preflight:aaaa_without_ipv6, skipped in Caddy', async () => {
     const host = await hosts.create(zoneId, {
-      subdomain: 'jenny', lan_host: '192.168.1.10',
+      subdomain: 'web', lan_host: '192.168.1.10',
       entries: [{ type: 'http', target_port: 80 }],
     });
-    assert.equal(host.fqdn, 'jenny.example.com');
+    assert.equal(host.fqdn, 'web.example.com');
     assert.equal(host.entry_count, 1, 'the failed preflight does not block the write');
     assert.deepEqual(host.tls, { state: 'paused', code: 'aaaa_without_ipv6', detail: `AAAA ${FOREIGN6} but this server has no IPv6 address` });
     assert.equal(syncCount, 1);
 
-    const row = tlsGuard.getRow('jenny.example.com');
+    const row = tlsGuard.getRow('web.example.com');
     assert.equal(row.state, 'paused');
     assert.equal(row.paused_reason, 'preflight');
     assert.equal(row.last_error_code, 'preflight:aaaa_without_ipv6');
@@ -92,8 +92,8 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
 
     const cfg = caddy.buildCaddyConfig();
     assert.ok(skipOf(cfg).includes('gc-owner.invalid'), 'existing marker entry kept');
-    assert.ok(skipOf(cfg).includes('jenny.example.com'), 'paused host in automatic_https.skip');
-    assert.ok(!acmeSubjects(cfg).includes('jenny.example.com'), 'paused host absent from ACME subjects');
+    assert.ok(skipOf(cfg).includes('web.example.com'), 'paused host in automatic_https.skip');
+    assert.ok(!acmeSubjects(cfg).includes('web.example.com'), 'paused host absent from ACME subjects');
     assert.ok(cfg.logging.logs.tls, 'tls log block present');
     // Gegen das konfigurierte Caddy-Datenverzeichnis, nicht gegen '/data/caddy':
     // die Testumgebung lenkt GC_CADDY_DATA_DIR in ein Temp-Verzeichnis
@@ -106,7 +106,7 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
   it('GET /zones: entry.tls, host.tls_problem and degraded health', () => {
     const view = domainZones.listZones();
     const zone = view.zones.find((z) => z.domain === 'example.com');
-    const host = zone.hosts.find((h) => h.fqdn === 'jenny.example.com');
+    const host = zone.hosts.find((h) => h.fqdn === 'web.example.com');
     assert.equal(host.tls_problem, true);
     assert.equal(host.health, 'degraded');
     assert.equal(zone.health, 'degraded');
@@ -169,26 +169,26 @@ describe('tls guard: preflight pauses a host before the first sync', () => {
   });
 
   it('retryHost: still failing → PREFLIGHT_FAILED and paused; fixed DNS → pending and out of skip', async () => {
-    await assert.rejects(tlsGuard.retryHost('jenny.example.com'), (err) => {
+    await assert.rejects(tlsGuard.retryHost('web.example.com'), (err) => {
       assert.equal(err.code, 'PREFLIGHT_FAILED');
       assert.equal(err.statusCode, 409);
       assert.equal(err.result.code, 'aaaa_without_ipv6');
       return true;
     });
-    assert.equal(tlsGuard.getRow('jenny.example.com').state, 'paused');
+    assert.equal(tlsGuard.getRow('web.example.com').state, 'paused');
 
-    dnsMap['jenny.example.com'] = { a: [V4], aaaa: [] };
+    dnsMap['web.example.com'] = { a: [V4], aaaa: [] };
     syncCount = 0;
-    const status = await tlsGuard.retryHost('jenny.example.com');
+    const status = await tlsGuard.retryHost('web.example.com');
     assert.equal(status.state, 'pending');
     assert.equal(status.attempts, 0);
-    assert.equal(status.host, 'jenny.example.com');
+    assert.equal(status.host, 'web.example.com');
     assert.equal(status.kind, 'acme');
     assert.ok(status.route_id);
     assert.equal(status.domain_id, zoneId);
     assert.equal(syncCount, 1);
-    assert.ok(!skipOf(caddy.buildCaddyConfig()).includes('jenny.example.com'));
-    assert.ok(acmeSubjects(caddy.buildCaddyConfig()).includes('jenny.example.com'));
+    assert.ok(!skipOf(caddy.buildCaddyConfig()).includes('web.example.com'));
+    assert.ok(acmeSubjects(caddy.buildCaddyConfig()).includes('web.example.com'));
   });
 
   it('a failed sync rolls the pause back', async () => {

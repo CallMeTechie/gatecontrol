@@ -9,8 +9,8 @@ Verbindliche Schnittstelle zwischen Backend und Oberfläche. Wer abweicht,
 
 Befund (13.09.): Der HTTP-Server `srv0` lauscht auf `:443` und `:80`, die Routen
 matchen nur den Hostnamen. Caddy bedient damit jede Route auch unverschlüsselt
-über Port 80 und legt **keine** automatische Umleitung an (`http://jennybackes.de`,
-`http://pdf.marcbackes.net`, `http://nexterm.collabtive.cloud` liefern 200).
+über Port 80 und legt **keine** automatische Umleitung an (`http://example.edu`,
+`http://pdf.example.org`, `http://nexterm.example.com` liefern 200).
 Das per-Route-`listen` in `caddyRoutes` (`route.https_enabled ? [':443'] : [':80']`)
 landet nicht in der Server-Konfiguration.
 
@@ -34,7 +34,7 @@ ausgenommen, Antwort 308 mit korrekter `Location`.
 
 ## A. Host-Aliase (www)
 
-Anlass: `www.jennybackes.de` sollte dasselbe wie `jennybackes.de` liefern. Ein
+Anlass: `www.example.edu` sollte dasselbe wie `example.edu` liefern. Ein
 zweiter Host mit gleichem Ziel geht zwar, ist aber umständlich und dupliziert
 alle Einstellungen. Ein Host bekommt deshalb **Alias-Namen**.
 

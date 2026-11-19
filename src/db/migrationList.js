@@ -1591,8 +1591,8 @@ const migrations = [
     //   routes.label      visible name of an entry ("SSH DS918+"); empty = the
     //                     old behaviour (port/target is the name).
     // Backfill: L4 entries carry a legacy `routes.domain` that is NOT the FQDN
-    // of their host (SNI/naming leftover, e.g. ssh918.domaincaster.com on the
-    // host nas2.domaincaster.com) — its first DNS label becomes the name
+    // of their host (SNI/naming leftover, e.g. ssh918.example.net on the
+    // host nas2.example.net) — its first DNS label becomes the name
     // ("ssh918"). Entries whose domain IS the host FQDN keep an empty label.
     sql: `
       ALTER TABLE routes ADD COLUMN on_demand INTEGER NOT NULL DEFAULT 0;

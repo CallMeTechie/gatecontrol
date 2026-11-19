@@ -312,7 +312,9 @@ you change it there under “More” → “Change name and group …”.
 
 **Names of gateways:** A gateway has a name too, and it resolves on every VPN
 device. Only the server can reach it, though: the tunnel of a gateway lets no
-other VPN device in, on purpose. The interface says so below the name.
+other VPN device in, on purpose. The interface says so below the name; in
+the dialog “Change name and group …” the line reads “The gateway's name in the
+VPN: …” instead of “Reachable as …”.
 `nas.vpn.example.com:5000` therefore does not answer, even when the gateway
 runs on the NAS. For services in the home network behind the gateway – the
 interface of the NAS, a printer, a camera – create a route under “Services” →

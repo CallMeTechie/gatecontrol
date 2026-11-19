@@ -316,7 +316,8 @@ Name in der Kopfzeile; ändern kannst du ihn dort unter „Mehr“ → „Name u
 **Namen von Gateways:** Auch ein Gateway hat einen Namen, und er löst auf
 jedem VPN-Gerät auf. Erreichen kann ihn aber nur der Server: Der Tunnel eines
 Gateways lässt mit Absicht kein anderes VPN-Gerät hinein. Darauf weist die
-Oberfläche unter dem Namen hin. `nas.vpn.example.com:5000` antwortet also
+Oberfläche unter dem Namen hin; im Dialog „Name und Gruppe ändern …“ heißt
+es deshalb „Name des Gateways im VPN: …“ statt „Erreichbar als …“. `nas.vpn.example.com:5000` antwortet also
 nicht, auch wenn das Gateway auf dem NAS läuft. Für Dienste im Heimnetz hinter
 dem Gateway – die Oberfläche des NAS, einen Drucker, eine Kamera – legst du
 unter „Dienste“ → „Domains / Routen“ eine Route an: Als Ziel wählst du das

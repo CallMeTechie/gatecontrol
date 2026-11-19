@@ -8,8 +8,8 @@ Implementation plan: `docs/superpowers/plans/2026-06-16-rdp-gateway-true-health.
 ## Symptom
 
 Gateway-mode RDP routes showed `online: true` permanently, even when the actual Windows/RDP host
-behind the gateway was powered off. Both affected production routes — `win.marcbackes.net`
-(`192.168.2.144`) and `coding.domaincaster.com` (`192.168.2.114`), each linked to the live
+behind the gateway was powered off. Both affected production routes — `win.example.org`
+(`192.168.2.144`) and `coding.example.net` (`192.168.2.114`), each linked to the live
 gateway peer 79 — stayed green regardless of the host state.
 
 ## Root cause

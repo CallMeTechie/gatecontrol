@@ -27,24 +27,24 @@ test('effectivePortalHost: internal default when no base', () => {
 });
 
 test('effectivePortalHost: prefix.base when base set; empty prefix -> apex', () => {
-  settings.set('portal.base_domain', 'domaincaster.com');
+  settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
-  assert.deepEqual(pc.effectivePortalHost(), { host: 'home.domaincaster.com', public: true });
+  assert.deepEqual(pc.effectivePortalHost(), { host: 'home.example.net', public: true });
   settings.set('portal.prefix', '');
-  assert.deepEqual(pc.effectivePortalHost(), { host: 'domaincaster.com', public: true });
+  assert.deepEqual(pc.effectivePortalHost(), { host: 'example.net', public: true });
 });
 
 test('validatePortalHost: empty base ok; unverified rejected; verified ok', async () => {
   assert.equal((await pc.validatePortalHost('', 'home')).ok, true);
   assert.equal((await pc.validatePortalHost('nope.com', 'home')).ok, false);   // not in domains
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  assert.equal((await pc.validatePortalHost('domaincaster.com', 'home')).ok, true);
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  assert.equal((await pc.validatePortalHost('example.net', 'home')).ok, true);
 });
 
 test('validatePortalHost: rejects collision with a route domain', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  getDb().prepare("INSERT INTO routes (description, domain, target_ip, target_port, enabled, route_type) VALUES ('r','home.domaincaster.com','10.0.0.2','80',1,'http')").run();
-  const r = await pc.validatePortalHost('domaincaster.com', 'home');
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  getDb().prepare("INSERT INTO routes (description, domain, target_ip, target_port, enabled, route_type) VALUES ('r','home.example.net','10.0.0.2','80',1,'http')").run();
+  const r = await pc.validatePortalHost('example.net', 'home');
   assert.equal(r.ok, false);
   assert.equal(r.error, 'collision');
 });
@@ -59,35 +59,35 @@ test('validatePortalHost: rejects collision with a peer FQDN', async () => {
 });
 
 test('validatePortalHost: rejects invalid prefix', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  assert.equal((await pc.validatePortalHost('domaincaster.com', 'bad_prefix!')).ok, false);
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  assert.equal((await pc.validatePortalHost('example.net', 'bad_prefix!')).ok, false);
 });
 
 // ── Regression: verified apex + NXDOMAIN subdomain → 30-day ACME retry loop ──
 test('validatePortalHost: rejects a composed host with no DNS record (NXDOMAIN)', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
-  domains._setResolverForTest(async () => []);              // NXDOMAIN for home.domaincaster.com
-  const r = await pc.validatePortalHost('domaincaster.com', 'home');
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
+  domains._setResolverForTest(async () => []);              // NXDOMAIN for home.example.net
+  const r = await pc.validatePortalHost('example.net', 'home');
   assert.equal(r.ok, false);
   assert.equal(r.error, 'unresolved');
 });
 
 test('validatePortalHost: rejects a composed host pointing at a foreign IP', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   domains._setResolverForTest(async (host, family) => (family === 4 ? ['203.0.113.9'] : []));
-  const r = await pc.validatePortalHost('domaincaster.com', 'home');
+  const r = await pc.validatePortalHost('example.net', 'home');
   assert.equal(r.ok, false);
   assert.equal(r.error, 'unresolved');
 });
 
 test('validatePortalHost: unreachable resolver does not block (pending, not failed)', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   domains._setResolverForTest(async () => { throw new Error('timeout'); });
-  assert.equal((await pc.validatePortalHost('domaincaster.com', 'home')).ok, true);
+  assert.equal((await pc.validatePortalHost('example.net', 'home')).ok, true);
 });
 
 test('validatePortalHost: apex portal host (empty prefix) is not re-resolved', async () => {
-  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('domaincaster.com','verified')").run();
+  getDb().prepare("INSERT INTO domains (domain, status) VALUES ('example.net','verified')").run();
   domains._setResolverForTest(async () => { throw new Error('resolver must not be called'); });
-  assert.equal((await pc.validatePortalHost('domaincaster.com', '')).ok, true);
+  assert.equal((await pc.validatePortalHost('example.net', '')).ok, true);
 });

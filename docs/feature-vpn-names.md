@@ -114,7 +114,10 @@ es dort, wo der Name eines Gateways steht (Karte, Kopfzeile, Feld im Dialog
 „Name und Gruppe ändern …“): „Diesen Namen erreicht nur der Server. Für
 Dienste im Heimnetz hinter dem Gateway eine Route anlegen: Domains / Routen“
 (`vn.gw_note`, `vn.gw_note_link`; `GCVpnNames.gatewayNote()`, im Dialog
-`field({ gateway: true })`). Name und Kopieren-Knopf bleiben. Geräte unter
+`field({ gateway: true })`). Im Dialog steht über dem Hinweis statt des
+allgemeinen „Erreichbar als …“ die Zeile „Name des Gateways im VPN: …“
+(`vn.hint_ok_gw`, `vn.hint_ok_gw_both`), damit beides sich nicht widerspricht.
+Name und Kopieren-Knopf bleiben. Geräte unter
 „Peers / Clients“ zeigen den Hinweis nicht – Gateways stehen dort nicht. Die
 Karte „Zustand der Namen“ zählt Gateways nur mit und listet sie nicht einzeln.
 

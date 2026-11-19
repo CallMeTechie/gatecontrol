@@ -470,6 +470,14 @@ module.exports = (ctx) => {
           && await p.evaluate(() => document.querySelector('.vn-field .vn-suf').textContent === '.vpn.example.com'));
         note = await gwNote('.vn-field');
         step('"Mehr": the note stands at the field', noteOk(note, false), JSON.stringify(note));
+        // the line above the note names the gateway instead of the general
+        // "Erreichbar als …" (only the server reaches it, the note says why)
+        const gwHint = await p.textContent('#gwm-hostname-hint');
+        const gwNames = { fqdn: 'gw-buero.vpn.example.com', legacy: 'gw-buero.gc.internal' };
+        // (the seeded name was reported by the gateway: its line follows)
+        step('"Mehr": the line at the field is the one for gateways',
+          gwHint === fill(T['vn.hint_ok_gw_both'], gwNames) + T['vn.hint_agent']
+          && !gwHint.includes(fill(T['vn.hint_ok_both'], gwNames)), gwHint);
         await shot(p, 'vpnnames-gateway-dialog', false);
         await p.fill('#gwm-hostname', 'gw-keller');
         await p.click('#gwm-save');

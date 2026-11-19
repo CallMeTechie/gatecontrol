@@ -12,7 +12,7 @@ Hintergrund und Entscheidungen: Umsetzungsplan „Domains & Routen“, Fassung 2
 
 | Begriff | Speicherort | Bedeutung |
 |---|---|---|
-| Zone / Domain | `domains` | Basisdomain (z. B. `marcbackes.net`) mit Gateway und Standard-Zugriff |
+| Zone / Domain | `domains` | Basisdomain (z. B. `example.org`) mit Gateway und Standard-Zugriff |
 | Host | `service_bundles` | Subdomain einer Zone (`@` = Basisdomain selbst). Alle Einträge eines Hosts gehen an **dieselbe LAN-Adresse** |
 | Eintrag | `routes` | eine HTTP-Route oder L4-Weiterleitung (TCP/UDP) eines Hosts |
 

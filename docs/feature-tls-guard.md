@@ -7,7 +7,7 @@ Domain-Dialog. Wer abweicht, ändert zuerst dieses Dokument.
 
 ## Anlass (Diagnose vom 13.09.2026)
 
-`jennybackes.de` wurde am 11.09. angelegt und als „verifiziert“ geführt, Let's
+`example.edu` wurde am 11.09. angelegt und als „verifiziert“ geführt, Let's
 Encrypt lehnte aber jeden Zertifikatsantrag ab, bis das Konto für den Hostnamen
 gesperrt war. Ursache: Die Domain hat neben dem A-Record (dieser Server) einen
 **AAAA-Record auf einen anderen Server** (`2001:41d0:301:1::29`). Let's Encrypt

@@ -52,7 +52,7 @@ const { execFileSync } = require('node:child_process');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
 const { archiveFile, downloadBuffer } = require('./helpers/offsiteFiles');
 
-const NAS = 'nas.domaincaster.example'; // never resolves: the connection has to go through the peer / route
+const NAS = 'nas.example.net'; // never resolves: the connection has to go through the peer / route
 const API = '/api/v1/settings/backup';
 const PASS = 'offsite passphrase 42';
 let db, pki, tmp;
@@ -162,7 +162,7 @@ after(async () => {
 
 describe('WebDAV through a VPN peer with an own certificate (the DS218+ of the report)', () => {
   // Drive's storage target: Verbindung "Über ein VPN-Gerät" → the gateway peer, port 5006,
-  // https://nas.domaincaster.com:5006/GateControl/, a user, "Eigenes Zertifikat" filled
+  // https://nas.example.net:5006/GateControl/, a user, "Eigenes Zertifikat" filled
   let gw;
   const cfgOf = (extra = {}) => ({ url: `https://${NAS}:5006/GateControl/Backups/`, username: 'gc', password: 'pw',
     via: { kind: 'peer', peerId: gw, port: secure.port }, tls_ca: pki.ca, ...extra });
@@ -190,7 +190,7 @@ describe('WebDAV through a VPN peer with an own certificate (the DS218+ of the r
   it('the certificate is checked against the URL\'s name: without the own CA or for another name it fails', async () => {
     const noCa = offsite().normalizeConfig('webdav', cfgOf({ tls_ca: '' }));
     await assert.rejects(webdav().list(noCa), (e) => e.code === 'TRANSPORT' && /WebDAV PROPFIND failed/.test(e.message));
-    const other = offsite().normalizeConfig('webdav', cfgOf({ url: 'https://other.domaincaster.example:5006/GateControl/' }));
+    const other = offsite().normalizeConfig('webdav', cfgOf({ url: 'https://other.example.net:5006/GateControl/' }));
     await assert.rejects(webdav().list(other), (e) => e.code === 'TRANSPORT' && /altnames|Hostname/i.test(e.message));
   });
 

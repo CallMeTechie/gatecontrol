@@ -7,10 +7,10 @@ const { extractBaseDomains, shouldFlagServerIp } = require('../src/services/doma
 
 test('extractBaseDomains reduces to last-two-labels, distinct, lowercased', () => {
   const out = extractBaseDomains([
-    'nas.domaincaster.com', 'foo.bar.domaincaster.com', 'domaincaster.com',
-    'a.marcbackes.net', 'MARCBACKES.NET', '', '*.wild.com', null,
+    'nas.example.net', 'foo.bar.example.net', 'example.net',
+    'a.example.org', 'EXAMPLE.ORG', '', '*.wild.com', null,
   ]);
-  assert.deepEqual(out.sort(), ['domaincaster.com', 'marcbackes.net', 'wild.com'].sort());
+  assert.deepEqual(out.sort(), ['example.net', 'example.org', 'wild.com'].sort());
 });
 
 test('shouldFlagServerIp: true only when >=2 and all mismatch', () => {
