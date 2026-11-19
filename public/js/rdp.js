@@ -718,7 +718,7 @@
       document.getElementById('rdp-gateway-port').value = r.gateway_port || 443;
       // Home-Gateway fields
       var homegwPeerSel = document.getElementById('rdp-homegw-peer');
-      if (homegwPeerSel) homegwPeerSel.value = r.gateway_peer_id != null ? String(r.gateway_peer_id) : '';
+      if (homegwPeerSel) homegwPeerSel.value = GCRdpForm.gatewayTargetValue(r);
       var homegwListenInput = document.getElementById('rdp-homegw-listen-port');
       if (homegwListenInput) homegwListenInput.value = r.gateway_listen_port != null ? String(r.gateway_listen_port) : '';
       document.getElementById('rdp-credential-mode').value = r.credential_mode || 'none';
@@ -830,6 +830,7 @@
 
   // Save handler
   document.getElementById('rdp-modal-save').addEventListener('click', async function () {
+    var gwTarget = GCRdpForm.gatewayTargetFields(_homegwTargetValue(), document.getElementById('rdp-access-mode').value);
     var data = {
       protocol: currentProtocol,
       name: document.getElementById('rdp-name').value,
@@ -842,10 +843,10 @@
       // Microsoft RD-Gateway (TSGateway) — NOT the Home Gateway
       gateway_host: document.getElementById('rdp-gateway-host').value || null,
       gateway_port: document.getElementById('rdp-gateway-port').value ? parseInt(document.getElementById('rdp-gateway-port').value, 10) : null,
-      // Home-Gateway routing (Option B)
-      gateway_peer_id: (document.getElementById('rdp-access-mode').value === 'gateway'
-        && document.getElementById('rdp-homegw-peer') && document.getElementById('rdp-homegw-peer').value)
-        ? parseInt(document.getElementById('rdp-homegw-peer').value, 10) : null,
+      // Home-Gateway routing (Option B): a gateway or a gateway pool — one
+      // select, the other field goes out as null (the server switches over).
+      gateway_peer_id: gwTarget.gateway_peer_id,
+      gateway_pool_id: gwTarget.gateway_pool_id,
       gateway_listen_port: (document.getElementById('rdp-access-mode').value === 'gateway'
         && document.getElementById('rdp-homegw-listen-port') && document.getElementById('rdp-homegw-listen-port').value)
         ? parseInt(document.getElementById('rdp-homegw-listen-port').value, 10) : null,
@@ -1376,6 +1377,14 @@
     });
   }
 
+  function _homegwTargetValue() {
+    var sel = document.getElementById('rdp-homegw-peer');
+    return sel ? sel.value : '';
+  }
+
+  // Gateway target select: the gateways and — when there are any — the
+  // gateway pools, as two groups (same shape as the target select of the
+  // domain settings, domain-modal.js: "Gateways" / "Gateway-Pools").
   async function populateHomeGatewayPeers() {
     var sel = document.getElementById('rdp-homegw-peer');
     if (!sel) return;
@@ -1383,18 +1392,42 @@
     var placeholder = document.createElement('option');
     placeholder.value = ''; placeholder.textContent = '—';
     sel.appendChild(placeholder);
+    var peers = [];
+    var pools = [];
     try {
       // Reuse the simplified peer endpoint that already exposes
       // peer_type so we don't need a server-side filter change.
       var data = await api.get('/api/v1/routes/peers');
-      var peers = ((data && data.peers) || []).filter(function (p) { return p.peer_type === 'gateway' && p.enabled; });
-      peers.forEach(function (p) {
-        var opt = document.createElement('option');
-        opt.value = String(p.id);
-        opt.textContent = p.name + ' (' + (p.ip || '?') + ')';
-        sel.appendChild(opt);
-      });
+      peers = ((data && data.peers) || []).filter(function (p) { return p.peer_type === 'gateway' && p.enabled; });
     } catch (err) { /* non-fatal */ }
+    try {
+      // Without the pool licence the endpoint answers 403 → no pool group.
+      var pd = await api.get('/api/v1/gateway-pools');
+      pools = (Array.isArray(pd) ? pd : []).filter(function (p) { return p && p.enabled !== 0 && p.enabled !== false; });
+    } catch (err) { /* non-fatal */ }
+    var peerParent = sel;
+    if (pools.length) {
+      peerParent = document.createElement('optgroup');
+      peerParent.label = sel.getAttribute('data-group-gateways') || 'Gateways';
+      sel.appendChild(peerParent);
+    }
+    peers.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = p.name + ' (' + (p.ip || '?') + ')';
+      peerParent.appendChild(opt);
+    });
+    if (pools.length) {
+      var og = document.createElement('optgroup');
+      og.label = sel.getAttribute('data-group-pools') || 'Gateway pools';
+      pools.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = 'pool:' + p.id;
+        opt.textContent = p.name;
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
+    }
   }
 
   (function initWizardNav() {
@@ -1443,8 +1476,9 @@
     if (sel && editingId) {
       try {
         var res = await api.get('/api/v1/rdp/' + id);
-        if (res && res.ok && res.route && res.route.gateway_peer_id != null) {
-          sel.value = String(res.route.gateway_peer_id);
+        if (res && res.ok && res.route) {
+          var gwValue = GCRdpForm.gatewayTargetValue(res.route);
+          if (gwValue) sel.value = gwValue;
         }
       } catch (e) { /* non-fatal */ }
     }

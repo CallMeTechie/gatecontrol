@@ -78,3 +78,19 @@ describe('rdp-form-logic', () => {
     assert.equal(s.sftp_host, '10.0.0.6');
   });
 });
+
+describe('rdp-form-logic: gateway target select (gateway or pool)', () => {
+  it('gatewayTargetValue: pool → "pool:<id>", peer → "<id>", none → ""', () => {
+    assert.equal(L.gatewayTargetValue({ gateway_pool_id: 4, gateway_peer_id: null }), 'pool:4');
+    assert.equal(L.gatewayTargetValue({ gateway_peer_id: 7, gateway_pool_id: null }), '7');
+    assert.equal(L.gatewayTargetValue({}), '');
+    assert.equal(L.gatewayTargetValue(null), '');
+  });
+  it('gatewayTargetFields: exactly one set for access_mode=gateway, the other null; both null otherwise', () => {
+    assert.deepEqual(L.gatewayTargetFields('pool:4', 'gateway'), { gateway_peer_id: null, gateway_pool_id: 4 });
+    assert.deepEqual(L.gatewayTargetFields('7', 'gateway'), { gateway_peer_id: 7, gateway_pool_id: null });
+    assert.deepEqual(L.gatewayTargetFields('', 'gateway'), { gateway_peer_id: null, gateway_pool_id: null });
+    assert.deepEqual(L.gatewayTargetFields('pool:4', 'internal'), { gateway_peer_id: null, gateway_pool_id: null });
+    assert.deepEqual(L.gatewayTargetFields('pool:x', 'gateway'), { gateway_peer_id: null, gateway_pool_id: null });
+  });
+});

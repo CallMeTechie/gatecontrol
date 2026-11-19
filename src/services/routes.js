@@ -633,10 +633,26 @@ function codedServiceError(statusCode, code, message) {
   return err;
 }
 
-async function update(id, data) {
+// Fields update() sets per COALESCE (an absent or null value keeps the stored
+// one) that a caller may still clear on purpose: update(id, data, { clear }).
+// Only the gateway target so far — switching a gateway route between a pinned
+// gateway and a pool clears the one no longer used (services/rdp.js, linked L4
+// route of an RDP route), which a null in data cannot do.
+const CLEARABLE_ON_UPDATE = {
+  target_peer_id: 'UPDATE routes SET target_peer_id = NULL WHERE id = ?',
+  target_pool_id: 'UPDATE routes SET target_pool_id = NULL WHERE id = ?',
+};
+
+async function update(id, data, opts = {}) {
   const db = getDb();
   const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);
   if (!route) throw new Error('Route not found');
+
+  const clear = Array.isArray(opts.clear) ? opts.clear : [];
+  for (const f of clear) {
+    if (!Object.prototype.hasOwnProperty.call(CLEARABLE_ON_UPDATE, f)) throw new Error('Field cannot be cleared: ' + f);
+    if (data[f] != null) throw new Error('conflicting_target: ' + f + ' is both set and cleared');
+  }
 
   // Snapshot for rollback
   const snapshot = { ...route };
@@ -1049,6 +1065,11 @@ async function update(id, data) {
   if (data.target_kind !== undefined && data.target_kind !== 'gateway') {
     db.prepare(`UPDATE routes SET target_peer_id = NULL, target_pool_id = NULL, target_lan_host = NULL, target_lan_port = NULL, wol_enabled = 0, wol_mac = NULL WHERE id = ?`).run(id);
   }
+
+  // Explicitly cleared fields (opts.clear, CLEARABLE_ON_UPDATE): the
+  // COALESCE above kept their stored value. Before the Caddy sync, so the
+  // config is built from the clean row; the snapshot rollback restores them.
+  for (const f of clear) db.prepare(CLEARABLE_ON_UPDATE[f]).run(id);
 
   // Persons and groups (docs/groups.md "Zugriff per Gruppe"): sent = set or
   // clear (the COALESCE above cannot clear user_ids), absent = keep.

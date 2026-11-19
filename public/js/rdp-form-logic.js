@@ -75,7 +75,31 @@
     return state; // has_* flags (when present from the admin path) are carried through
   }
 
+  // Gateway target select (access_mode=gateway): one select with the gateways
+  // ("<peer id>") and the gateway pools ("pool:<pool id>") — the same value
+  // shape as the target select of the domain settings (domain-modal.js).
+  function gatewayTargetValue(route) {
+    route = route || {};
+    if (route.gateway_pool_id != null) return 'pool:' + route.gateway_pool_id;
+    if (route.gateway_peer_id != null) return String(route.gateway_peer_id);
+    return '';
+  }
+
+  // The select value → the payload fields. Exactly one of the two is set for
+  // access_mode=gateway, the other one is sent as null so the server switches
+  // the route over (and clears the former target); both null otherwise.
+  function gatewayTargetFields(value, accessMode) {
+    var out = { gateway_peer_id: null, gateway_pool_id: null };
+    if (accessMode !== 'gateway') return out;
+    var v = String(value == null ? '' : value);
+    var m = /^pool:(\d+)$/.exec(v);
+    if (m) out.gateway_pool_id = parseInt(m[1], 10);
+    else if (/^\d+$/.test(v)) out.gateway_peer_id = parseInt(v, 10);
+    return out;
+  }
+
   return { defaultPortFor: defaultPortFor, stepsForProtocol: stepsForProtocol,
     visibleFieldsFor: visibleFieldsFor, foreignFieldsOnSwitch: foreignFieldsOnSwitch,
-    serializeForm: serializeForm, hydrateForm: hydrateForm };
+    serializeForm: serializeForm, hydrateForm: hydrateForm,
+    gatewayTargetValue: gatewayTargetValue, gatewayTargetFields: gatewayTargetFields };
 }));

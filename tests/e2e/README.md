@@ -189,6 +189,11 @@ scenarios/32-portal-places.js Portal „Mein Profil › Meine Orte“ (#orte): K
                         Klick auf die Karte → neuer Ort mit Punkt, „Speichern“ erst mit
                         Name, Symbol und Radius, Liste und Karte, Löschen fragt nach,
                         390 px
+scenarios/33-rdp-pool.js RDP-Route über einen Gateway-Pool: eigene lizenzierte App
+                        (remote_desktop, rdp_via_gateway, gateway_pools), Auswahl
+                        „Home-Gateway“ mit den Gruppen Gateways / Gateway-Pools, Route
+                        direkt auf dem Pool anlegen, Bearbeiten zeigt den Pool, Wechsel
+                        Pool → Gateway → Pool (RDP-Zeile und TCP-Route halten nur das Ziel)
 ```
 
 ## Ablauf
