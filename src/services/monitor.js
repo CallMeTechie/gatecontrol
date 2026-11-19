@@ -307,18 +307,21 @@ function getSummary() {
 function handleRouteDownDetected(routeId) {
   const db = getDb();
   const route = db.prepare(`
-    SELECT target_peer_id, target_lan_host, target_lan_port, wol_enabled, wol_mac, target_kind
+    SELECT id, target_peer_id, target_pool_id, target_lan_host, target_lan_port, wol_enabled, wol_mac, target_kind
     FROM routes WHERE id=?
   `).get(routeId);
   if (!route) return;
-  if (!route.wol_enabled || !route.wol_mac || !route.target_peer_id) return;
+  // the gateway it is pinned to, or a live member of its pool (gatewayWake) — never the server's own broadcast
+  if (!route.wol_enabled || !route.wol_mac || (!route.target_peer_id && !route.target_pool_id)) return;
   if (route.target_kind !== 'gateway') return;
 
-  const gateways = require('./gateways');
-  gateways.notifyWol(route.target_peer_id, {
+  require('./gatewayWake').wakeTarget({
+    peerId: route.target_peer_id || null,
+    poolId: route.target_peer_id ? null : route.target_pool_id,
     mac: route.wol_mac,
-    lan_host: route.target_lan_host,
-    timeout_ms: 60000,
+    lanHost: route.target_lan_host,
+    lanPort: route.target_lan_port,
+    timeoutMs: 60000,
   }).catch((err) => { logger.debug({ err: err.message, routeId: route.id }, 'WoL request via gateway failed'); });
 }
 

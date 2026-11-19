@@ -4,7 +4,7 @@ const { Router } = require('express');
 const rdp = require('../../services/rdp');
 const rdpMonitor = require('../../services/rdpMonitor');
 const rdpSessions = require('../../services/rdpSessions');
-const wol = require('../../services/wol');
+const { wakeTarget, WakeError } = require('../../services/gatewayWake');
 const { getServerPublicKey, publicKeyEncrypt } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
 const { requireFeature, requireFeatureField } = require('../../middleware/license');
@@ -381,17 +381,27 @@ router.post('/:id/wol', async (req, res) => {
     // For gateway-routed RDP targets the host lives on the gateway's LAN,
     // not on the server's LAN. A local UDP broadcast from the server
     // never reaches it, so delegate to the companion's /api/wol endpoint
-    // and let the gateway send the magic packet on the right network.
-    if (route.access_mode === 'gateway' && route.gateway_peer_id) {
-      const gateways = require('../../services/gateways');
-      await gateways.notifyWol(route.gateway_peer_id, {
+    // and let the gateway send the magic packet on the right network —
+    // the pinned gateway, or a live member of the pool (the next one when
+    // a member fails). The server's own broadcast only without either.
+    const viaGateway = route.access_mode === 'gateway';
+    let r;
+    try {
+      r = await wakeTarget({
+        peerId: viaGateway && route.gateway_pool_id == null ? route.gateway_peer_id : null,
+        poolId: viaGateway ? route.gateway_pool_id : null,
         mac: route.wol_mac_address,
-        lan_host: route.host,
+        lanHost: route.host,
+        lanPort: route.port,
       });
-      return res.json({ ok: true, message: 'Magic packet sent via gateway' });
+    } catch (err) {
+      if (err instanceof WakeError && err.code === 'gateway_offline') {
+        logger.warn({ id, poolId: route.gateway_pool_id }, 'WoL: no gateway of the pool is online');
+        return res.status(503).json({ ok: false, error: req.t('error.rdp.wol_failed') });
+      }
+      throw err;
     }
-    await wol.sendMagicPacket(route.wol_mac_address);
-    res.json({ ok: true, message: 'Magic packet sent' });
+    res.json({ ok: true, message: r.via === 'gateway' ? 'Magic packet sent via gateway' : 'Magic packet sent' });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to send WoL packet');
     res.status(500).json({ ok: false, error: req.t('error.rdp.wol_failed') });
