@@ -22,6 +22,28 @@ const conn = require('../src/services/directory/ldapConn');
 
 let tmp, pki;
 const servers = [];
+const DEADLINE_MS = 10000;
+
+/** Settle a handshake: the first outcome wins; a hard deadline, never a hang. */
+function settle(executor) {
+  return new Promise((resolve) => {
+    let done = false;
+    const cleanups = [];
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      for (const c of cleanups) { try { c(); } catch { /* closed */ } }
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(new Error('handshake timeout')), DEADLINE_MS);
+    // the outermost socket only: destroying the plain socket under a TLS
+    // socket that wraps it crashes Node
+    let outer = null;
+    cleanups.push(() => { if (outer) outer.destroy(); });
+    executor(finish, (sock) => { outer = sock; });
+  });
+}
 
 /** root → intermediate → leaf for "ldap.heim.example", and a foreign root. */
 function makePki(dir) {
@@ -43,6 +65,7 @@ function makePki(dir) {
 /** A TLS server presenting the leaf (+ chain) → its port (LDAPS). */
 async function ldapsServer(chain = '') {
   const srv = tls.createServer({ key: pki.leaf.key, cert: pki.leaf.cert + chain }, (s) => s.end());
+  srv.on('tlsClientError', () => {});
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   servers.push(srv);
   return srv.address().port;
@@ -52,7 +75,6 @@ async function ldapsServer(chain = '') {
 async function startTlsServer() {
   const srv = tcp.createServer((raw) => {
     raw.once('data', () => {
-      raw.pause();
       raw.write('y'); // "go ahead" (the extended operation's answer)
       const s = new tls.TLSSocket(raw, { isServer: true, key: pki.leaf.key, cert: pki.leaf.cert });
       s.on('error', () => {});
@@ -68,30 +90,31 @@ async function startTlsServer() {
 /** Handshake with ldapConn's TLS options → null (trusted) or the error. */
 function handshake(port, cfg) {
   const opts = conn.tlsOptionsFor({ host: '127.0.0.1', security: 'ldaps', ...cfg });
-  return new Promise((resolve) => {
+  return settle((finish, track) => {
     const s = tls.connect({ host: '127.0.0.1', port, ...opts });
-    s.setTimeout(10000, () => { s.destroy(); resolve(new Error('timeout')); });
-    s.once('secureConnect', () => { s.destroy(); resolve(null); });
-    s.once('error', (e) => { s.destroy(); resolve(e); });
+    track(s);
+    s.once('secureConnect', () => finish(null));
+    s.once('error', finish);
   });
 }
 
 /** StartTLS: plain connection, one byte, then TLS on the same socket. */
 function startTls(port, cfg) {
   const opts = conn.tlsOptionsFor({ host: '127.0.0.1', security: 'starttls', ...cfg });
-  return new Promise((resolve) => {
+  return settle((finish, track) => {
     const raw = tcp.connect(port, '127.0.0.1', () => raw.write('x'));
+    track(raw);
+    raw.once('error', finish);
     raw.once('data', () => {
       const s = tls.connect({ socket: raw, ...opts });
-      s.once('secureConnect', () => { s.destroy(); resolve(null); });
-      s.once('error', (e) => { s.destroy(); resolve(e); });
+      track(s);
+      s.once('secureConnect', () => finish(null));
+      s.once('error', finish);
     });
-    raw.once('error', resolve);
-    raw.setTimeout(10000, () => { raw.destroy(); resolve(new Error('timeout')); });
   });
 }
 
-describe('LDAP: server without intermediate certificate', () => {
+describe('LDAP: server without intermediate certificate', { timeout: 120000 }, () => {
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ldap-chain-'));
     pki = makePki(tmp);
