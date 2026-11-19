@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.302.0] — 2026-11-19
+
+### Features
+- Domains/Routen – Gateway-Pool im Eintrags-Editor, UDP über Gateway abgelehnt, Anlegen/Löschen/Zeilenmenü robuster (#537)
+
+---
+
 ## [1.301.0] — 2026-11-19
 
 ### Features
