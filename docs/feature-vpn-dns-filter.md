@@ -65,8 +65,12 @@ upstreams `entrypoint.sh` wrote.
    out over UDP as it is. Names that are treated alike for everybody (the
    normal case) never see TC.
 5. **Internal names** (everything in `peers.hosts`, the API host) are never
-   blocked — dnsmasq answers their A records itself, but AAAA/HTTPS/MX reach
-   the filter.
+   blocked. dnsmasq answers every record type of them itself: the A record
+   from `peers.hosts`, every other type (AAAA, HTTPS/SVCB, MX, …) as an empty
+   answer — `internal.servers` next to `peers.hosts` (dnsmasq `servers-file=`,
+   `server=/<name>/` + `server=/*.<name>/#`, services/dns.js). Should such a
+   question reach the filter all the same, it answers NODATA for every type
+   but A — never the public answer of the upstream.
 6. **No ECS, a loopback address, a gateway, an unknown address** → never
    filtered.
 7. **Fail-open.** An error inside (decision, a profile the engine cannot

@@ -11,6 +11,18 @@
  * certificate is checked for when the server is reached through another
  * address (an L4 route, a peer's VPN IP).
  *
+ * Incomplete chain: a server that sends only its own certificate without the
+ * intermediate CA ("unable to verify the first certificate",
+ * UNABLE_TO_VERIFY_LEAF_SIGNATURE — Node does not fetch the issuer through
+ * AIA) is handled like the storage targets (storageTargets/net.js
+ * caOptions): the intermediate uploaded as CA certificate is a trust anchor
+ * of its own (allowPartialTrustChain, OpenSSL X509_V_FLAG_PARTIAL_CHAIN), the
+ * root is not needed. Nothing is weakened: only the uploaded certificates
+ * are trusted then (not the system CAs), the leaf must be issued by one of
+ * them, the dates and the server name are checked as always. tlsFailure()
+ * tells a missing intermediate from other certificate errors, so the test
+ * says what helps.
+ *
  * The server must be reachable from GateControl as host:port — directly, via
  * a peer's VPN address or an L4 route of a gateway in the home network (like
  * other home targets).
@@ -56,8 +68,38 @@ function tlsOptionsFor(cfg) {
   const name = String(cfg.tlsServerName || '').trim();
   if (name) opts.servername = name;
   else if (!net.isIP(host)) opts.servername = host;
-  if (cfg.caCert && String(cfg.caCert).includes('BEGIN CERTIFICATE')) opts.ca = [String(cfg.caCert)];
+  if (cfg.caCert && String(cfg.caCert).includes('BEGIN CERTIFICATE')) {
+    opts.ca = [String(cfg.caCert)];
+    // an uploaded intermediate is an anchor on its own (see the top)
+    opts.allowPartialTrustChain = true;
+  }
   return opts;
+}
+
+// OpenSSL / Node codes of a certificate the client refused
+const TLS_CODE_RE = /CERT|SELF_SIGNED|UNABLE_TO_/;
+
+/**
+ * Why a connection failed on the server's certificate:
+ *   'missing_intermediate'  the server sent its leaf alone and its issuer is
+ *                           unknown (UNABLE_TO_VERIFY_LEAF_SIGNATURE, no CA
+ *                           certificate uploaded: the system CAs)
+ *   'unknown_issuer'        the issuer of a certificate is not among the
+ *                           uploaded ones (UNABLE_TO_GET_ISSUER_CERT[_LOCALLY]):
+ *                           a foreign CA, or only the root uploaded while the
+ *                           server does not send the intermediate
+ *   'tls'                   any other certificate error (name, dates, self-signed)
+ *   null                    not a certificate error
+ */
+function tlsFailure(err) {
+  for (let e = err, i = 0; e && i < 5; e = e.cause, i++) {
+    const code = typeof e.code === 'string' ? e.code : '';
+    const msg = String(e.message || '');
+    if (code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || /unable to verify the first certificate/i.test(msg)) return 'missing_intermediate';
+    if (code === 'UNABLE_TO_GET_ISSUER_CERT' || code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' || /unable to get (local )?issuer certificate/i.test(msg)) return 'unknown_issuer';
+    if (TLS_CODE_RE.test(code) || /certificate|self[- ]signed|unable to verify|altnames/i.test(msg)) return 'tls';
+  }
+  return null;
 }
 
 let clientFactory = (options) => {
@@ -151,6 +193,6 @@ function isInvalidCredentials(err) {
 }
 
 module.exports = {
-  checkServer, urlFor, tlsOptionsFor, open, withServiceClient, searchAll, searchSome, rootDse, isInvalidCredentials,
+  checkServer, urlFor, tlsOptionsFor, tlsFailure, open, withServiceClient, searchAll, searchSome, rootDse, isInvalidCredentials,
   _setClientFactory, CONNECT_TIMEOUT_MS, OP_TIMEOUT_MS,
 };

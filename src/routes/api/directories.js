@@ -31,6 +31,7 @@ const { requireAdminSession } = require('../../middleware/auth');
 const store = require('../../services/directory/store');
 const sync = require('../../services/directory/sync');
 const adapters = require('../../services/directory/adapters');
+const ldapConn = require('../../services/directory/ldapConn');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -81,13 +82,21 @@ function dirOr404(req, res) {
   return d;
 }
 
+// ldapConn.tlsFailure → what the page says (a missing intermediate: what helps)
+const TLS_KEYS = {
+  missing_intermediate: 'error.directory.tls_missing_intermediate',
+  unknown_issuer: 'error.directory.tls_unknown_issuer',
+  tls: 'error.directory.tls_failed',
+};
+
 /** Directory errors of a test / search: a short, safe description. */
 function connectionError(req, err) {
   const code = err && err.code;
   const msg = String((err && err.message) || '').slice(0, 300);
   let key = 'error.directory.unreachable';
   if (code === 'AUTH_FAILED' || code === 'NO_CREDENTIALS' || (err && (err.name === 'InvalidCredentialsError' || code === 49))) key = 'error.directory.auth_failed';
-  else if (/certificate|self[- ]signed|unable to verify|CERT_|hostname|altnames/i.test(msg)) key = 'error.directory.tls_failed';
+  else if (TLS_KEYS[ldapConn.tlsFailure(err)]) key = TLS_KEYS[ldapConn.tlsFailure(err)];
+  else if (/hostname/i.test(msg)) key = 'error.directory.tls_failed';
   else if (ERRORS[code]) key = ERRORS[code][1];
   return { ok: false, code: code || 'UNREACHABLE', error: req.t(key), detail: msg };
 }

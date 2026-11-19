@@ -27,7 +27,19 @@ class SQLiteStore extends session.Store {
         db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
         return callback(null, null);
       }
-      callback(null, JSON.parse(row.data));
+      let data;
+      try {
+        data = JSON.parse(row.data);
+      } catch (err) {
+        // an unreadable session row (a disk hiccup, a manual edit) would make
+        // every request with this cookie a 500 "Unhandled error": drop it,
+        // the browser signs in again. Never the sid or the row (the
+        // SyntaxError's message quotes the data).
+        db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
+        require('../utils/logger').warn({ err: require('../utils/jsonSyntaxError').describe(err), length: String(row.data || '').length }, 'session data unreadable, session discarded');
+        return callback(null, null);
+      }
+      callback(null, data);
     } catch (err) {
       callback(err);
     }

@@ -272,13 +272,7 @@ function gateways() {
  * tick of the health check the alive flags of gateway_meta stand in, as for the Caddy config.
  */
 function poolPeer(poolId) {
-  const pool = require('../gatewayPool');
-  let snap = {};
-  try { snap = require('../gatewayHealth').getSnapshot() || {}; } catch { snap = {}; }
-  if (Object.keys(snap).length === 0) {
-    for (const r of db().prepare('SELECT peer_id, alive FROM gateway_meta').all()) snap[r.peer_id] = { alive: r.alive === 1 };
-  }
-  try { return pool.resolveActivePeer(poolId, snap) || null; } catch { return null; }
+  return require('../gatewayWake').activePoolMember(poolId);
 }
 
 /**
@@ -376,22 +370,28 @@ async function wake(plugin, target, opts) {
   if (now - (wakeLast.get(k) || 0) < WAKE_GAP_MS) throw new TargetError('rate_limited', 'wake-up sent a moment ago');
   wakeLast.set(k, now);
   let peerId = t.gatewayPeerId || null;
+  let poolId = null;
   let lanHost = t.host || null;
+  let lanPort = t.port || null;
   if (t.listener) {
     const l = listenerRow(plugin.id, t.listener);
     if (!l) throw new TargetError('not_found', 'no such listener of this plugin');
-    peerId = l.route.target_peer_id || (l.route.target_pool_id ? poolPeer(l.route.target_pool_id) : null);
-    // a pool without a live member: the server's own broadcast would land in the wrong network
-    if (!peerId && l.route.target_pool_id) throw new TargetError('gateway_offline', 'no gateway of the pool is online');
+    peerId = l.route.target_peer_id || null;
+    // a listener of a failover pool: the members serving it, the active one first (gatewayWake)
+    poolId = peerId ? null : (l.route.target_pool_id || null);
     lanHost = l.route.target_lan_host;
+    lanPort = Number(l.route.target_lan_port) || null;
   }
-  if (peerId) {
-    if (!require('../gatewayFeatures').gatewayPeer(peerId)) throw new TargetError('not_found', 'gateway not found');
-    try { await require('../gateways').notifyWol(peerId, { mac: t.mac, lan_host: lanHost }); } catch (e) { throw new TargetError('wake_failed', String((e && e.message) || e).slice(0, 200)); }
-    return { sent: true, via: 'gateway' };
+  if (peerId && !require('../gatewayFeatures').gatewayPeer(peerId)) throw new TargetError('not_found', 'gateway not found');
+  const gw = require('../gatewayWake');
+  try {
+    const r = await gw.wakeTarget({ peerId, poolId, mac: t.mac, lanHost, lanPort });
+    return { sent: true, via: r.via };
+  } catch (e) {
+    // a pool without a live member: the server's own broadcast would land in the wrong network
+    if (e instanceof gw.WakeError) throw new TargetError(e.code, e.message);
+    throw new TargetError('wake_failed', String((e && e.message) || e).slice(0, 200));
   }
-  try { await require('../wol').sendMagicPacket(t.mac); } catch (e) { throw new TargetError('wake_failed', String((e && e.message) || e).slice(0, 200)); }
-  return { sent: true, via: 'server' };
 }
 
 /** The first VPN address of the peer an API token (an app device) is bound to, or null. */

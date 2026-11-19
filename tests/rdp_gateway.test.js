@@ -195,4 +195,56 @@ describe('rdp gateway access-mode — auto-linked L4 route', () => {
     const l4Enabled = db.prepare('SELECT enabled FROM routes WHERE id = ?').get(l4Id);
     assert.equal(l4Enabled.enabled, 1);
   });
+  // The gateway only sends a magic packet for a MAC of its config (WoL whitelist = wol_mac of its routes):
+  // the linked L4 route carries the RDP route's WoL settings — pinned peer and pool alike.
+  it('the linked L4 route carries wol_enabled / wol_mac, so the MAC is in the gateway whitelist (peer)', async () => {
+    const gateways = require('../src/services/gateways');
+    const r = await rdp.create({
+      name: 'rdp-wol-peer', host: '192.168.1.60', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId, gateway_listen_port: 4400,
+      credential_mode: 'none', wol_enabled: true, wol_mac_address: 'AA:BB:CC:DD:EE:60',
+    });
+    const l4 = db.prepare('SELECT wol_enabled, wol_mac FROM routes WHERE id = ?').get(r.gateway_l4_route_id);
+    assert.deepEqual({ ...l4 }, { wol_enabled: 1, wol_mac: 'AA:BB:CC:DD:EE:60' });
+    const cfg = gateways.getGatewayConfig(gwPeerId);
+    const entry = cfg.l4_routes.find((x) => x.id === r.gateway_l4_route_id);
+    assert.equal(entry.wol_enabled, true);
+    assert.equal(entry.wol_mac, 'AA:BB:CC:DD:EE:60');
+
+    // switching WoL off on the RDP route takes the MAC out of the whitelist
+    await rdp.update(r.id, { wol_enabled: false });
+    assert.equal(db.prepare('SELECT wol_enabled FROM routes WHERE id = ?').get(r.gateway_l4_route_id).wol_enabled, 0);
+    // a new MAC reaches the L4 route as well
+    await rdp.update(r.id, { wol_enabled: true, wol_mac_address: 'AA:BB:CC:DD:EE:61' });
+    assert.deepEqual({ ...db.prepare('SELECT wol_enabled, wol_mac FROM routes WHERE id = ?').get(r.gateway_l4_route_id) },
+      { wol_enabled: 1, wol_mac: 'AA:BB:CC:DD:EE:61' });
+    await rdp.remove(r.id);
+  });
+
+  it('the linked L4 route of a pool RDP route carries the MAC into every member\'s config', async () => {
+    const gateways = require('../src/services/gateways');
+    const pool = require('../src/services/gatewayPool');
+    const gw2 = await gateways.createGateway({ name: 'gw-test-2', apiPort: 9876 });
+    const poolId = Number(pool.createPool({ name: 'rdp-wol-pool', mode: 'failover', failback_cooldown_s: 60 }));
+    pool.addMember(poolId, gwPeerId, 10);
+    pool.addMember(poolId, gw2.peer.id, 20);
+    // a pool RDP route: created with its gateway, then moved onto the pool (the route keeps gateway_peer_id)
+    const r = await rdp.create({
+      name: 'rdp-wol-pool', host: '192.168.1.61', port: 3389,
+      access_mode: 'gateway', gateway_peer_id: gwPeerId, gateway_listen_port: 4401,
+      credential_mode: 'none',
+    });
+    await rdp.update(r.id, { gateway_pool_id: poolId, wol_enabled: true, wol_mac_address: 'AA:BB:CC:DD:EE:62' });
+    const l4 = db.prepare('SELECT target_pool_id, wol_enabled, wol_mac FROM routes WHERE id = ?').get(r.gateway_l4_route_id);
+    assert.equal(l4.target_pool_id, poolId);
+    assert.equal(l4.wol_enabled, 1);
+    assert.equal(l4.wol_mac, 'AA:BB:CC:DD:EE:62');
+    for (const peerId of [gwPeerId, gw2.peer.id]) {
+      const entry = gateways.getGatewayConfig(peerId).l4_routes.find((x) => x.id === r.gateway_l4_route_id);
+      assert.ok(entry, 'pool member ' + peerId + ' has the listener');
+      assert.equal(entry.wol_enabled, true);
+      assert.equal(entry.wol_mac, 'AA:BB:CC:DD:EE:62');
+    }
+    await rdp.remove(r.id);
+  });
 });

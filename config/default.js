@@ -101,6 +101,11 @@ const config = {
     // names can be chosen in the settings (services/vpnNames.js).
     domain: env('GC_DNS_DOMAIN', 'gc.internal'),
     hostsFile: env('GC_DNS_HOSTS_FILE', '/data/dns/peers.hosts'),
+    // dnsmasq `servers-file=`: the internal names (routes, portal, API host)
+    // are answered by dnsmasq for every record type (services/dns.js).
+    // Next to the hosts file unless set (entrypoint.sh does the same).
+    serversFile: env('GC_DNS_SERVERS_FILE',
+      path.join(path.dirname(env('GC_DNS_HOSTS_FILE', '/data/dns/peers.hosts')), 'internal.servers')),
     // Debounce window for coalescing rapid peer mutations into a single
     // hosts-file rebuild + SIGHUP.
     rebuildDebounceMs: envInt('GC_DNS_REBUILD_DEBOUNCE_MS', 1000),

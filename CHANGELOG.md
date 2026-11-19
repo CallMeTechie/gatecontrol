@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.299.4] — 2026-11-19
+
+### Fixes
+- interne Namen für jeden Record-Typ intern beantworten (AAAA/HTTPS/MX) (#525)
+
+---
+
+## [1.299.3] — 2026-11-19
+
+### Fixes
+- ungültiges JSON – unlesbare Sitzung wird verworfen statt 500, serverseitiger JSON-Fehler im Log mit Pfad und Position, nie mit Inhalt (#523)
+
+---
+
+## [1.299.2] — 2026-11-19
+
+### Fixes
+- LDAPS/StartTLS mit Server ohne Zwischenzertifikat – hinterlegtes Zwischenzertifikat genügt, Test sagt, was hilft (#522)
+
+---
+
+## [1.299.1] — 2026-11-19
+
+### Fixes
+- wackelige Tests deterministisch, drei echte Fehler im Produkt behoben (#526)
+
+---
+
 ## [1.299.0] — 2026-11-18
 
 ### Features
