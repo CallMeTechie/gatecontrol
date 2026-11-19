@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.5] — 2026-11-19
+
+### Fixes
+- Wake-on-LAN über ein Gateway des Pools statt Server-Broadcast (#524)
+
+---
+
 ## [1.299.4] — 2026-11-19
 
 ### Fixes
