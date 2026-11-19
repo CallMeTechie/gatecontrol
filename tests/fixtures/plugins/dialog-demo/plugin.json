@@ -1,0 +1,15 @@
+{
+  "id": "dialog-demo",
+  "name": { "de": "Dialog-Demo", "en": "Dialog demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit einem Dialog, der höher als das Fenster ist (Tests).", "en": "Plugin with a dialog taller than the window (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": {},
+  "ui": {
+    "nav": { "label": { "de": "Dialog", "en": "Dialog" }, "icon": "M4 5h16v14H4z" },
+    "pages": [ { "id": "main", "title": { "de": "Dialog", "en": "Dialog" } } ]
+  },
+  "license": { "required": false }
+}

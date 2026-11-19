@@ -194,6 +194,14 @@ scenarios/33-rdp-pool.js RDP-Route über einen Gateway-Pool: eigene lizenzierte 
                         „Home-Gateway“ mit den Gruppen Gateways / Gateway-Pools, Route
                         direkt auf dem Pool anlegen, Bearbeiten zeigt den Pool, Wechsel
                         Pool → Gateway → Pool (RDP-Zeile und TCP-Route halten nur das Ziel)
+scenarios/34-plugin-dialog-dim.js Plugin-Dialog höher als das Fenster: Fixture-Plugin
+                        dialog-demo (unsigniert installiert, am Ende entfernt). Gescrollt
+                        liegt der Rahmen unter der Kopfzeile: die Abdunklung spart den
+                        Rahmen nur unterhalb der Kopfzeile / oberhalb der unteren
+                        Navigation aus (kein heller Streifen); GC.viewport ohne den
+                        min-height-Füller von .app, ein daran gehaltener Dialog passt
+                        ins Fenster; Thema auch bei spät geladenem plugin-bridge.js;
+                        1440 / 390 px, hell/dunkel
 ```
 
 ## Ablauf

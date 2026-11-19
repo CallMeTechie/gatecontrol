@@ -2,7 +2,8 @@
 
 // Frame side of GC.viewport (src/services/plugins/frame.js, since 1.199.0): a gc-viewport message of the parent
 // sets window.GC.viewport, --gc-viewport-height and fires gc:viewport; anything else is ignored. The parent side
-// (public/js/plugin-bridge.js) is checked in a browser: tests/e2e/scenarios/12-plugin-viewport.js.
+// (public/js/plugin-bridge.js) is checked in a browser: tests/e2e/scenarios/12-plugin-viewport.js and
+// 34-plugin-dialog-dim.js (a dialog taller than the window: the dim, GC.viewport on the real admin page).
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -56,7 +57,12 @@ describe('GC.viewport in a plugin frame', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugin-bridge.js'), 'utf8');
     assert.match(js, /function sendViewport\(force\)/);
     assert.match(js, /type: 'gc-viewport', height, width/);
-    assert.match(js, /function contentBottom\(\)/);
+    // below the frame: siblings after it and the ancestors' padding, not the min-height filler of .app / body
+    assert.match(js, /function belowFrame\(\)/);
+    assert.match(js, /const below = belowFrame\(\);/);
+    // the dim leaves out the frame only below the sticky header / above the bottom navigation
+    assert.match(js, /barEdge\('\.topbar, \.pt-header', 'top'\)/);
+    assert.match(js, /barEdge\('\.bottom-nav', 'bottom'\)/);
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'portal.css'), 'utf8');
     assert.match(css, /\.pt-kiosk \.pt-footer \{ display: none; \}/);
     const tpl = fs.readFileSync(path.join(__dirname, '..', 'templates', 'portal', 'portal.njk'), 'utf8');
