@@ -137,7 +137,9 @@ describe('checkpoint thread of the plugin databases', () => {
     assert.ok(await until(() => real('cs-gate-a').length && real('cs-gate-b').length), 'both follow');
     const list = [...real('cs-gate-a').slice(0, 1), ...real('cs-gate-b').slice(0, 1)].sort((x, y) => x.at - y.at);
     assert.ok(list[1].at >= list[0].at + list[0].ms, `one after the other: ${JSON.stringify(list.map((m) => [m.id, m.at, m.ms]))}`);
-    assert.equal(Atomics.load(g, 0), 0, 'the gate is free again');
+    // with everyMs 20 the thread may hold the gate (PLUGINS) for its next checkpoint at this very moment:
+    // a left-over hold stays, one in progress ends within milliseconds
+    assert.ok(await until(() => Atomics.load(g, 0) === 0), `the gate is free again (held by ${Atomics.load(g, 0)})`);
   });
 
   it('the gate does not hold a checkpoint for ever: after gateWaitMs it runs', async () => {

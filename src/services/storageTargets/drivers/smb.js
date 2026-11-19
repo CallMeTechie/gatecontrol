@@ -83,8 +83,9 @@ function create(cfg, secret) {
    * Run smbclient with `commands` (one per line). opts.feed(fifo) / opts.drain(fifo):
    * the data side of a put / get. → { out } (stdout + stderr) or throws StorageError.
    * `allow`: NT_STATUS codes that are no error for this run (a folder that exists).
+   * `optional`: lines of extra queries whose failure is no error for this run (their NT_STATUS is not looked at).
    */
-  async function run(commands, { feed = null, drain = null, allow = [], long = false } = {}) {
+  async function run(commands, { feed = null, drain = null, allow = [], optional = null, long = false } = {}) {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'gc-smb-'));
     const authFile = path.join(dir, 'auth');
     const fifo = path.join(dir, 'data');
@@ -117,7 +118,8 @@ function create(cfg, secret) {
       if (res.err) throw new StorageError('failed', res.err.code === 'ENOENT' ? 'smbclient is not installed' : res.err.message);
       const text = Buffer.concat(out).toString('utf8');
       if (noEncryption(text, cfg.encrypt === true)) throw new StorageError('no_encryption', 'the share cannot encrypt (SMB3)');
-      const statuses = text.match(/NT_STATUS_[A-Z_]+/g) || [];
+      const checked = optional ? text.split('\n').filter((l) => !optional.test(l)).join('\n') : text;
+      const statuses = checked.match(/NT_STATUS_[A-Z_]+/g) || [];
       const bad = statuses.find((s) => !allow.includes(s));
       if (bad) throw new StorageError(codeOf(bad), `${bad}`);
       if (res.code !== 0) throw new StorageError('failed', `smbclient exited with ${res.code}`);
@@ -198,7 +200,10 @@ function create(cfg, secret) {
   async function head(key) {
     const p = smbPath(key);
     let r;
-    try { r = await run([`allinfo ${q(p)}`]); } catch (e) {
+    // smbclient 4.21+ also asks for the shadow copies of the file and prints e.g.
+    // "NT_STATUS_INVALID_DEVICE_REQUEST getting shadow copy data for <name>" on a share without
+    // them (most shares) — size and time are there all the same.
+    try { r = await run([`allinfo ${q(p)}`], { optional: /^NT_STATUS_[A-Z_]+ getting shadow copy data for / }); } catch (e) {
       if (e.code === 'not_found') return null;
       throw e;
     }

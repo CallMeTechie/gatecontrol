@@ -567,14 +567,21 @@
   function pollCode() {
     if (!state || !isOpen() || state.step !== 3 || way() !== 'code') return;
     var id = state.peerId;
+    var pair = state.pair;
     api('GET', '/api/v1/gateways/' + id + '/setup-status').then(function (d) {
-      if (!state || state.peerId !== id || state.step !== 3 || way() !== 'code') return;
+      // only the answer for the code on screen; one "redeemed" is enough (a live event can ask twice)
+      if (!state || state.peerId !== id || state.step !== 3 || way() !== 'code' || state.pair !== pair || state.cwDone) return;
       var pr = d.ok && d.gateway && d.gateway.pairing;
-      if (pr && state.pair && pr.consumed_at && pr.expires_at === state.pair.expiresAt) {
+      if (pr && pair && pr.consumed_at && pr.expires_at === pair.expiresAt) {
         state.cwDone = true;
         state.status = d.gateway;
         renderCode();
-        setTimeout(function () { if (state && state.peerId === id && state.step === 3 && isOpen()) go(4); }, 1200);
+        // kept in cwPoll: leaving step 3 (stopCode) cancels it — no late jump to step 4 after "Anleitung nochmal"
+        if (state.cwPoll) clearTimeout(state.cwPoll);
+        state.cwPoll = setTimeout(function () {
+          if (state) state.cwPoll = null;
+          if (state && state.peerId === id && state.step === 3 && way() === 'code' && state.pair === pair && isOpen()) go(4);
+        }, 1200);
         return;
       }
       startCodePoll();
@@ -896,7 +903,12 @@
   });
   var evDeb = null;
   function onLive() {
-    if (state && state.step === 3 && isOpen() && way() === 'code') { if (state.cwPoll) clearTimeout(state.cwPoll); state.cwPoll = setTimeout(pollCode, 600); return; }
+    if (state && state.step === 3 && isOpen() && way() === 'code') {
+      if (state.cwDone) return; // redeemed: the step goes on by itself already
+      if (state.cwPoll) clearTimeout(state.cwPoll);
+      state.cwPoll = setTimeout(pollCode, 600);
+      return;
+    }
     if (!state || state.step !== 4 || !isOpen()) return;
     clearTimeout(evDeb);
     evDeb = setTimeout(function () { state.pollDelay = 3000; poll(); }, 600);
