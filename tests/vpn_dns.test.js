@@ -98,7 +98,7 @@ function askFilter(name, ip, { tcp = false, qtype = wire.TYPE.A } = {}) {
   const read = (buf) => {
     const flags = buf.readUInt16BE(2);
     const meta = wire.parseResponse(buf);
-    return { rcode: flags & 0xf, tc: !!(flags & 0x0200), a: meta ? meta.answers.filter((x) => x.type === wire.TYPE.A).map((x) => [...x.rdata].join('.')) : [] };
+    return { rcode: flags & 0xf, tc: !!(flags & 0x0200), a: meta ? meta.answers.filter((x) => x.type === wire.TYPE.A).map((x) => [...x.rdata].join('.')) : [], n: meta ? meta.answers.length : -1 };
   };
   const port = vpnDns.filterPort();
   if (tcp) {
@@ -122,15 +122,17 @@ function askFilter(name, ip, { tcp = false, qtype = wire.TYPE.A } = {}) {
 
 async function startUpstream(port) {
   const seen = [];
+  const asked = []; // `<name>/<type>` of every question
   const answer = (msg) => {
     const q = wire.parseQuery(msg);
     seen.push(q.name);
+    asked.push(`${q.name}/${q.qtype}`);
     return wire.buildResponse(q, { answers: q.qtype === wire.TYPE.A ? [{ name: q.name, type: wire.TYPE.A, ttl: 30, rdata: Buffer.from(UP_IP.split('.').map(Number)) }] : [] });
   };
   const udp = dgram.createSocket('udp4');
   udp.on('message', (msg, r) => udp.send(answer(msg), r.port, r.address));
   await new Promise((r) => udp.bind(port, '127.0.0.1', r));
-  return { seen, close: () => udp.close() };
+  return { seen, asked, close: () => udp.close() };
 }
 
 // a list "server": the catalogue's lists, three entries each
@@ -449,8 +451,23 @@ describe('switched on: the service, the chain, the filter', () => {
     // a name dnsmasq answers itself is never blocked, whatever the lists say
     await ok('set', { deny: ['temu.com', 'app.example.com'] });
     await waitFor(() => new Set(svc.cfg.policy.profiles[0].deny).has('app.example.com'));
-    assert.equal((await askFilter('app.example.com', '10.8.0.30', { qtype: wire.TYPE.AAAA })).rcode, 0);
-    assert.equal(new Set(upstream.seen).has('app.example.com'), true, 'forwarded, not blocked');
+    assert.deepEqual((await askFilter('app.example.com', '10.8.0.30', { tcp: true })).a, [UP_IP], 'A: forwarded, not blocked');
+    assert.equal(new Set(upstream.asked).has(`app.example.com/${wire.TYPE.A}`), true);
+    // "innen immer intern": every other type of an internal name is an empty
+    // answer of its own (NODATA) — never the public AAAA/HTTPS/MX of the upstream
+    for (const qtype of [wire.TYPE.AAAA, wire.TYPE.HTTPS, 64 /* SVCB */, wire.TYPE.MX]) {
+      for (const tcp of [false, true]) {
+        const r = await askFilter('app.example.com', '10.8.0.30', { qtype, tcp });
+        assert.deepEqual([r.rcode, r.tc, r.n], [0, false, 0], `type ${qtype} ${tcp ? 'tcp' : 'udp'}: NODATA`);
+      }
+      assert.equal(new Set(upstream.asked).has(`app.example.com/${qtype}`), false, `type ${qtype} never asked upstream`);
+      // the server itself (no ECS) is no exception, a peer name neither
+      assert.equal((await askFilter('app.example.com', null, { qtype, tcp: true })).n, 0);
+      assert.equal((await askFilter('laptop.gc.internal', '10.8.0.30', { qtype, tcp: true })).n, 0);
+    }
+    // other names: every type forwarded as before
+    await askFilter('www.paypal.com', '10.8.0.21', { qtype: wire.TYPE.AAAA, tcp: true });
+    assert.equal(new Set(upstream.asked).has(`www.paypal.com/${wire.TYPE.AAAA}`), true, 'AAAA of another name: forwarded');
     // the chain's probe is answered without the upstream
     const before = upstream.seen.length;
     assert.equal((await askFilter('', null, { qtype: wire.TYPE.NS })).rcode, 0);

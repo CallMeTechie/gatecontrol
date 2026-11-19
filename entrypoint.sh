@@ -10,6 +10,7 @@ GC_WG_DNS="${GC_WG_DNS:-10.8.0.1}"
 GC_DNSMASQ_UPSTREAMS="${GC_DNSMASQ_UPSTREAMS:-1.1.1.1,8.8.8.8}"
 GC_DNS_DOMAIN="${GC_DNS_DOMAIN:-gc.internal}"
 GC_DNS_HOSTS_FILE="${GC_DNS_HOSTS_FILE:-/data/dns/peers.hosts}"
+GC_DNS_SERVERS_FILE="${GC_DNS_SERVERS_FILE:-$(dirname "$GC_DNS_HOSTS_FILE")/internal.servers}"
 GC_WG_POST_UP="${GC_WG_POST_UP:-}"
 GC_WG_POST_DOWN="${GC_WG_POST_DOWN:-}"
 GC_WG_MTU="${GC_WG_MTU:-}"
@@ -259,6 +260,12 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   # We touch it here to ensure dnsmasq doesn't abort on missing file at
   # cold-start (before any peer is registered).
   echo "addn-hosts=${GC_DNS_HOSTS_FILE}"
+  # Internal names (route domains, portal, API host) for EVERY record type:
+  # `server=/<name>/` keeps AAAA, HTTPS/SVCB, MX, … of exactly these names
+  # off the upstream (empty answer instead of the public address);
+  # `server=/*.<name>/#` forwards the names below them as before. Written by
+  # services/dns.js (renderServersContent) and re-read on SIGHUP.
+  echo "servers-file=${GC_DNS_SERVERS_FILE}"
   # Static gateway entries — always resolvable regardless of peer state.
   echo "host-record=gateway.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
   echo "host-record=server.${GC_DNS_DOMAIN},${GC_WG_GATEWAY_IP}"
@@ -285,6 +292,21 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   fi
 } > "$DNSMASQ_CONF"
 chmod 644 "$DNSMASQ_CONF"
+
+# The servers file of the internal names (see servers-file= above). Kept when
+# it exists — the server process rewrites it at its start. A first start gets
+# the API host already, so it is internal for every type from the first query.
+mkdir -p "$(dirname "$GC_DNS_SERVERS_FILE")"
+if [ ! -f "$GC_DNS_SERVERS_FILE" ]; then
+  {
+    echo "# Auto-generated — rewritten by services/dns.js."
+    if [ -n "$GC_API_HOST" ] && ! echo "$GC_API_HOST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' \
+       && echo "$GC_API_HOST" | grep -qE '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'; then
+      echo "server=/${GC_API_HOST}/"
+      echo "server=/*.${GC_API_HOST}/#"
+    fi
+  } > "$GC_DNS_SERVERS_FILE"
+fi
 
 # ─── Preflight: port 53 must be free on 127.0.0.1 ────
 # dnsmasq binds 127.0.0.1:53 (via interface=lo) in addition to the wg0

@@ -26,6 +26,14 @@ in die dnsmasq addn-hosts-Datei (`/data/dns/peers.hosts`). Dies gilt für **alle
 (HTTP und L4), unabhängig vom Außen-Schalter. Exakte Namen, kein Wildcard-Eintrag — dadurch
 bleiben Peer-FQDNs wie `server.marcbackes.net` unangetastet.
 
+Auch die übrigen Typen bleiben innen: `/data/dns/internal.servers` (dnsmasq
+`servers-file=`, neben `peers.hosts`, beim selben SIGHUP neu gelesen) enthält je
+Route-Domain, Portal- und API-Host `server=/<domain>/` und `server=/*.<domain>/#`.
+dnsmasq beantwortet damit AAAA, HTTPS/SVCB, MX usw. des exakten Namens selbst mit
+einer leeren Antwort (NODATA) statt der öffentlichen Adresse des Upstreams — sonst
+gingen Geräte mit IPv6 oder Browser mit HTTPS-Record (Chrome, Safari) am VPN vorbei.
+Unterdomänen gehen wie bisher an den Upstream.
+
 Route-Mutationen (create / update / remove / toggle / batch + service-bundle create) lösen
 `dns.rebuildNow()` aus — best-effort, ein Rebuild pro Bulk.
 
