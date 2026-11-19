@@ -19,11 +19,11 @@ require (
 	github.com/smallstep/certificates v0.30.3-0.20261105213751-6d5a251fbe01 // indirect
 	go.step.sm/crypto v0.92.0 // indirect
 	go.uber.org/zap v1.28.0
-	// x/crypto: GO-2026-5932 (openpgp) ist erst im Pseudo-Release
-	// v0.58.1-0.20261009181718-2f1f834330b2 behoben, noch ohne Tag.
-	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect; CVE-2026-56854, GO-2026-5932
+	// x/crypto: GO-2026-5932 (openpgp) ist seit v0.59.0 behoben (enthält
+	// Commit 2f1f834330b2, zuvor als Pseudo-Version gepinnt).
+	golang.org/x/crypto v0.59.0 // indirect; CVE-2026-56854, GO-2026-5932
 	golang.org/x/net v0.62.0 // indirect; CVE-2026-46600, CVE-2026-78669, GO-2026-6860, GO-2026-6866
-	golang.org/x/text v0.43.0 // indirect; CVE-2026-56852
+	golang.org/x/text v0.44.0 // indirect; CVE-2026-56852
 	// Mindestversionen erzwingen Fixes, die der Plugin-Graph sonst nicht
 	// hereinzieht (Trivy HIGH im Caddy-Binary). MVS übernimmt sie in den
 	// xcaddy-Build.
@@ -154,9 +154,9 @@ require (
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.310.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
