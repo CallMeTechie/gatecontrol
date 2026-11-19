@@ -17,7 +17,11 @@ const { setup, teardown, getAgent } = require('./helpers/setup');
 
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
-const GOOGLE = /fonts\.(googleapis|gstatic)\.com/;
+// Plain substring check on the fixed host names (no regex): any mention counts.
+const GOOGLE_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+const assertNoGoogle = (text, what) => {
+  for (const host of GOOGLE_HOSTS) assert.equal(text.includes(host), false, `${what}: names ${host}`);
+};
 const FONT_DIR = 'public/fonts/5.3.0';
 
 // A file under a versioned path is cached as immutable for a year: its
@@ -55,14 +59,14 @@ describe('no web fonts from Google', () => {
     const files = [...walk('templates'), ...walk('src'), ...walk('public/css'), ...walk('public/js')]
       .filter((f) => /\.(njk|js|css|html)$/.test(f));
     assert.ok(files.length > 50, 'the walk found the files');
-    for (const f of files) assert.doesNotMatch(read(f), GOOGLE, f);
+    for (const f of files) assertNoGoogle(read(f), f);
   });
 
   it('the CSP allows fonts and stylesheets only from the app itself', async () => {
     const res = await supertest(app).get('/login').expect(200);
     const csp = res.headers['content-security-policy'];
     assert.ok(csp, 'CSP header');
-    assert.doesNotMatch(csp, GOOGLE);
+    assertNoGoogle(csp, 'CSP');
     assert.match(csp, /(^|;)\s*font-src 'self'(;|$)/);
     assert.match(csp, /(^|;)\s*style-src-elem 'self' 'nonce-[^']+'(;|$)/);
   });
@@ -78,7 +82,7 @@ describe('no web fonts from Google', () => {
     ];
     for (const [what, res] of pages) {
       assert.ok(res.text.length > 500, what + ' has content');
-      assert.doesNotMatch(res.text, GOOGLE, what);
+      assertNoGoogle(res.text, what);
     }
   });
 });

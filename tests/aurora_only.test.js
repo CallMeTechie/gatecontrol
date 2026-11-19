@@ -42,7 +42,7 @@ function assertAurora(html, what, prefix = '/css/') {
   assert.deepEqual(css, [prefix + 'app.css'], `${what}: exactly one stylesheet, app.css`);
   assert.doesNotMatch(html, /route-auth\.css|\/css\/(pro|aurora|security|nav|ops|problems|l4-protect|two-factor)\.css/, `${what}: no merged-away stylesheet`);
   // Aurora fonts: shipped with app.css (tests/self_hosted_fonts.test.js), none from Google
-  assert.doesNotMatch(html, /fonts\.(googleapis|gstatic)\.com/, `${what}: no web fonts from Google`);
+  for (const host of ['fonts.googleapis.com', 'fonts.gstatic.com']) assert.equal(html.includes(host), false, `${what}: no web fonts from Google (${host})`);
   assert.doesNotMatch(html, /family=(Inter|Outfit|DM\+Serif)/, `${what}: no Default/Pro fonts`);
   assert.match(html, /gc-theme-mode/, `${what}: dark/light pre-paint like layout.njk`);
   assert.match(html, /<body class="au-page">/, `${what}: auth-page layout`);
