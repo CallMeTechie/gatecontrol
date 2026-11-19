@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.300.0] — 2026-11-19
+
+### Features
+- Webschriften mit der App ausliefern statt von Google laden (#529)
+
+---
+
 ## [1.299.7] — 2026-11-19
 
 ### Fixes
