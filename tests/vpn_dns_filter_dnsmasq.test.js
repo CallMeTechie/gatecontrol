@@ -86,6 +86,7 @@ function parse(buf) {
     tc: !!(flags & 0x0200),
     a: meta ? meta.answers.filter((x) => x.type === wire.TYPE.A).map((x) => [...x.rdata].join('.')) : [],
     cname: meta ? meta.answers.filter((x) => x.type === wire.TYPE.CNAME).map((x) => x.target) : [],
+    n: meta ? meta.answers.length : -1,
   };
 }
 
@@ -226,12 +227,15 @@ describe('DNS protection: filter service behind a real dnsmasq', async () => {
     up = await startUpstream(ports.up, UP_IP, () => upDelay);
     def = await startUpstream(ports.def, DEFAULT_IP);
     fs.writeFileSync(path.join(dir, 'peers.hosts'), '10.8.0.5\tlaptop.gc.internal\tlaptop\n10.8.0.1\tapp.example.com\n');
+    // the servers file of services/dns.js (renderServersContent): every type of the route domain stays internal
+    fs.writeFileSync(path.join(dir, 'internal.servers'), 'server=/app.example.com/\nserver=/*.app.example.com/#\n');
     confPath = path.join(dir, 'dnsmasq.conf');
     // as entrypoint.sh writes it — only port and interface differ
     fs.writeFileSync(confPath, [
       `port=${ports.dnsmasq}`, 'bind-interfaces', 'interface=lo', 'no-resolv', 'no-hosts', 'cache-size=1000',
       'local=/gc.internal/', 'domain=gc.internal', 'domain-needed', 'bogus-priv',
-      `addn-hosts=${path.join(dir, 'peers.hosts')}`, 'host-record=gateway.gc.internal,10.8.0.1',
+      `addn-hosts=${path.join(dir, 'peers.hosts')}`, `servers-file=${path.join(dir, 'internal.servers')}`,
+      'host-record=gateway.gc.internal,10.8.0.1',
       `server=127.0.0.1#${ports.def}`, '',
     ].join('\n'));
     writeConfig();
@@ -310,7 +314,7 @@ describe('DNS protection: filter service behind a real dnsmasq', async () => {
     } finally { upDelay = 0; }
   });
 
-  it('internal names are untouched: dnsmasq answers them, the filter never blocks their other types', async () => {
+  it('internal names are untouched: dnsmasq answers them, every type; the filter never hands out their other types', async () => {
     const before = up.seen.length;
     assert.deepEqual((await ask(DEV_A, ports.dnsmasq, 'laptop.gc.internal')).a, ['10.8.0.5']);
     assert.deepEqual((await ask(DEV_A, ports.dnsmasq, 'gateway.gc.internal')).a, ['10.8.0.1']);
@@ -318,10 +322,20 @@ describe('DNS protection: filter service behind a real dnsmasq', async () => {
     // the route domain is on the kids' deny list — its A record comes from dnsmasq all the same
     assert.deepEqual((await ask(DEV_A, ports.dnsmasq, 'app.example.com')).a, ['10.8.0.1']);
     assert.equal(up.seen.length, before, 'an internal A question reached the upstream');
-    // AAAA of the route domain does reach the filter (measured) — and is forwarded, not blocked
-    const aaaa = await ask(DEV_A, ports.dnsmasq, 'app.example.com', { qtype: wire.TYPE.AAAA });
-    assert.equal(aaaa.rcode, wire.RCODE.NOERROR);
-    assert.ok(up.seen.slice(before).some((s) => s.name === 'app.example.com' && s.type === wire.TYPE.AAAA), 'AAAA of an internal name was not forwarded');
+    // "innen immer intern": AAAA, HTTPS, SVCB, MX of the route domain — an empty answer of
+    // dnsmasq itself (servers-file), never the upstream's public one
+    for (const qtype of [wire.TYPE.AAAA, wire.TYPE.HTTPS, 64, wire.TYPE.MX]) {
+      const r = await ask(DEV_A, ports.dnsmasq, 'app.example.com', { qtype });
+      assert.deepEqual([r.rcode, r.n], [wire.RCODE.NOERROR, 0], `type ${qtype}`);
+      // and should one reach the filter all the same: NODATA there too
+      const f = await ask(DEV_A, ports.filter, 'app.example.com', { qtype });
+      assert.deepEqual([f.rcode, f.n], [wire.RCODE.NOERROR, 0], `type ${qtype} at the filter`);
+    }
+    assert.ok(!up.seen.slice(before).some((s) => s.name === 'app.example.com'), 'an internal name reached the upstream');
+    // a name below it goes on to the filter as before — on the kids' deny list
+    // (app.example.com with everything below it), so the blocked answer, not NODATA
+    const below = await ask(DEV_A, ports.dnsmasq, 'www.app.example.com', { qtype: wire.TYPE.AAAA });
+    assert.deepEqual([below.rcode, below.n], [wire.RCODE.NOERROR, 1], 'a name below an internal name was not forwarded');
   });
 
   it('suspending a device takes effect without a restart, and ends by itself', async () => {

@@ -279,6 +279,92 @@ describe('dns service', () => {
     });
   });
 
+  // ─── renderServersContent (innen immer intern: every record type) ───
+
+  describe('renderServersContent', () => {
+    const config = require('../config/default');
+    let savedBase;
+    let savedEnv;
+    beforeEach(() => {
+      savedBase = config.app.baseUrl;
+      savedEnv = process.env.GC_BASE_URL;
+      // the API host stays out of these tests unless one sets it
+      config.app.baseUrl = 'http://localhost:3000';
+      process.env.GC_BASE_URL = 'http://localhost:3000';
+    });
+    after(() => { config.app.baseUrl = savedBase; process.env.GC_BASE_URL = savedEnv; });
+
+    // the lines that are not comments
+    const directives = (content) => content.split('\n').filter((l) => l && !l.startsWith('#'));
+
+    it('an enabled route: the exact name stays internal, the names below it go upstream as before', () => {
+      insertRoute({ domain: 'App.Example.com' });
+      insertRoute({ domain: 'off.example.com', enabled: 0 });
+      assert.deepEqual(directives(dns.renderServersContent()), ['server=/app.example.com/', 'server=/*.app.example.com/#']);
+    });
+
+    it('a route below another route gets lines of its own (the longer match wins in dnsmasq)', () => {
+      insertRoute({ domain: 'example.net' });
+      insertRoute({ domain: 'x.example.net', route_type: 'l4' });
+      assert.deepEqual(directives(dns.renderServersContent()), [
+        'server=/example.net/', 'server=/*.example.net/#',
+        'server=/x.example.net/', 'server=/*.x.example.net/#',
+      ]);
+    });
+
+    it('never a name in a zone of the device names (local= there already; # would hand its subdomains out)', () => {
+      insertRoute({ domain: 'nas.gc.internal' });
+      // the portal is home.gc.internal by default: in the zone as well
+      assert.deepEqual(directives(dns.renderServersContent()), []);
+    });
+
+    it('skips a malicious route domain (no extra dnsmasq directive)', () => {
+      insertRoute({ domain: 'evil.example.com/\nserver=/x/' });
+      insertRoute({ domain: 'a b.example.com' });
+      assert.deepEqual(directives(dns.renderServersContent()), []);
+    });
+
+    it('the API host (GC_BASE_URL) is internal for every type and has its A record in the hosts file', () => {
+      config.app.baseUrl = 'https://GC.Example.org:8443/path';
+      process.env.GC_BASE_URL = config.app.baseUrl;
+      assert.equal(dns.apiHost(), 'gc.example.org');
+      assert.deepEqual(directives(dns.renderServersContent()), ['server=/gc.example.org/', 'server=/*.gc.example.org/#']);
+      const hosts = dns.renderHostsContent().split('\n').filter((l) => l && !l.startsWith('#'));
+      assert.ok(hosts.includes('10.8.0.1\tgc.example.org'), hosts.join('\n'));
+      // once only, also when a route has the same name
+      insertRoute({ domain: 'gc.example.org' });
+      assert.equal(dns.renderHostsContent().split('\n').filter((l) => l === '10.8.0.1\tgc.example.org').length, 1);
+      assert.deepEqual(directives(dns.renderServersContent()), ['server=/gc.example.org/', 'server=/*.gc.example.org/#']);
+    });
+
+    it('the API host: GC_WG_HOST without GC_BASE_URL; never an IP literal or a single label', () => {
+      const savedHost = config.wireguard.host;
+      try {
+        delete process.env.GC_BASE_URL;
+        config.wireguard.host = 'vpn.example.org';
+        assert.equal(dns.apiHost(), 'vpn.example.org');
+        config.wireguard.host = '203.0.113.7';
+        assert.equal(dns.apiHost(), '');
+        process.env.GC_BASE_URL = 'http://localhost:3000';
+        assert.equal(dns.apiHost(), '');
+        config.app.baseUrl = 'https://[2001:db8::1]/';
+        process.env.GC_BASE_URL = config.app.baseUrl;
+        assert.equal(dns.apiHost(), '');
+      } finally {
+        config.wireguard.host = savedHost;
+      }
+    });
+
+    it('rebuildNow writes it next to the hosts file', () => {
+      insertRoute({ domain: 'app.example.com' });
+      dns.rebuildNow();
+      const file = path.join(tmpDir, 'internal.servers');
+      assert.equal(config.dns.serversFile, file);
+      assert.deepEqual(directives(fs.readFileSync(file, 'utf8')), ['server=/app.example.com/', 'server=/*.app.example.com/#']);
+      assert.equal(fs.readdirSync(tmpDir).filter((f) => f.startsWith('.internal.servers.')).length, 0);
+    });
+  });
+
   // ─── scheduleRebuild debouncing ────────────────────
 
   describe('scheduleRebuild', () => {

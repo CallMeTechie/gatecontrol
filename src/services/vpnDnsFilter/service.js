@@ -27,8 +27,11 @@
 //      else — the UDP answer is only "truncated" (TC=1): every device repeats
 //      over TCP, which dnsmasq forwards one by one with the right address.
 //   5. Names dnsmasq answers itself (peers.hosts: route domains, portal, API
-//      host — `internal` in the config) are never blocked: their other record
-//      types (AAAA, HTTPS, MX) do reach the filter.
+//      host — `internal` in the config) are never blocked. dnsmasq answers
+//      every record type of them itself (services/dns.js, servers-file); one
+//      that reaches the filter all the same gets an empty answer (NODATA) for
+//      every type but A — never the public AAAA/HTTPS/MX of the upstream
+//      ("innen immer intern").
 //   6. No ECS or a loopback address = the server itself → never filtered.
 //
 // Fail-open: whatever goes wrong inside (decision, lists, config) ends in
@@ -494,6 +497,8 @@ class FilterService {
           this.counters.probes++;
           return wire.buildResponse(q, {});
         }
+        // an internal name: only the A record of dnsmasq counts, never the upstream's other types
+        if (q.qtype !== TYPE.A && this.cfg.internal.has(q.name)) return wire.buildResponse(q, {});
         const now = this.now();
         const clientIp = this._clientIp(q, ip);
         const real = this._realKey(clientIp);
