@@ -15,6 +15,8 @@
 //
 // No text comparisons: selectors, aria-/data- attributes, URLs, API answers.
 
+const { isGoogleFontRequest } = require('../page-problems');
+
 module.exports = (ctx) => {
   const { BASE, FIXTURES, step, shot, problems } = ctx;
 
@@ -30,11 +32,13 @@ module.exports = (ctx) => {
       async function open(ip, width = 1440) {
         const context = await browser.newContext({ viewport: { width, height: 900 }, bypassCSP: true });
         // The identity header only on requests to the portal host — as an
-        // extraHTTPHeaders entry it would also go to fonts.gstatic.com and
-        // fail the CORS preflight of the web fonts.
+        // extraHTTPHeaders entry it would also go to any other host a page
+        // loads from and fail its CORS preflight.
         await context.route((url) => url.hostname === HOST, (route) => route.continue({
           headers: Object.assign({}, route.request().headers(), { 'x-gc-portal-peer-ip': ip }),
         }));
+        // The portal ships its web fonts (public/fonts/): nothing from Google.
+        context.on('request', (q) => { if (isGoogleFontRequest(q.url())) problems.push({ kind: 'external-font', url: q.url().slice(0, 200) }); });
         const p = await context.newPage();
         p.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|Cross-Origin-Opener-Policy/.test(m.text())) problems.push({ kind: 'console', text: m.text().slice(0, 300) }); });
         p.on('pageerror', (e) => problems.push({ kind: 'pageerror', text: String(e).slice(0, 300) }));

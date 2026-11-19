@@ -1,13 +1,14 @@
 'use strict';
 
 // tests/e2e/page-problems.js: which console errors of the browser tests are not
-// faults of the app (run 44044226830: three font files of Google not reached).
+// faults of the app (run 44044226830: three font files of Google not reached),
+// and that a request to Google's font hosts is one (the fonts ship with the app).
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { isExternalNetError } = require('./e2e/page-problems');
+const { isExternalNetError, isGoogleFontRequest } = require('./e2e/page-problems');
 
 const BASE = 'http://127.0.0.1:3000';
 const CLOSED = 'Failed to load resource: net::ERR_CONNECTION_CLOSED';
@@ -50,4 +51,22 @@ test('run.js leaves out exactly these console errors and still reports them', ()
   assert.match(src, /require\('\.\/page-problems'\)/);
   assert.match(src, /if \(isExternalNetError\(m\.text\(\), at, BASE\)\) \{ notes\.push\(p\);/);
   assert.match(src, /annotate\('not counted, another host was not reached: '/);
+});
+
+test('a request to Google\'s font hosts is a fault of the app', () => {
+  for (const url of FONTS) assert.equal(isGoogleFontRequest(url), true, url);
+  assert.equal(isGoogleFontRequest('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400&display=swap'), true);
+  assert.equal(isGoogleFontRequest('http://FONTS.GSTATIC.COM/x.woff2'), true);
+  assert.equal(isGoogleFontRequest(BASE + '/fonts/5.3.0/hanken-grotesk-latin-wght-normal.woff2'), false);
+  assert.equal(isGoogleFontRequest('https://www.googleapis.com/drive/v3/files'), false);
+  assert.equal(isGoogleFontRequest('https://fonts.googleapis.com.example.com/x'), false);
+  assert.equal(isGoogleFontRequest('not a url'), false);
+  assert.equal(isGoogleFontRequest('data:font/woff2;base64,AA=='), false);
+});
+
+test('run.js and the portal scenario count requests to Google\'s font hosts as problems', () => {
+  const run = fs.readFileSync(path.join(__dirname, 'e2e', 'run.js'), 'utf8');
+  assert.match(run, /context\.on\('request', \(q\) => \{\s*if \(isGoogleFontRequest\(q\.url\(\)\)\) problems\.push\(\{ kind: 'external-font'/);
+  const portal = fs.readFileSync(path.join(__dirname, 'e2e', 'scenarios', '08-portal.js'), 'utf8');
+  assert.match(portal, /context\.on\('request', \(q\) => \{ if \(isGoogleFontRequest\(q\.url\(\)\)\) problems\.push\(\{ kind: 'external-font'/);
 });

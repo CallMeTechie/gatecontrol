@@ -20,7 +20,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { isExternalNetError } = require('./page-problems');
+const { isExternalNetError, isGoogleFontRequest } = require('./page-problems');
 
 const BASE = process.env.BASE || 'http://127.0.0.1:3000';
 const OUT = process.env.E2E_OUT || path.join(process.env.GC_DATA_DIR || '.', 'e2e-out');
@@ -130,6 +130,12 @@ async function main() {
     problems.push(p);
   });
   page.on('pageerror', (e) => problems.push({ kind: 'pageerror', scenario: current, text: String(e).slice(0, 300) }));
+  // The web fonts ship with the app (public/fonts/): a request to Google's font
+  // hosts is a fault — whether it would have been answered or not (every page
+  // of the context, also popups).
+  context.on('request', (q) => {
+    if (isGoogleFontRequest(q.url())) problems.push({ kind: 'external-font', scenario: current, url: q.url().slice(0, 200) });
+  });
   page.on('response', (r) => {
     const u = r.url();
     if (u.startsWith(BASE) && r.status() >= 400 && !u.includes('/favicon')) problems.push({ kind: 'http', scenario: current, status: r.status(), url: u.replace(BASE, '') });

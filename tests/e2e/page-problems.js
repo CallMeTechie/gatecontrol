@@ -2,13 +2,16 @@
 
 // Which console errors of the page are faults of the app under test (tests/e2e/run.js).
 //
-// The pages load their web fonts from Google (fonts.googleapis.com → three
-// font files from fonts.gstatic.com, templates/aurora). When the connection of
-// the CI runner to such a host drops, Chromium logs one
+// The pages used to load their web fonts from Google (fonts.googleapis.com →
+// three font files from fonts.gstatic.com). When the connection of the CI
+// runner to such a host dropped, Chromium logged one
 //   "Failed to load resource: net::ERR_CONNECTION_CLOSED"
-// per font file — three console errors on one page load, all steps green
-// (run 44044226830). That is the network of the runner, not the app, so it
-// must not fail the run. Exactly this case is left out, nothing more:
+// per font file (run 44044226830). The fonts ship with the app now
+// (public/fonts/); a request to Google's font hosts is itself a fault of the
+// app (isGoogleFontRequest, counted by run.js and 08-portal.js).
+// A network error of a resource on another host still does not fail the run —
+// that is the network of the runner, not the app. Exactly this case is left
+// out, nothing more:
 //   - a network error (net::ERR_…) — an answer of another host (404, 500)
 //     still counts: that would be a broken link of the app;
 //   - of a resource on another host than the app: the app itself is reached as
@@ -35,4 +38,12 @@ function isExternalNetError(text, url, base) {
   return !LOOPBACK.has(host) && host !== hostOf(base);
 }
 
-module.exports = { isExternalNetError };
+const GOOGLE_FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com']);
+
+/** A request to Google's font hosts: the app ships its fonts, any such request is a fault. */
+function isGoogleFontRequest(url) {
+  const host = hostOf(url);
+  return host !== null && GOOGLE_FONT_HOSTS.has(host.toLowerCase());
+}
+
+module.exports = { isExternalNetError, isGoogleFontRequest };
