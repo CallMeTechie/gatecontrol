@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.299.6] — 2026-11-19
+
+### Fixes
+- TCP/UDP-Route zu einem Gateway auf demselben Host wie der Server (#521)
+
+---
+
 ## [1.299.5] — 2026-11-19
 
 ### Fixes
