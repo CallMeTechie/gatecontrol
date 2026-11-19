@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.300.2] — 2026-11-19
+
+### Fixes
+- Wechsel Gateway <-> Pool bei HTTP- und L4-Routen löscht das alte Ziel (#533)
+
+---
+
 ## [1.300.1] — 2026-11-19
 
 ### Fixes
