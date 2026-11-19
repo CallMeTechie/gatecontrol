@@ -8,7 +8,7 @@
 //   - the notice: only for administrators, with a link to the plugin, closed
 //     for everybody by POST /api/v1/system/notices/pihole-removed/dismiss
 //   - a token left without any scope (it only had Pi-hole rights) is deleted
-//     with an activity entry; migration 159 does it for the installations
+//     with an activity entry; migration 160 does it for the installations
 //     that migration 147 already cleaned
 //   - outside: /api/v1/pihole/* and permissions.pihole(Control) are gone,
 //     the page /pihole → dashboard, the retired licence key is ignored
@@ -128,7 +128,7 @@ describe('purge(): what an installation with Pi-hole still carries', () => {
   });
 });
 
-describe('migration 159: tokens left without any scope', () => {
+describe('migration 160: tokens left without any scope', () => {
   it('deletes them with one activity entry each; unused setup codes without a scope go too, everything else stays', () => {
     db.prepare("DELETE FROM activity_log WHERE event_type = 'token_deleted'").run();
     const ins = db.prepare('INSERT INTO api_tokens (name, token_hash, scopes) VALUES (?, ?, ?)');
@@ -139,8 +139,12 @@ describe('migration 159: tokens left without any scope', () => {
     code.run('code-used', '[]', Date.now() + 60000, Date.now());
     code.run('code-ok', '["client"]', Date.now() + 60000, null);
 
-    const m = require('../src/db/migrationList').migrations.find((x) => x.version === 159);
+    const list = require('../src/db/migrationList').migrations;
+    const m = list.find((x) => x.version === 160);
     assert.equal(m.name, 'pihole_only_tokens_removed');
+    const versions = list.map((x) => x.version);
+    assert.equal(new Set(versions).size, versions.length, 'every version once');
+    assert.equal(Math.max(...versions), 160, 'the newest migration');
     db.transaction(() => { db.exec(m.sql); m.run(db); })();
 
     assert.equal(db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(empty), undefined);
@@ -152,7 +156,7 @@ describe('migration 159: tokens left without any scope', () => {
     // idempotent: the next start finds nothing
     assert.equal(removal.dropEmptyTokens(db), 0);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'token_deleted'").get().n, 1);
-    assert.equal(db.prepare("SELECT 1 AS x FROM migration_history WHERE name = 'pihole_only_tokens_removed'").get().x, 1, 'migration 159 ran');
+    assert.equal(db.prepare("SELECT 1 AS x FROM migration_history WHERE name = 'pihole_only_tokens_removed'").get().x, 1, 'migration 160 ran');
     db.prepare("DELETE FROM api_tokens WHERE token_hash = 'h-k'").run();
     db.prepare("DELETE FROM client_enrollment_codes WHERE code_hash LIKE 'code-%'").run();
   });

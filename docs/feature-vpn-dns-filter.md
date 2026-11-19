@@ -125,7 +125,7 @@ chain (`RANK = ['vpnfilter']` in `services/dnsChain.js`).
   the scopes `pihole` / `pihole:control` out of the stored API tokens and
   setup codes. A token left without any scope (it only had Pi-hole rights)
   is deleted, with an activity entry `token_deleted` each, and so is an unused
-  setup code without any scope (`dropEmptyTokens()`, migration 159 for the
+  setup code without any scope (`dropEmptyTokens()`, migration 160 for the
   installations 147 had already cleaned). An installation that had Pi-hole set up gets the activity entry
   `pihole_integration_removed` and a dashboard notice with a link to the
   plugin (or its catalogue entry) until an administrator closes it (`POST

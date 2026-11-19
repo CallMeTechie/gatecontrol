@@ -239,11 +239,11 @@ describe('gateway target on create and on a kind switch', () => {
 describe('migration 159 (gateway_target_peer_xor_pool)', () => {
   const migration = () => require('../src/db/migrationList').migrations.find((m) => m.version === 159);
 
-  it('is the newest migration and has a unique version', () => {
+  it('exists and has a unique version (160, pihole_only_tokens_removed, came after it)', () => {
     const versions = require('../src/db/migrationList').migrations.map((m) => m.version);
     assert.ok(migration(), 'migration 159 exists');
+    assert.equal(migration().name, 'gateway_target_peer_xor_pool');
     assert.equal(new Set(versions).size, versions.length);
-    assert.equal(Math.max(...versions), 159);
   });
 
   it('keeps the pool and clears the gateway in routes and rdp_routes stored with both; leaves clean rows alone', async () => {

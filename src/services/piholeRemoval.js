@@ -9,7 +9,7 @@
 //   api_tokens, client_enrollment_codes   the scopes `pihole` / `pihole:control`;
 //              a token left without any scope (it only had Pi-hole rights)
 //              is deleted, with an activity entry each; so is an unused
-//              setup code without any scope (migration 159)
+//              setup code without any scope (migration 160)
 // Statistics were only ever held in memory — there is no table to drop.
 // dnsmasq is not this module's business: services/dnsChain.js puts it on the
 // default upstreams (or on the DNS protection) at every start.
