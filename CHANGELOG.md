@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.303.0] — 2026-11-20
+
+### Features
+- Wildcard-Zertifikat der VPN-Zone per ACME DNS-01 – Server-Kern und API (#545)
+
+---
+
 ## [1.302.4] — 2026-11-20
 
 ### Fixes
