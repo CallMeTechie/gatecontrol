@@ -144,6 +144,22 @@ jobs:
       - name: Verify Caddy WAF module
         run: docker run --rm --entrypoint caddy gatecontrol:security-scan list-modules | grep -qx http.handlers.waf
 
+      # Wildcard certificate of the VPN zone: every DNS provider module of the
+      # first version must be in the binary, plus the test command gc-dnstest
+      # (bad input → exit code 2, JSON on stdout; no network, no credentials).
+      - name: Verify Caddy DNS provider modules and gc-dnstest
+        run: |
+          mods=$(docker run --rm --entrypoint caddy gatecontrol:security-scan list-modules)
+          for p in hetzner ionos netcup inwx allinkl ovh desec cloudflare rfc2136 acmedns; do
+            grep -qx "dns.providers.$p" <<<"$mods" || { echo "::error::dns.providers.$p missing"; exit 1; }
+          done
+          set +e
+          out=$(echo '{}' | docker run --rm -i --entrypoint caddy gatecontrol:security-scan gc-dnstest)
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" -eq 2 ] && grep -q '"code":"bad_input"' <<<"$out"
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
