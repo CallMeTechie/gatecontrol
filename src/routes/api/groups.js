@@ -73,7 +73,7 @@ function opts(req, extra) {
 function inviteBase() {
   try {
     const portalConfig = require('../../services/portalConfig');
-    if (portalConfig().enabled) return `https://${portalConfig.effectivePortalHost().host}`;
+    if (portalConfig().enabled) return `https://${portalConfig.effectivePortalHost().compatHost}`;
   } catch { /* portal not configured */ }
   try { return new URL(require('../../../config/default').app.baseUrl).origin; } catch { return ''; }
 }

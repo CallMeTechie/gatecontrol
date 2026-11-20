@@ -31,6 +31,12 @@ function checkDomainPolicy(domain, { currentDomain = null, routeType = 'http' } 
   const mh = managementHost();
   const ph = portalHost();
   if ((mh && host === mh) || (ph && host === ph)) return { error: 'domain_collision' };
+  // the other names of the portal and of the management (home.<legacy>,
+  // server./gc-server.<zone> while the wildcard of the VPN zone is served)
+  try {
+    if (require('./portalConfig').isPortalHost(host)) return { error: 'domain_collision' };
+    if (new Set(require('./vpnCert').managementHosts()).has(host)) return { error: 'domain_collision' };
+  } catch { /* services unavailable */ }
 
   // The zone of the device names ("Namen im VPN", services/vpnNames.js)
   // belongs to the devices alone: the server answers it by itself, a route

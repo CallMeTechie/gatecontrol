@@ -27,13 +27,64 @@ function portalConfig() {
 const config = require('../../config/default');
 const { getDb } = require('../db/connection');
 
+/**
+ * The host(s) of the portal.
+ *   public portal domain set → { host: <prefix>.<base>, public: true }
+ *   wildcard certificate of the VPN zone in use (services/vpnCert.js
+ *   servedZone) → { host: home.<zone>, vpn: true, legacyHost: home.<legacy> }:
+ *   the portal answers under both names, home.<legacy> stays for good
+ *   otherwise → { host: home.<legacy> }
+ * `hosts` lists every name the portal answers; `compatHost` is the one every
+ * device resolves (for links opened anywhere, and for apps that do not know
+ * the zone of the device names).
+ */
 function effectivePortalHost() {
   const base = String(settings.get('portal.base_domain', '') || '').trim().toLowerCase();
   const prefix = String(settings.get('portal.prefix', 'home') || '').trim().toLowerCase();
-  if (base) return { host: prefix ? `${prefix}.${base}` : base, public: true };
-  return { host: `home.${config.dns.domain}`, public: false };
+  if (base) {
+    const host = prefix ? `${prefix}.${base}` : base;
+    return { host, public: true, vpn: false, legacyHost: null, compatHost: host, hosts: [host] };
+  }
+  const legacy = `home.${config.dns.domain}`;
+  let zone = null;
+  try { zone = require('./vpnCert').servedZone(); } catch { zone = null; }
+  if (zone) {
+    const host = `home.${zone}`;
+    return { host, public: false, vpn: true, legacyHost: legacy, compatHost: legacy, hosts: [host, legacy] };
+  }
+  return { host: legacy, public: false, vpn: false, legacyHost: null, compatHost: legacy, hosts: [legacy] };
 }
 function isPublicPortalHost() { return effectivePortalHost().public; }
+
+/** Does the portal answer under this host name? */
+function isPortalHost(hostname) {
+  const h = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+  // the whole name: equal to one of the portal's names, never a part of one
+  try { return !!h && new Set(effectivePortalHost().hosts).has(h); } catch { return false; }
+}
+
+// Apps that resolve the zone of the device names ("Namen im VPN"): the
+// Android app (all versions), GateControl Pro from 1.85.0, Community from
+// 1.49.0 — they get home.<zone>; every other caller the name every device
+// resolves (home.<legacy>).
+const ZONE_APPS = { pro: '1.85.0', community: '1.49.0' };
+function resolvesZone(req) {
+  const h = (req && req.headers) || {};
+  const type = String(h['x-client-type'] || '').trim().toLowerCase().replace(/^gatecontrol-/, '');
+  const platform = String(h['x-client-platform'] || '').trim().toLowerCase();
+  if (type === 'android' || platform === 'android') return true;
+  const min = ZONE_APPS[type];
+  if (!min) return false;
+  const v = String(h['x-client-version'] || '').trim();
+  if (!/^v?\d{1,6}\.\d{1,6}\.\d{1,6}/.test(v)) return false;
+  return require('../utils/version').compareVersions(v, min) >= 0;
+}
+
+/** The portal host for a request of an app (see resolvesZone). */
+function portalHostFor(req) {
+  const p = effectivePortalHost();
+  return p.vpn && !resolvesZone(req) ? p.compatHost : p.host;
+}
 
 function validPrefix(prefix) {
   if (prefix === '') return true;                          // apex allowed
@@ -81,4 +132,7 @@ async function validatePortalHost(base, prefix) {
 module.exports = portalConfig;
 module.exports.effectivePortalHost = effectivePortalHost;
 module.exports.isPublicPortalHost = isPublicPortalHost;
+module.exports.isPortalHost = isPortalHost;
+module.exports.resolvesZone = resolvesZone;
+module.exports.portalHostFor = portalHostFor;
 module.exports.validatePortalHost = validatePortalHost;

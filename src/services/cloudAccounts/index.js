@@ -160,7 +160,7 @@ function returnUrl(rt, outcome) {
   if (rt.kind === 'admin') return add(rt.path);
   if (rt.kind === 'app') return add(rt.path);
   let host;
-  try { host = require('../portalConfig').effectivePortalHost().host; } catch { host = null; }
+  try { host = require('../portalConfig').effectivePortalHost().compatHost; } catch { host = null; }
   return host ? `https://${host}${add(rt.path)}` : add(rt.path);
 }
 

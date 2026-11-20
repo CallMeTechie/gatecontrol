@@ -187,6 +187,28 @@ ausliefern, und löscht ihn. Schritte `login`, `zone`, `write`, `visible`,
 `delete`; Vorschlag der Wartezeit aus der gemessenen Verbreitung. Let's Encrypt
 wird nicht gefragt; gespeichert wird nur das Ergebnis ohne Werte.
 
+**Portal und Verwaltung unter der Zone** (`vpnCert.servedZone()`: Policy im
+Caddy-Abgleich und ein gültiges Zertifikat im Speicher): Das Portal antwortet
+unter `home.<zone>` und weiter unter `home.<alte Zone>`
+(`portalConfig.effectivePortalHost()`: `host`, `hosts`, `compatHost`). Ist
+eine öffentliche Portal-Domain gesetzt, gilt nur sie. `home.<zone>` bekommen
+nur Apps, die die Zone auflösen (`portalConfig.resolvesZone`: Kopfzeilen
+`X-Client-Platform: android`, `X-Client-Type` `pro` ab 1.85.0 / `community`
+ab 1.49.0 mit `X-Client-Version`) — in `GET /api/v1/client/permissions`
+(`portalUrl`) und `POST /api/v1/client/portal-link`; Einladungs-, Kiosk- und
+Menü-Links und die Rücksprung-Adresse der Cloud-Konten nutzen `compatHost`.
+Die Verwaltung antwortet zusätzlich unter `server.<zone>` und
+`gc-server.<zone>` (`vpnCert.managementHosts()`), nur aus dem VPN
+(`remote_ip`, sonst 404), nur über HTTPS; `GC_BASE_URL` bleibt die
+Hauptadresse. Das Sitzungs-Cookie hat kein `Domain`-Attribut: eine Anmeldung
+gilt je Adresse, das CSRF-Token liegt in der Sitzung; Passkeys (RP-ID aus
+`GC_BASE_URL`) und OIDC nur unter der Hauptadresse. Die Namen stehen in
+`automatic_https.skip_certificates` und bekommen das Wildcard-Zertifikat;
+`home.<zone>` steht in der Hosts-Datei (dnsmasq beantwortet die Zone allein).
+`vpnCert.refreshServed()` stellt nach Ausstellung, Erneuerung, Ablauf,
+Anhalten, Einrichten, Ausschalten, Zonenwechsel und Restore um (Hosts-Datei,
+Caddy-Abgleich, `config_changed` an die Apps).
+
 Die Karte hat die Ansichten `locked`, `nozone`, `off`, `setup`, `pending`,
 `active`, `error`; die Felder der Einrichtung gehen über die Speicherleiste,
 „Testen“ wirkt sofort.

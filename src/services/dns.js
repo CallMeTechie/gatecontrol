@@ -328,9 +328,10 @@ function renderServersContent() {
   const inZone = (h) => zones.some((z) => h === z || h.endsWith('.' + z));
   const names = new Set(routeHosts(db));
   try {
-    const portal = String(require('./portalConfig').effectivePortalHost().host || '').toLowerCase();
-    assertSafeRouteDomain(portal);
-    names.add(portal);
+    for (const h of require('./portalConfig').effectivePortalHost().hosts) {
+      const portal = String(h || '').toLowerCase();
+      try { assertSafeRouteDomain(portal); names.add(portal); } catch { /* not usable */ }
+    }
   } catch { /* no usable portal host */ }
   const api = apiHost();
   if (api) names.add(api);
@@ -412,9 +413,13 @@ function renderHostsContent() {
 
   // Portal home name — VPN clients reach the landing portal via the effective host.
   // Resolves to the gateway IP so the name works on any split-tunnel config.
+  // home.<zone> as well while the wildcard of the VPN zone is served
+  // (services/vpnCert.js): dnsmasq answers that zone by itself (local=/…/),
+  // so the name exists only through this line.
   const { effectivePortalHost } = require('./portalConfig');
-  const portal = effectivePortalHost().host;
-  lines.push(`${gwIp}\t${portal}`);
+  const portalHosts = effectivePortalHost().hosts;
+  const portal = portalHosts[0];
+  for (const h of portalHosts) lines.push(`${gwIp}\t${h}`);
 
   // The API host — dnsmasq.conf has it as `host-record=` already (entrypoint.sh);
   // here as well so its A record is there whenever the servers file below

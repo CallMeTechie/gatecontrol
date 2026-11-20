@@ -24,7 +24,7 @@
  */
 
 const kiosk = require('../services/kiosk');
-const { effectivePortalHost } = require('../services/portalConfig');
+const { isPortalHost } = require('../services/portalConfig');
 const logger = require('../utils/logger');
 
 const COOKIE = 'gc_kiosk';
@@ -81,7 +81,8 @@ function clearKioskCookies(req, res) {
 }
 
 function onPortalHost(req) {
-  try { return req.hostname === effectivePortalHost().host; } catch { return false; }
+  // whole host names only (portalConfig.isPortalHost: exact, never a substring)
+  try { return isPortalHost(req.hostname); } catch { return false; }
 }
 
 function webSessionActive(req) {

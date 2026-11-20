@@ -104,6 +104,14 @@ function managementHost() {
 function portalHost() {
   try { return norm(require('./portalConfig').effectivePortalHost().host); } catch { return ''; }
 }
+// Every name of the portal except home.<zone> itself (services/vpnCert.js):
+// that one lives in the zone by design and goes with it.
+function portalHostsOutsideZone() {
+  try {
+    const p = require('./portalConfig').effectivePortalHost();
+    return (p.hosts || [p.host]).map(norm).filter((h) => h && !(p.vpn && h === norm(p.host)));
+  } catch { return []; }
+}
 
 /**
  * What already lives at or below `<sub>.<base>` and so keeps it from becoming
@@ -131,8 +139,9 @@ function findCollision(base, sub) {
   }
   const mh = managementHost();
   if (mh && under(mh, zone)) return { kind: 'management', fqdn: mh };
-  const ph = portalHost();
-  if (ph && under(ph, zone)) return { kind: 'portal', fqdn: ph };
+  for (const ph of portalHostsOutsideZone()) {
+    if (under(ph, zone)) return { kind: 'portal', fqdn: ph };
+  }
   for (const d of db.prepare('SELECT domain FROM domains').all()) {
     const dom = norm(d.domain);
     if (dom !== base && under(dom, zone)) return { kind: 'domain', fqdn: dom };
@@ -188,8 +197,12 @@ function save(baseRaw, subRaw) {
   // A wildcard certificate set up for the zone (services/vpnCert.js) is
   // requested for that zone only: Caddy drops or takes up its policy.
   try {
-    if (require('./vpnCert').state().provider) {
-      require('./caddyConfig').syncToCaddy().catch((err) => log().warn({ err: err.message }, 'vpn names: Caddy not synced after the zone change'));
+    const vpnCert = require('./vpnCert');
+    if (vpnCert.state().provider) {
+      // the portal and management names under the zone go with it (refreshServed syncs when they change)
+      if (!vpnCert.refreshServed('zone changed')) {
+        require('./caddyConfig').syncToCaddy().catch((err) => log().warn({ err: err.message }, 'vpn names: Caddy not synced after the zone change'));
+      }
     }
   } catch (err) { log().debug({ err: err.message }, 'vpn names: wildcard state unavailable'); }
   // the gateways get the zones in `features.internal_dns` of their config pull (part of its hash): told

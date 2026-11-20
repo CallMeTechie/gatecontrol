@@ -1,7 +1,7 @@
 // src/middleware/portalIdentity.js
 'use strict';
 const { getDb } = require('../db/connection');
-const { effectivePortalHost } = require('../services/portalConfig');
+const { isPortalHost } = require('../services/portalConfig');
 
 function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -42,7 +42,7 @@ function portalIdentity(req, _res, next) {
   req.portalPeerName = null;
   const direct = req.socket && req.socket.remoteAddress;
   const headerIp = req.get && req.get('X-GC-Portal-Peer-IP');
-  if (isLoopback(direct) && headerIp && req.hostname === effectivePortalHost().host) {
+  if (isLoopback(direct) && headerIp && isPortalHost(req.hostname)) {
     const peer = peerFromIp(headerIp);
     if (peer) { req.portalPeerId = peer.id; req.portalPeerName = peer.name; }
   }

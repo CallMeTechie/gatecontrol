@@ -432,9 +432,10 @@ the VPN, but annoying.
 
 Remedy: Choose an own domain under “Names in the VPN” and set up a certificate
 for the zone under “Settings” → “VPN & network” → “Certificate for the names”.
-The names under your zone that the server answers then get a certificate every
-browser trusts. Which ones these are is listed in the card under “Used by”.
-More:
+The portal then runs under `home.vpn.example.com` with a certificate every
+browser trusts; the apps (Android, Windows Pro from 1.85.0, Community from
+1.49.0) open it there by themselves. Which names use the certificate is listed
+in the card under “Used by”. More:
 [2.12 A valid certificate for the names in the VPN](02-server-setup.md#212-a-valid-certificate-for-the-names-in-the-vpn).
 
 ### “Test” of the certificate for the names fails

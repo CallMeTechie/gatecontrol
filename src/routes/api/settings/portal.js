@@ -27,6 +27,8 @@ router.get('/portal', (req, res) => {
     effectiveHost: effectivePortalHost().host,
     isPublic: isPublicPortalHost(),
     internalHost: `home.${config.dns.domain}`,
+    // home.<zone> while the wildcard of the VPN zone is served (services/vpnCert.js)
+    vpnHost: (() => { const p = effectivePortalHost(); return p.vpn ? p.host : null; })(),
   }) });
 });
 

@@ -467,7 +467,7 @@ function listZones() {
   try {
     tlsRows = tlsGuard.loadRows();
     const portal = require('./portalConfig').effectivePortalHost();
-    tlsOpts = { forcedInternal: new Set(portal.public ? [] : [String(portal.host).toLowerCase()]) };
+    tlsOpts = { forcedInternal: new Set(portal.public ? [] : [String(portal.compatHost).toLowerCase()]) };
   } catch (err) { logger.warn({ err: err.message }, 'zones: tls status unavailable'); }
 
   const entries = routesSvc.toApiRows(routesSvc.getAll({ limit: 1000000 })).map((row) => {

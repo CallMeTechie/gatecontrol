@@ -29,7 +29,8 @@ router.get('/permissions', (req, res) => {
   const hasScope = (s) => scopes.includes('full-access') || scopes.includes(s);
 
   const enabled = portalConfig().enabled;
-  const portalUrl = enabled ? `https://${portalConfig.effectivePortalHost().host}` : null;
+  // home.<zone> only for apps that resolve the zone of the device names (portalConfig.resolvesZone)
+  const portalUrl = enabled ? `https://${portalConfig.portalHostFor(req)}` : null;
   const autoOpenPortal = enabled && settings.get('portal.autoappear', '1') !== '0';
 
   res.json({
