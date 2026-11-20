@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.302.3] — 2026-11-20
+
+### Fixes
+- Antwortbudget auch für „Host löschen“ und Batch-Löschen (#541)
+
+---
+
 ## [1.302.2] — 2026-11-19
 
 ### Fixes
