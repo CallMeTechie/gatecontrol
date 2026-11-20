@@ -305,6 +305,16 @@ module.exports = (ctx) => {
             && document.querySelectorAll('#st-vc-share-peers input[type=checkbox]').length === 1
             && !document.getElementById('st-savebar').hidden
             && document.getElementById('card-vpn-cert').dataset.view === 'active'));
+        step('switched on: the device area, never the zone — its name, the note, the risk',
+          await until(p, () => {
+            const mono = (id) => [...document.getElementById(id).querySelectorAll('.st-mono')].map((n) => n.textContent);
+            return !document.getElementById('st-vc-share-area').hidden
+              && document.getElementById('st-vc-share-label').value === 'geraete'
+              && !document.getElementById('st-vc-share-label').disabled
+              && mono('st-vc-share-risk').join() === '*.geraete.vpn.example.com,*.vpn.example.com'
+              && mono('st-vc-share-area-note').includes('nas.geraete.vpn.example.com')
+              && document.getElementById('st-vc-share-cname').hidden;
+          }));
         await p.check('#st-vc-share-peers input[type=checkbox]');
         await cardShot(p, 'vpncert-share');
         await p.click('#st-save');
@@ -314,8 +324,13 @@ module.exports = (ctx) => {
         const sh = (await api('GET', '/api/v1/settings/vpn-cert')).body.data.share;
         step('saved: passing on is on for the chosen gateway, the answer has no key',
           sh.enabled === true && sh.allowed.length === 1 && !JSON.stringify(sh).includes('PRIVATE KEY'), JSON.stringify({ enabled: sh.enabled, allowed: sh.allowed }));
+        step('saved: the device area *.geraete.<zone>; its name is locked while passing on is on; the device certificate is being fetched',
+          sh.wildcard === '*.geraete.vpn.example.com' && sh.device_zone === 'geraete.vpn.example.com'
+            && await until(p, () => document.getElementById('st-vc-share-label').disabled
+              && !document.getElementById('st-vc-share-cert-row').hidden && document.getElementById('st-vc-share-cert').textContent.length > 0),
+          JSON.stringify({ wildcard: sh.wildcard }));
 
-        // ── Hat das Gateway es abgeholt? (heartbeat telemetry.vpn_cert, capability vpn-cert) ──
+        // ── Hat das Gateway es abgeholt? (heartbeat telemetry.vpn_cert, capabilities vpn-cert + vpn-cert-devices) ──
         const gwId = db(app, (d) => d.prepare("SELECT id FROM peers WHERE name = 'e2e-gw-home'").get().id);
         const heartbeat = (tel) => db(app, (d) => d.prepare(`INSERT OR REPLACE INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, created_at, last_seen_at, last_health)
           VALUES (?, 9876, 'e2e-gw-hash', 'x', ?, ?, ?)`).run(gwId, Date.now(), Date.now(), JSON.stringify({ telemetry: tel })));
@@ -328,11 +343,11 @@ module.exports = (ctx) => {
         heartbeat({ gateway_version: '1.40.0', capabilities: ['udp-routes'] });
         await p.reload();
         await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
-        const tooOld = await stText(p, 'st.vc.cert_too_old_hint', { version: '1.41.0' });
+        const tooOld = await stText(p, 'st.vc.cert_too_old_hint', { version: '1.43.0' });
         step('may fetch: a gateway without the capability is "Gateway zu alt", with the version from which it can',
           await until(p, (want) => { const n = document.querySelector('#st-vc-share-peers .vc-cert-state'); return !!n && n.dataset.vcState === 'too_old' && n.title === want; }, tooOld), JSON.stringify(await certPill()));
         const fp = 'c0ffee'.padEnd(64, '1');
-        heartbeat({ gateway_version: '1.41.0', capabilities: ['udp-routes', 'vpn-cert'], vpn_cert: { fingerprint: fp, not_after: new Date(Date.now() + 80 * 86400000).toISOString() } });
+        heartbeat({ gateway_version: '1.43.0', capabilities: ['udp-routes', 'vpn-cert', 'vpn-cert-devices'], vpn_cert: { fingerprint: fp, not_after: new Date(Date.now() + 80 * 86400000).toISOString() } });
         await p.reload();
         await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
         step('may fetch: a gateway that reports the certificate is "abgeholt"',

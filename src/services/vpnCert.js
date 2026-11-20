@@ -63,6 +63,10 @@ const KEY = {
   shareFp: 'vpn_cert.share_fingerprint',
   shareFpAt: 'vpn_cert.share_fingerprint_at',
   links: 'vpn_cert.links_new',
+  deviceLabel: 'vpn_cert.device_label',
+  // once per server: a main key that was passed on before the device area existed gets renewed
+  mainKeyMigrated: 'vpn_cert.main_key_migrated',
+  mainKeyRenewedAt: 'vpn_cert.main_key_renewed_at',
 };
 
 const FEATURE = 'internal_dns';
@@ -505,12 +509,15 @@ function sharePeerIds() {
 }
 function shareEnabled() { return get(KEY.share, '') === '1'; }
 
-/** The certificate files of the wildcard in Caddy's storage → { certPem, keyPem, notBefore, notAfter, fingerprint } | null */
-function certMaterial() {
-  const st = state();
-  if (!st.wildcard) return null;
+/**
+ * The certificate files of a wildcard in Caddy's storage — by default the one
+ * passed on (the device area, never the main wildcard).
+ * → { certPem, keyPem, notBefore, notAfter, fingerprint, dir } | null
+ */
+function certMaterial(wildcard = deviceWildcard()) {
+  if (!wildcard) return null;
   let entry = null;
-  try { entry = tlsGuard().scanCertificates(undefined, st.wildcard).get(st.wildcard) || null; } catch { entry = null; }
+  try { entry = tlsGuard().scanCertificates(undefined, wildcard).get(wildcard) || null; } catch { entry = null; }
   if (!entry || !entry.file) return null;
   try {
     const certPem = fs.readFileSync(entry.file, 'utf8');
@@ -522,12 +529,38 @@ function certMaterial() {
   } catch { return null; }
 }
 
-/** What a peer may know about the shared certificate (config pull, app permissions) → { wildcard, fingerprint, not_after } | null */
+/**
+ * The names a peer needs besides the certificate (config pull, app
+ * permissions, fetch): the wildcard passed on is the one of the device area,
+ * the server answers the fetch under server.<zone> (main wildcard).
+ * → { wildcard, zone, device_zone, server_host, host }
+ */
+function shareNames(peerId, zone = servedZone()) {
+  const dz = deviceZone(zone);
+  let hostname = null;
+  try {
+    const row = require('../db/connection').getDb().prepare('SELECT hostname FROM peers WHERE id = ?').get(Number(peerId));
+    hostname = row && row.hostname ? String(row.hostname).toLowerCase() : null;
+  } catch { hostname = null; }
+  return {
+    wildcard: `*.${dz}`,
+    zone,
+    device_zone: dz,
+    server_host: `server.${zone}`,
+    // this peer's own name in the device area (null: no device name, or one kept free)
+    host: hostname && !DEVICE_AREA_RESERVED.has(hostname) ? `${hostname}.${dz}` : null,
+  };
+}
+
+/**
+ * What a peer may know about the shared certificate (config pull, app permissions)
+ * → { wildcard, zone, device_zone, server_host, host, fingerprint, not_after } | null
+ */
 function shareSummary(peerId) {
   if (!shareEnabled() || !sharePeerIds().includes(Number(peerId)) || !servedZone()) return null;
   const m = certMaterial();
   if (!m) return null;
-  return { wildcard: `*.${servedZone()}`, fingerprint: m.fingerprint, not_after: m.notAfter };
+  return { ...shareNames(peerId), fingerprint: m.fingerprint, not_after: m.notAfter };
 }
 
 /**
@@ -556,9 +589,10 @@ function fetchFor(peerId, { via = 'gateway', ip = null } = {}) {
   let name = String(id);
   try { const row = require('../db/connection').getDb().prepare('SELECT name FROM peers WHERE id = ?').get(id); if (row) name = row.name; } catch { /* name stays the id */ }
   try { settings.set(KEY.shareUsed, '1'); } catch { /* best effort */ }
-  activityLog('tls_vpn_cert_key_fetched', `Certificate and key of *.${servedZone()} fetched by ${name}`, 'warning',
-    { peer_id: id, peer: name, via, fingerprint: m.fingerprint, not_after: m.notAfter }, ip);
-  return { ok: true, wildcard: `*.${servedZone()}`, zone: servedZone(), cert_pem: m.certPem, key_pem: m.keyPem, not_after: m.notAfter, fingerprint: m.fingerprint };
+  const names = shareNames(id);
+  activityLog('tls_vpn_cert_key_fetched', `Certificate and key of ${names.wildcard} fetched by ${name}`, 'warning',
+    { peer_id: id, peer: name, via, wildcard: names.wildcard, fingerprint: m.fingerprint, not_after: m.notAfter }, ip);
+  return { ok: true, ...names, cert_pem: m.certPem, key_pem: m.keyPem, not_after: m.notAfter, fingerprint: m.fingerprint };
 }
 
 function shareView() {
@@ -572,32 +606,150 @@ function shareView() {
       .prepare("SELECT id, name, peer_type, hostname FROM peers WHERE enabled = 1 ORDER BY (CASE WHEN peer_type = 'gateway' THEN 0 ELSE 1 END), name COLLATE NOCASE").all()
       .map((p) => ({ id: p.id, name: p.name, gateway: p.peer_type === 'gateway', hostname: p.hostname || null, allowed: ids.has(p.id), cert: certs.get(p.id) || null }));
   } catch { peers = []; }
+  const st = state();
+  const dz = deviceZone(st.zone);
+  const row = dz ? tlsRow(`*.${dz}`) : null;
+  const delegated = !!dz && !!get(KEY.delegate, '') && !(PROVIDERS[providerId()] || {}).own_cname;
+  const ownCname = !!dz && !!(PROVIDERS[providerId()] || {}).own_cname;
+  let target = null;
+  if (delegated) target = get(KEY.delegate, '');
+  else if (ownCname) { const { values } = storedCredentials(); target = norm((values || {}).fulldomain) || null; }
   return {
     enabled: shareEnabled(),
     peers,
     allowed: [...ids],
     used: get(KEY.shareUsed, '') === '1',
     fingerprint: m ? m.fingerprint : null,
+    // the device area: its own wildcard, only that one is passed on
+    label: deviceLabel(),
+    default_label: DEFAULT_DEVICE_LABEL,
+    device_zone: dz,
+    wildcard: dz ? `*.${dz}` : null,
+    reserved: [...DEVICE_AREA_RESERVED],
+    // forwarding (CNAME): the challenge of the device area needs a CNAME of its own, to the same target
+    cname: target ? { name: `_acme-challenge.${dz}`, target } : null,
+    certificate: row ? {
+      state: row.state || null,
+      not_after: row.not_after || null,
+      days_left: daysLeft(row.not_after),
+      last_error_code: row.last_error_code || null,
+      last_error: row.last_error ? redact(row.last_error) : null,
+    } : null,
+    main_key_renewed_at: get(KEY.mainKeyRenewedAt, '') || null,
   };
+}
+
+// ─── The device area ───────────────────────────────────────
+//
+// Passing on never hands out the main wildcard *.<zone> (portal, management,
+// routes). The server gets a second wildcard for a device area of its own,
+// *.<label>.<zone> (label "geraete" by default), with the same DNS provider,
+// only while passing on is on, and hands out only that one. dnsmasq answers
+// <device>.<label>.<zone> with the device's tunnel address (services/dns.js);
+// Caddy serves nothing under the device area, routes there are refused.
+
+const DEFAULT_DEVICE_LABEL = 'geraete';
+const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+// names under the device area kept free for later use (no device gets them there)
+const DEVICE_AREA_RESERVED = new Set(['mqtt', 'www', 'ca']);
+
+function deviceLabel() {
+  const v = norm(get(KEY.deviceLabel, ''));
+  return v && LABEL_RE.test(v) ? v : DEFAULT_DEVICE_LABEL;
+}
+
+/** <label>.<zone> | null */
+function deviceZone(zone = state().zone) {
+  return zone ? `${deviceLabel()}.${zone}` : null;
+}
+
+/** *.<label>.<zone> while passing on can use it (zone set), else null */
+function deviceWildcard(zone = state().zone) {
+  const dz = deviceZone(zone);
+  return dz ? `*.${dz}` : null;
+}
+
+/**
+ * May `label` name the device area of `zone`? → null | error code
+ *   device_label_invalid  not one DNS label
+ *   device_label_reserved a fixed name of the server (home, server, gateway …)
+ *   device_label_taken    a device has this name, or a route lives at / below it
+ */
+function deviceLabelProblem(label, zone) {
+  const l = norm(label);
+  if (!l || l.length > 63 || !LABEL_RE.test(l)) return 'device_label_invalid';
+  let reserved = new Set();
+  try { reserved = require('./dns').RESERVED_HOSTNAMES; } catch { /* none */ }
+  if (reserved.has(l) || MANAGEMENT_LABELS.includes(l)) return 'device_label_reserved';
+  try {
+    const db = require('../db/connection').getDb();
+    if (db.prepare('SELECT 1 FROM peers WHERE hostname = ? COLLATE NOCASE LIMIT 1').get(l)) return 'device_label_taken';
+    if (zone) {
+      const at = `${l}.${zone}`;
+      const rows = db.prepare('SELECT domain FROM routes WHERE domain IS NOT NULL AND domain != \'\'').all();
+      if (rows.some((r) => { const d = norm(r.domain); return d === at || d.endsWith('.' + at); })) return 'device_label_taken';
+    }
+  } catch { /* no db */ }
+  return null;
+}
+
+/** Is `host` the device area or a name below it? (routes are refused there) */
+function inDeviceArea(host) {
+  const dz = deviceZone();
+  if (!dz) return false;
+  const h = norm(host);
+  return h === dz || h.endsWith('.' + dz);
+}
+
+/**
+ * Once per server, after the update that brought the device area: a main key
+ * that was passed on before (vpn_cert.share_used) is renewed like "Neuen
+ * Schlüssel holen" — the copies out there then fit nothing the server serves.
+ * The card and the activity log say so. → whether it renewed
+ */
+async function migrateSharedMainKey() {
+  if (get(KEY.mainKeyMigrated, '') === '1') return false;
+  try { settings.set(KEY.mainKeyMigrated, '1'); } catch { return false; }
+  if (get(KEY.shareUsed, '') !== '1') return false;
+  const st = state();
+  settings.set(KEY.shareUsed, '');
+  settings.set(KEY.shareFp, '');
+  if (!['active', 'failed'].includes(st.state)) return false;
+  const m = certMaterial(st.wildcard);
+  if (m && m.dir && path.basename(m.dir) === `wildcard_.${st.zone}`) {
+    try { fs.rmSync(m.dir, { recursive: true, force: true }); } catch (err) { log().warn({ err: err.message }, 'vpn cert: stored main certificate not removed'); }
+  }
+  tlsGuard().writeRow(st.wildcard, { state: 'pending', attempts: 0, last_error: null, last_error_code: null, next_retry_at: null, paused_at: null, paused_reason: null, not_after: null, issuer: null });
+  settings.set(KEY.mainKeyRenewedAt, new Date().toISOString());
+  activityLog('tls_vpn_cert_main_key_renewed',
+    `The key of ${st.wildcard} was passed on before; the server fetches a new one once. Devices now get ${deviceWildcard(st.zone)} only.`,
+    'warning', { zone: st.zone, device_wildcard: deviceWildcard(st.zone) });
+  try { await syncCaddy(); } catch (err) { log().warn({ err: redact(err.message) }, 'vpn cert: Caddy not synced after the key renewal'); }
+  refreshServed('main key renewed');
+  return true;
 }
 
 // ─── Has the gateway fetched it? ──────────────────────────
 //
-// A gateway since 1.41.0 names the capability `vpn-cert` in its heartbeat and
+// A gateway since 1.41.0 names the capability `vpn-cert` in its heartbeat, since the
+// device area (MIN_GATEWAY_CERT) also `vpn-cert-devices`, and
 // reports what it holds as telemetry.vpn_cert { fingerprint, not_after } (null
 // = nothing stored); gateway_meta.last_health keeps that. Only for gateways in
 // "Darf abholen" while passing on is on:
 //   fetched   it holds the certificate the server hands out now
 //   stale     it holds an older one (fingerprint ≠ the current)
 //   pending   allowed, but nothing reported yet
-//   too_old   no capability `vpn-cert`: update the gateway (MIN_GATEWAY_CERT)
+//   too_old   no capability `vpn-cert` + `vpn-cert-devices`: update the gateway (MIN_GATEWAY_CERT)
 // A stale gateway becomes a dashboard problem only after STALE_PROBLEM_MS from
 // when the current certificate is there to fetch (issued, or passing on
 // switched on / fingerprint changed — whichever is later): a gateway fetches
 // within minutes, a short delay is no problem.
 
 const GATEWAY_CERT_CAPABILITY = 'vpn-cert';
-const MIN_GATEWAY_CERT = '1.41.0';
+// since the device area: the gateway fetches at vpn_cert.server_host and accepts
+// *.<label>.<zone> — an older one would ask server.<label>.<zone> and fail
+const GATEWAY_CERT_DEVICES_CAPABILITY = 'vpn-cert-devices';
+const MIN_GATEWAY_CERT = '1.43.0';
 const STALE_PROBLEM_MS = 24 * 3600 * 1000;
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -623,7 +775,7 @@ function gatewayCertStatus(lastHealth, m, since = currentSince(m)) {
   const t = tel && typeof tel === 'object' ? tel : {};
   const caps = Array.isArray(t.capabilities) ? t.capabilities : [];
   const out = { state: 'pending', fingerprint: null, not_after: null, current_fingerprint: m ? m.fingerprint : null, stale_since: null, min_version: MIN_GATEWAY_CERT };
-  if (!caps.includes(GATEWAY_CERT_CAPABILITY)) {
+  if (!caps.includes(GATEWAY_CERT_CAPABILITY) || !caps.includes(GATEWAY_CERT_DEVICES_CAPABILITY)) {
     // never reported at all: nothing to say about its version yet
     if (typeof t.gateway_version === 'string' && t.gateway_version) out.state = 'too_old';
     return out;
@@ -703,7 +855,12 @@ function setLinks(input = {}, { ip = null } = {}) {
   return view();
 }
 
-/** Switch passing on, and who may fetch. input: { enabled, peers: [ids], accept_risk } */
+/**
+ * Switch passing on, who may fetch, and the name of the device area.
+ * input: { enabled, peers: [ids], accept_risk, device_label }
+ * The device area is renamed only while passing on is off (or in the request
+ * that switches it on or off).
+ */
 function setShare(input = {}, { ip = null } = {}) {
   if (!hasFeature(FEATURE)) { const err = new Error('feature_not_available'); err.code = 'feature_not_available'; err.statusCode = 403; throw err; }
   const enabled = input.enabled === true;
@@ -715,10 +872,28 @@ function setShare(input = {}, { ip = null } = {}) {
     if (ids.some((n) => !known.has(n))) throw validationError('peers_invalid', 'peers');
   }
   const wasOn = shareEnabled();
+  const st = state();
+  const oldLabel = deviceLabel();
+  const label = input.device_label === undefined || input.device_label === null ? oldLabel : norm(input.device_label);
+  if (label !== oldLabel) {
+    // the allowed devices hold a certificate of the old name: rename only while (or by) switching off
+    if (wasOn && enabled) { const err = validationError('share_on', 'device_label'); err.statusCode = 409; throw err; }
+  }
+  if (label !== oldLabel || (enabled && !wasOn)) {
+    const problem = deviceLabelProblem(label, st.zone);
+    if (problem) throw validationError(problem, 'device_label');
+  }
   if (enabled && !wasOn) {
     if (input.accept_risk !== true) throw validationError('risk_not_accepted', 'accept_risk');
-    const st = state();
     if (!['active', 'failed', 'pending'].includes(st.state)) throw validationError('not_configured');
+  }
+  if (label !== oldLabel) {
+    // the old device area's row goes; its wildcard is not requested any more
+    try { if (st.zone) tlsGuard().forgetHosts([`*.${oldLabel}.${st.zone}`]); } catch { /* none */ }
+    settings.set(KEY.deviceLabel, label === DEFAULT_DEVICE_LABEL ? '' : label);
+    settings.set(KEY.shareUsed, '');
+    activityLog('tls_vpn_cert_device_area', `Device area of the VPN names: ${label}.${st.zone || ''}`, 'info', { label, previous: oldLabel }, ip);
+    try { require('./dns').rebuildNow(); } catch { /* no dnsmasq here */ }
   }
   const before = new Set(sharePeerIds());
   settings.set(KEY.share, enabled ? '1' : '');
@@ -732,31 +907,39 @@ function setShare(input = {}, { ip = null } = {}) {
   } else if (ids.length !== before.size || ids.some((n) => !before.has(n))) {
     activityLog('tls_vpn_cert_share_peers', 'Devices allowed to fetch certificate and key of the VPN names changed', 'warning', { peers: ids }, ip);
   }
+  // switched on: Caddy requests the device area's wildcard; switched off: no longer
+  if (enabled !== wasOn || label !== oldLabel) {
+    try { syncCaddy().catch((err) => log().warn({ err: redact(err.message) }, 'vpn cert: Caddy not synced')); } catch { /* none */ }
+  }
   notifyShare();
   return view();
 }
 
 /**
- * A new key after passing it on: Caddy's stored certificate of the wildcard
- * is removed and Caddy fetches a new one (with a new key). Only while passing
- * on is off and a key was fetched. The names under the zone use the internal
- * names' fallback for the minute until the new certificate is there.
+ * A new key after passing it on: Caddy's stored certificate of the device
+ * area is removed. While passing on is on, Caddy fetches a new one at once
+ * (the allowed devices then fetch the new key); while off, the next switch-on
+ * fetches it. Only after a key was fetched. The main wildcard is not touched.
  */
 async function rotateKey({ ip = null } = {}) {
   requireZone();
-  if (shareEnabled()) { const err = validationError('share_on'); err.statusCode = 409; throw err; }
   if (get(KEY.shareUsed, '') !== '1') { const err = validationError('rotate_not_needed'); err.statusCode = 409; throw err; }
   const st = state();
-  if (!['active', 'failed'].includes(st.state)) throw validationError('not_configured');
-  const m = certMaterial();
-  if (m && m.dir && path.basename(m.dir).startsWith('wildcard_.')) {
+  const wildcard = deviceWildcard(st.zone);
+  if (!wildcard) throw validationError('not_configured');
+  const m = certMaterial(wildcard);
+  if (m && m.dir && path.basename(m.dir) === `wildcard_.${deviceZone(st.zone)}`) {
     try { fs.rmSync(m.dir, { recursive: true, force: true }); } catch (err) { log().warn({ err: err.message }, 'vpn cert: stored certificate not removed'); }
   }
-  tlsGuard().writeRow(st.wildcard, { state: 'pending', attempts: 0, last_error: null, last_error_code: null, next_retry_at: null, paused_at: null, paused_reason: null, not_after: null, issuer: null });
+  if (shareEnabled()) {
+    tlsGuard().writeRow(wildcard, { state: 'pending', attempts: 0, last_error: null, last_error_code: null, next_retry_at: null, paused_at: null, paused_reason: null, not_after: null, issuer: null });
+  } else {
+    try { tlsGuard().forgetHosts([wildcard]); } catch { /* none */ }
+  }
   settings.set(KEY.shareUsed, '');
-  activityLog('tls_vpn_cert_key_rotated', `New key for ${st.wildcard} requested after passing it on`, 'warning', { zone: st.zone }, ip);
+  activityLog('tls_vpn_cert_key_rotated', `New key for ${wildcard} requested after passing it on`, 'warning', { zone: st.zone, wildcard }, ip);
   await syncCaddy();
-  refreshServed('key rotated');
+  shareRefresh();
   return view();
 }
 
@@ -992,10 +1175,18 @@ function caddyTls({ email, acmeCa } = {}) {
   if (delegate) dns.override_domain = delegate;
   issuer.challenges = { http: { disabled: true }, 'tls-alpn': { disabled: true }, dns };
   const zone = st.zone;
+  // the device area's wildcard (same provider, same forwarding target) only while passing on is on;
+  // Caddy serves nothing under it — it is there to be passed on
+  let device = shareEnabled() && !deviceLabelProblemCached(zone) ? deviceWildcard(zone) : null;
+  // the TLS guard paused it (attempt cap, CAA): not requested until "Erneut versuchen"
+  if (device) { const dr = tlsRow(device); if (dr && dr.state === 'paused') device = null; }
+  const subjects = device ? [st.wildcard, device] : [st.wildcard];
   return {
     subject: st.wildcard,
+    subjects,
+    device,
     zone,
-    policy: { subjects: [st.wildcard], issuers: [issuer] },
+    policy: { subjects, issuers: [issuer] },
     // one level only: nas-web.<zone> yes, a.b.<zone> no
     covers(host) {
       const h = norm(host);
@@ -1004,6 +1195,13 @@ function caddyTls({ email, acmeCa } = {}) {
       return !!label && !label.includes('.') && label !== '*';
     },
   };
+}
+
+// a device took the name meanwhile: leave the device area out instead of failing the sync
+function deviceLabelProblemCached(zone) {
+  const p = deviceLabelProblem(deviceLabel(), zone);
+  // reserved/invalid cannot be stored; a name taken later by a route or device is the case here
+  return p === 'device_label_taken';
 }
 
 /** Does a built Caddy config request the wildcard? */
@@ -1077,9 +1275,10 @@ async function save(input = {}, { ip = null } = {}) {
 async function disable({ ip = null } = {}) {
   const st = state();
   const zones = [st.zone, st.stored_zone].filter(Boolean);
+  const devices = zones.map((z) => deviceWildcard(z));
   for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp, KEY.shareFpAt, KEY.links]) settings.set(k, '');
   removeSecretFiles();
-  try { tlsGuard().forgetHosts(zones.map(wildcardOf)); } catch { /* none */ }
+  try { tlsGuard().forgetHosts([...zones.map(wildcardOf), ...devices]); } catch { /* none */ }
   if (st.provider) activityLog('tls_vpn_cert_disabled', 'Wildcard certificate of the VPN names switched off', 'info', { provider: st.provider, zone: st.zone }, ip);
   await syncCaddy();
   refreshServed('disabled');
@@ -1109,6 +1308,23 @@ async function renew({ ip = null } = {}) {
   activityLog('tls_vpn_cert_renew', `Wildcard certificate for ${st.wildcard}: new attempt requested`, 'info', { zone: st.zone }, ip);
   await syncCaddy();
   refreshServed('renew');
+  return view();
+}
+
+/** "Erneut versuchen" of the device area's wildcard: reset its counters, ask Caddy again. */
+async function renewDevice({ ip = null } = {}) {
+  requireZone();
+  const st = state();
+  const wildcard = deviceWildcard(st.zone);
+  if (!shareEnabled() || !wildcard || !wantsPolicy(st)) throw validationError('not_configured');
+  const row = tlsRow(wildcard);
+  writeSecretFiles();
+  tlsGuard().writeRow(wildcard, {
+    state: row && row.not_after && daysLeft(row.not_after) > 0 ? 'issued' : 'pending',
+    attempts: 0, last_error: null, last_error_code: null, next_retry_at: null, paused_at: null, paused_reason: null,
+  });
+  activityLog('tls_vpn_cert_renew', `Wildcard certificate for ${wildcard}: new attempt requested`, 'info', { zone: st.zone, wildcard }, ip);
+  await syncCaddy();
   return view();
 }
 
@@ -1162,6 +1378,9 @@ async function detect() {
 // ─── Connection test (caddy gc-dnstest) ────────────────────
 
 const STEPS = ['login', 'zone', 'write', 'visible', 'delete'];
+// after them, while passing on is on: the same test at the challenge of the device area
+const DEVICE_STEP = 'devices';
+const ALL_STEPS = [...STEPS, DEVICE_STEP];
 let _test = null; // { id, running, started_at, finished_at, steps, result, child }
 
 function suggestedDelay(ms) {
@@ -1180,7 +1399,8 @@ function testView() {
     provider: _test.provider,
     record: _test.record,
     lookup: _test.lookup,
-    steps: STEPS.map((s) => _test.steps[s] || { step: s, status: 'waiting' }),
+    devices: _test.devices,
+    steps: ALL_STEPS.map((s) => _test.steps[s] || { step: s, status: 'waiting' }),
     result: _test.result,
   };
 }
@@ -1200,6 +1420,9 @@ function startTest(input = {}, { ip = null } = {}) {
   const values = mergeAndCheck(id, input.credentials);
   const delegate = checkDelegate(id, input.delegate === undefined && id === providerId() ? get(KEY.delegate, '') : input.delegate);
   const names = challengeNames(zone.primary, id, values, delegate);
+  // the device area's challenge (same provider, same forwarding target) — only while passing on is on
+  const dz = shareEnabled() || input.devices === true ? deviceZone(zone.primary) : null;
+  const deviceNames = dz ? challengeNames(dz, id, values, delegate) : null;
   // the same way to the module as in the running server: files + {file.*}
   const tmpDir = writeTempSecretFiles(id, values);
   const dropTmp = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* gone */ } };
@@ -1221,6 +1444,7 @@ function startTest(input = {}, { ip = null } = {}) {
     provider: id,
     record: names.record,
     lookup: names.lookup,
+    devices: deviceNames ? { zone: dz, record: deviceNames.record, lookup: deviceNames.lookup } : null,
     steps: {},
     result: null,
     child: null,
@@ -1244,8 +1468,8 @@ function startTest(input = {}, { ip = null } = {}) {
     };
     try {
       settings.set(KEY.lastTest, JSON.stringify({
-        at: test.finished_at, provider: id, record: test.record, lookup: test.lookup,
-        steps: STEPS.map((s) => ({ step: s, status: (test.steps[s] || {}).status || 'waiting' })),
+        at: test.finished_at, provider: id, record: test.record, lookup: test.lookup, devices: test.devices,
+        steps: ALL_STEPS.map((s) => ({ step: s, status: (test.steps[s] || {}).status || 'waiting' })),
         ...test.result,
       }));
     } catch { /* best effort */ }
@@ -1253,12 +1477,39 @@ function startTest(input = {}, { ip = null } = {}) {
       { provider: id, zone: zone.primary, code: test.result.code }, ip);
   };
 
+  const deviceStep = (status, extra = {}) => {
+    test.steps[DEVICE_STEP] = { step: DEVICE_STEP, status, ms: null, code: null, detail: deviceNames ? (deviceNames.lookup || deviceNames.record) : null, error: null, ...extra };
+  };
+  runDnsTest(test, request, clean, (result) => {
+    if (!deviceNames) { deviceStep('skip'); finish(result); return; }
+    if (!result.ok) { deviceStep('skip'); finish(result); return; }
+    // the main challenge works: once more at the device area's (its own CNAME when forwarding)
+    const second = { ...request, record: deviceNames.record, value: 'gc-test-' + crypto.randomBytes(12).toString('hex') };
+    if (deviceNames.lookup) second.lookup = deviceNames.lookup; else delete second.lookup;
+    const t0 = Date.now();
+    runDnsTest(test, second, clean, (r2) => {
+      if (r2.ok) { deviceStep('ok', { ms: Date.now() - t0 }); finish(result); return; }
+      deviceStep('fail', { ms: Date.now() - t0, code: r2.code || 'test_failed', error: r2.error ? clean(r2.error) : null });
+      finish({ ...r2, ok: false, code: 'devices_' + (r2.code || 'test_failed'), zone: result.zone, nameservers: result.nameservers, propagation_ms: result.propagation_ms });
+    }, { stepsOf: null });
+  }, { stepsOf: STEPS });
+  return testView();
+}
+
+/**
+ * One run of `caddy gc-dnstest` with `request` → done(result). The steps it
+ * reports land in test.steps when `stepsOf` lists them (the second run, at the
+ * device area, reports only its outcome).
+ */
+function runDnsTest(test, request, clean, done, { stepsOf = STEPS } = {}) {
+  let ended = false;
+  const end = (r) => { if (ended) return; ended = true; done(r); };
   let child;
   try {
     child = spawn(config.caddy.bin || 'caddy', ['gc-dnstest'], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME || '/tmp' } });
   } catch (err) {
-    finish({ ok: false, code: 'caddy_unavailable', error: err.message });
-    return testView();
+    end({ ok: false, code: 'caddy_unavailable', error: err.message });
+    return;
   }
   test.child = child;
   const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, TEST_KILL_MS);
@@ -1277,7 +1528,7 @@ function startTest(input = {}, { ip = null } = {}) {
       let obj;
       try { obj = JSON.parse(line); } catch { continue; }
       if (obj && obj.done) { final = obj; continue; }
-      if (obj && STEPS.includes(obj.step)) {
+      if (obj && stepsOf && stepsOf.includes(obj.step)) {
         test.steps[obj.step] = {
           step: obj.step,
           status: ['ok', 'fail', 'skip'].includes(obj.status) ? obj.status : 'fail',
@@ -1292,16 +1543,15 @@ function startTest(input = {}, { ip = null } = {}) {
   child.stderr.on('data', () => { /* Caddy's own log lines; never shown (may name values) */ });
   child.on('error', (err) => {
     clearTimeout(killer);
-    finish({ ok: false, code: err && err.code === 'ENOENT' ? 'caddy_unavailable' : 'test_failed', error: err.message });
+    end({ ok: false, code: err && err.code === 'ENOENT' ? 'caddy_unavailable' : 'test_failed', error: err.message });
   });
   child.on('close', (code) => {
     clearTimeout(killer);
-    if (final) finish(final);
-    else finish({ ok: false, code: 'test_failed', error: `gc-dnstest ended without result (exit ${code})` });
+    if (final) end(final);
+    else end({ ok: false, code: 'test_failed', error: `gc-dnstest ended without result (exit ${code})` });
   });
   child.stdin.on('error', () => { /* process gone early */ });
   child.stdin.end(JSON.stringify(request));
-  return testView();
 }
 
 function _resetForTest() {
@@ -1315,12 +1565,14 @@ function _resetForTest() {
 module.exports = {
   KEY, PROVIDERS, ORDER, FEATURE,
   catalog, state, view, wantsPolicy,
-  save, disable, renew, applyAfterRestore,
+  save, disable, renew, renewDevice, applyAfterRestore,
   caddyTls, inConfig, suspend, unsuspend,
   servedZone, managementHosts, refreshServed, MANAGEMENT_LABELS,
   setLinks, linksNew,
   setShare, shareSummary, fetchFor, rotateKey, shareRefresh, certMaterial,
-  gatewayCertStatus, gatewayCertStates, staleGateways, GATEWAY_CERT_CAPABILITY, MIN_GATEWAY_CERT, STALE_PROBLEM_MS,
+  deviceLabel, deviceZone, deviceWildcard, deviceLabelProblem, inDeviceArea, migrateSharedMainKey,
+  DEFAULT_DEVICE_LABEL, DEVICE_AREA_RESERVED,
+  gatewayCertStatus, gatewayCertStates, staleGateways, GATEWAY_CERT_CAPABILITY, GATEWAY_CERT_DEVICES_CAPABILITY, MIN_GATEWAY_CERT, STALE_PROBLEM_MS,
   writeSecretFiles, removeSecretFiles, secretsDir,
   redact, preflight, detect, challengeNames, normDelegate,
   startTest, testView, suggestedDelay,

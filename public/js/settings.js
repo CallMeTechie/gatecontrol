@@ -1118,7 +1118,10 @@
       let state = s.status === 'ok' ? 'ok' : s.status === 'fail' ? 'bad' : s.status === 'skip' ? 'skip' : '';
       if (!state && test.running && !runningShown) { state = 'run'; runningShown = true; }
       const zone = (steps[1] && steps[1].detail) || (test.result && test.result.zone) || '';
-      const label = s.step === 'zone' && zone ? t('st.vc.step.zone_named', { zone }) : t('st.vc.step.' + s.step);
+      // the device area's challenge: only when the test ran it (passing on is on)
+      if (s.step === 'devices' && !test.devices) return;
+      const label = s.step === 'zone' && zone ? t('st.vc.step.zone_named', { zone })
+        : s.step === 'devices' ? t('st.vc.step.devices', { name: s.detail || (test.devices && (test.devices.lookup || test.devices.record)) || '' }) : t('st.vc.step.' + s.step);
       const body = el('span', {}, label);
       if (s.step === 'visible' && state === 'ok' && test.result && test.result.ok) {
         const secs = Math.round((test.result.propagation_ms || 0) / 1000);
@@ -1194,7 +1197,7 @@
     if (!card || !d) return;
     const v = valuesOf('netzwerk');
     // the setup fields (not those of "An Geräte weitergeben" and "Links auf die neue Adresse")
-    const dirty = dirtyOf('netzwerk').some((f) => f.startsWith('vc-') && !f.startsWith('vc-share') && f !== 'vc-links');
+    const dirty = dirtyOf('netzwerk').some((f) => f.startsWith('vc-') && !f.startsWith('vc-share') && f !== 'vc-links');  // vc-share-label belongs to passing on
     if (dirty) vc.setup = true;
     const view = vcView();
     card.dataset.view = view;
@@ -1280,7 +1283,7 @@
     if (d.test && d.test.running) vcPollTest();
     vcRenderSharePeers();
     const sh = d.share || {};
-    return { 'vc-links': !!(d.links && d.links.enabled), 'vc-share': !!sh.enabled, 'vc-share-peers': (sh.allowed || []).slice().sort((a, b) => a - b), 'vc-provider': d.provider || '', 'vc-delay': d.propagation_delay, 'vc-cname': !!(d.delegate && d.provider !== 'desec_delegated'), 'vc-delegate': d.delegate || '' };
+    return { 'vc-links': !!(d.links && d.links.enabled), 'vc-share': !!sh.enabled, 'vc-share-label': sh.label || sh.default_label || '', 'vc-share-peers': (sh.allowed || []).slice().sort((a, b) => a - b), 'vc-provider': d.provider || '', 'vc-delay': d.propagation_delay, 'vc-cname': !!(d.delegate && d.provider !== 'desec_delegated'), 'vc-delegate': d.delegate || '' };
   }
   // "An Geräte weitergeben": the allowed devices as a list of checkboxes (one field)
   CUSTOM['vc-share-peers'] = {
@@ -1297,7 +1300,7 @@
     const node = pill(VC_CERT_STATE[c.state], t('st.vc.cert_' + c.state));
     node.classList.add('vc-cert-state');
     node.dataset.vcState = c.state;
-    if (c.state === 'too_old') node.title = t('st.vc.cert_too_old_hint', { version: c.min_version || '1.41.0' });
+    if (c.state === 'too_old') node.title = t('st.vc.cert_too_old_hint', { version: c.min_version || '1.43.0' });
     else if (c.fingerprint) node.title = c.fingerprint.slice(0, 8) + '…' + (c.not_after ? ' · ' + vcDate(c.not_after) : '');
     return node;
   }
@@ -1326,10 +1329,31 @@
     const v = valuesOf('netzwerk');
     const on = v['vc-share'] === true;
     $('st-vc-share-peers-row').hidden = !on;
-    vcText($('st-vc-share-risk'), 'st.vc.share_risk', { zone: '[[' + (d.zone || '') + ']]' });
+    // only the device area's wildcard is passed on — the main one never
+    const label = String(v['vc-share-label'] || sh.label || '').trim().toLowerCase();
+    const dz = label && d.zone ? label + '.' + d.zone : (sh.device_zone || '');
+    vcText($('st-vc-share-risk'), 'st.vc.share_risk', { area: '[[*.' + dz + ']]', zone: '[[*.' + (d.zone || '') + ']]' });
+    $('st-vc-share-area').hidden = !on;
+    // renamed only while passing on is off (the devices hold certificates of the old name)
+    const labelInput = $('st-vc-share-label');
+    labelInput.disabled = !!sh.enabled;
+    vcText($('st-vc-share-area-note'), sh.enabled ? 'st.vc.devices_note_on' : 'st.vc.devices_note',
+      { wildcard: '[[*.' + dz + ']]', example: '[[nas.' + dz + ']]', zone: '[[*.' + (d.zone || '') + ']]', free: (sh.reserved || []).map((r) => '[[' + r + ']]').join(', ') });
+    const cn = sh.cname;
+    $('st-vc-share-cname').hidden = !(on && cn);
+    if (cn) vcText($('st-vc-share-cname'), 'st.vc.devices_cname', { record: '[[_acme-challenge.' + dz + '.  CNAME  ' + cn.target + '.]]' });
+    const c = sh.certificate;
+    $('st-vc-share-cert-row').hidden = !(sh.enabled && on);
+    let certText = t('st.vc.devices_cert_pending');
+    if (c && c.state === 'issued' && c.not_after && c.days_left > 0) certText = t('st.vc.devices_cert_valid', { date: vcDate(c.not_after) });
+    else if (c && (c.state === 'failed' || c.state === 'paused')) certText = t('st.vc.devices_cert_failed') + (c.last_error ? ' ' + t('st.vc.said', { error: c.last_error }) : '');
+    $('st-vc-share-cert').textContent = certText;
+    const mig = sh.main_key_renewed_at && Date.now() - Date.parse(sh.main_key_renewed_at) < 30 * 86400000;
+    $('st-vc-share-migrated').hidden = !mig;
+    if (mig) vcText($('st-vc-share-migrated'), 'st.vc.devices_migrated', { zone: '[[*.' + (d.zone || '') + ']]', area: '[[*.' + dz + ']]', date: vcDate(sh.main_key_renewed_at) });
     $('st-vc-share-fp-row').hidden = !(on && sh.enabled && sh.fingerprint);
     $('st-vc-share-fp').textContent = sh.fingerprint ? sh.fingerprint.replace(/(.{8})(?=.)/g, '$1 ') : '';
-    $('st-vc-rotate').hidden = !(vcView() === 'active' && !sh.enabled && sh.used);
+    $('st-vc-rotate').hidden = !(vcView() === 'active' && sh.used);
   }
 
   function vcPollTest() {
@@ -1480,11 +1504,13 @@
       { fields: ['vc-links'], map: { enabled: 'vc-links' }, errorField: 'vc-links',
         save: (v) => api.put('/api/v1/settings/vpn-cert/links', { enabled: v['vc-links'] === true }),
         after: async () => { fill('netzwerk', await loadCert()); renderCert(); } },
-      // "An Geräte weitergeben": switching on asks once more (the key fits every name of the zone)
-      { fields: ['vc-share', 'vc-share-peers'], map: { enabled: 'vc-share', peers: 'vc-share-peers' }, errorField: 'vc-share',
+      // "An Geräte weitergeben": switching on asks once more (the key fits every name of the device area)
+      { fields: ['vc-share', 'vc-share-peers', 'vc-share-label'], map: { enabled: 'vc-share', peers: 'vc-share-peers', device_label: 'vc-share-label' }, errorField: 'vc-share',
         confirm: (v) => (v['vc-share'] && !(vc.saved && vc.saved.share && vc.saved.share.enabled)
-          ? { title: t('st.vc.share_confirm_title'), message: t('st.vc.share_risk', { zone: (vc.saved && vc.saved.zone) || '' }), okLabel: t('st.vc.share_confirm_ok'), danger: true } : null),
-        save: (v) => api.put('/api/v1/settings/vpn-cert/share', { enabled: v['vc-share'] === true, peers: v['vc-share-peers'] || [], accept_risk: v['vc-share'] === true }),
+          ? { title: t('st.vc.share_confirm_title'), message: t('st.vc.share_risk', { area: '*.' + String(v['vc-share-label'] || '').trim().toLowerCase() + '.' + ((vc.saved && vc.saved.zone) || ''), zone: '*.' + ((vc.saved && vc.saved.zone) || '') }), okLabel: t('st.vc.share_confirm_ok'), danger: true } : null),
+        save: (v) => api.put('/api/v1/settings/vpn-cert/share', Object.assign({ enabled: v['vc-share'] === true, peers: v['vc-share-peers'] || [], accept_risk: v['vc-share'] === true },
+          // the name of the device area goes along only while it can change (passing on off before)
+          vc.saved && vc.saved.share && vc.saved.share.enabled ? {} : { device_label: String(v['vc-share-label'] || '').trim().toLowerCase() })),
         after: async () => { fill('netzwerk', await loadCert()); renderCert(); } },
     ],
   };

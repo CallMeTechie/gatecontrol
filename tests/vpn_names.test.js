@@ -221,11 +221,14 @@ describe('Namen im VPN', () => {
   });
 
   describe('hosts file', () => {
-    it('one line per device: <ip> name.<zone> name.<legacy> name', () => {
+    it('one line per device: <ip> name.<zone> name.<legacy> name, and its name in the device area', () => {
       addDomain('example.com');
       addPeer('anna-laptop', 'Laptop-Buero', 'admin');
       vpnNames.save('example.com', 'vpn');
-      assert.deepEqual(hostsLines('10.8.0.11'), [['10.8.0.11', 'laptop-buero.vpn.example.com', `laptop-buero.${config.dns.domain}`, 'laptop-buero'].join('\t')]);
+      assert.deepEqual(hostsLines('10.8.0.11'), [
+        ['10.8.0.11', 'laptop-buero.vpn.example.com', `laptop-buero.${config.dns.domain}`, 'laptop-buero'].join('\t'),
+        ['10.8.0.11', 'laptop-buero.geraete.vpn.example.com'].join('\t'),
+      ]);
     });
 
     it('without an own domain the line is as before', () => {

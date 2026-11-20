@@ -257,7 +257,8 @@ function applyVpnCertTls(caddyConfig, tlsDomains) {
     return subjects.length > 0 ? [{ ...p, subjects }] : [];
   });
   tls.automation.policies.unshift(vpn.policy);
-  tls.certificates = { ...(tls.certificates || {}), automate: [vpn.subject] };
+  // the main wildcard, and the device area's while passing on is on (never served by Caddy)
+  tls.certificates = { ...(tls.certificates || {}), automate: [...(vpn.subjects || [vpn.subject])] };
   return covered;
 }
 
