@@ -61,6 +61,7 @@ const KEY = {
   sharePeers: 'vpn_cert.share_peers',
   shareUsed: 'vpn_cert.share_used',
   shareFp: 'vpn_cert.share_fingerprint',
+  shareFpAt: 'vpn_cert.share_fingerprint_at',
   links: 'vpn_cert.links_new',
 };
 
@@ -504,7 +505,7 @@ function sharePeerIds() {
 }
 function shareEnabled() { return get(KEY.share, '') === '1'; }
 
-/** The certificate files of the wildcard in Caddy's storage → { certPem, keyPem, notAfter, fingerprint } | null */
+/** The certificate files of the wildcard in Caddy's storage → { certPem, keyPem, notBefore, notAfter, fingerprint } | null */
 function certMaterial() {
   const st = state();
   if (!st.wildcard) return null;
@@ -517,7 +518,7 @@ function certMaterial() {
     const x509 = new crypto.X509Certificate(certPem);
     if (!x509.checkPrivateKey(crypto.createPrivateKey(keyPem))) return null;
     if (new Date(x509.validTo).getTime() <= Date.now()) return null;
-    return { certPem, keyPem, notAfter: new Date(x509.validTo).toISOString(), fingerprint: x509.fingerprint256.replace(/:/g, '').toLowerCase(), dir: path.dirname(entry.file) };
+    return { certPem, keyPem, notBefore: new Date(x509.validFrom).toISOString(), notAfter: new Date(x509.validTo).toISOString(), fingerprint: x509.fingerprint256.replace(/:/g, '').toLowerCase(), dir: path.dirname(entry.file) };
   } catch { return null; }
 }
 
@@ -562,13 +563,15 @@ function fetchFor(peerId, { via = 'gateway', ip = null } = {}) {
 
 function shareView() {
   const ids = new Set(sharePeerIds());
+  const m = shareEnabled() ? certMaterial() : null;
+  let certs = new Map();
+  try { certs = gatewayCertStates({ material: m }); } catch { certs = new Map(); }
   let peers = [];
   try {
     peers = require('../db/connection').getDb()
       .prepare("SELECT id, name, peer_type, hostname FROM peers WHERE enabled = 1 ORDER BY (CASE WHEN peer_type = 'gateway' THEN 0 ELSE 1 END), name COLLATE NOCASE").all()
-      .map((p) => ({ id: p.id, name: p.name, gateway: p.peer_type === 'gateway', hostname: p.hostname || null, allowed: ids.has(p.id) }));
+      .map((p) => ({ id: p.id, name: p.name, gateway: p.peer_type === 'gateway', hostname: p.hostname || null, allowed: ids.has(p.id), cert: certs.get(p.id) || null }));
   } catch { peers = []; }
-  const m = shareEnabled() ? certMaterial() : null;
   return {
     enabled: shareEnabled(),
     peers,
@@ -576,6 +579,87 @@ function shareView() {
     used: get(KEY.shareUsed, '') === '1',
     fingerprint: m ? m.fingerprint : null,
   };
+}
+
+// ─── Has the gateway fetched it? ──────────────────────────
+//
+// A gateway since 1.41.0 names the capability `vpn-cert` in its heartbeat and
+// reports what it holds as telemetry.vpn_cert { fingerprint, not_after } (null
+// = nothing stored); gateway_meta.last_health keeps that. Only for gateways in
+// "Darf abholen" while passing on is on:
+//   fetched   it holds the certificate the server hands out now
+//   stale     it holds an older one (fingerprint ≠ the current)
+//   pending   allowed, but nothing reported yet
+//   too_old   no capability `vpn-cert`: update the gateway (MIN_GATEWAY_CERT)
+// A stale gateway becomes a dashboard problem only after STALE_PROBLEM_MS from
+// when the current certificate is there to fetch (issued, or passing on
+// switched on / fingerprint changed — whichever is later): a gateway fetches
+// within minutes, a short delay is no problem.
+
+const GATEWAY_CERT_CAPABILITY = 'vpn-cert';
+const MIN_GATEWAY_CERT = '1.41.0';
+const STALE_PROBLEM_MS = 24 * 3600 * 1000;
+const HEX64 = /^[0-9a-f]{64}$/;
+
+function healthOf(raw) {
+  let h = raw;
+  if (typeof h === 'string') { try { h = JSON.parse(h); } catch { return {}; } }
+  return h && typeof h === 'object' ? h : {};
+}
+
+/** Since when the current certificate is there to fetch (ISO) | null */
+function currentSince(m) {
+  if (!m) return null;
+  const t = Math.max(Date.parse(m.notBefore || '') || 0, Date.parse(get(KEY.shareFpAt, '')) || 0);
+  return t > 0 ? new Date(t).toISOString() : null;
+}
+
+/**
+ * The state of one gateway from its last heartbeat.
+ * → { state, fingerprint, not_after, current_fingerprint, stale_since, min_version }
+ */
+function gatewayCertStatus(lastHealth, m, since = currentSince(m)) {
+  const tel = healthOf(lastHealth).telemetry;
+  const t = tel && typeof tel === 'object' ? tel : {};
+  const caps = Array.isArray(t.capabilities) ? t.capabilities : [];
+  const out = { state: 'pending', fingerprint: null, not_after: null, current_fingerprint: m ? m.fingerprint : null, stale_since: null, min_version: MIN_GATEWAY_CERT };
+  if (!caps.includes(GATEWAY_CERT_CAPABILITY)) {
+    // never reported at all: nothing to say about its version yet
+    if (typeof t.gateway_version === 'string' && t.gateway_version) out.state = 'too_old';
+    return out;
+  }
+  const rep = t.vpn_cert && typeof t.vpn_cert === 'object' ? t.vpn_cert : null;
+  const fp = rep && typeof rep.fingerprint === 'string' ? rep.fingerprint.replace(/:/g, '').trim().toLowerCase() : '';
+  if (!HEX64.test(fp)) return out;
+  out.fingerprint = fp;
+  const na = rep && typeof rep.not_after === 'string' ? Date.parse(rep.not_after) : NaN;
+  out.not_after = Number.isNaN(na) ? null : new Date(na).toISOString();
+  // without a current certificate (none yet, expired) nothing can be compared
+  if (m && fp !== m.fingerprint) { out.state = 'stale'; out.stale_since = since; } else out.state = 'fetched';
+  return out;
+}
+
+/** Map(peer id → status) of the gateways in "Darf abholen" — empty while passing on is off. */
+function gatewayCertStates({ material } = {}) {
+  const out = new Map();
+  if (!hasFeature(FEATURE) || !shareEnabled()) return out;
+  const ids = sharePeerIds();
+  if (!ids.length) return out;
+  const rows = require('../db/connection').getDb().prepare(`SELECT p.id, gm.last_health FROM peers p LEFT JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.peer_type = 'gateway' AND p.id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  const m = material !== undefined ? material : certMaterial();
+  const since = currentSince(m);
+  for (const r of rows) out.set(r.id, gatewayCertStatus(r.last_health, m, since));
+  return out;
+}
+
+/** Gateways stale for longer than STALE_PROBLEM_MS (dashboard). → [{ peer_id, name, status }] */
+function staleGateways(now = Date.now()) {
+  const states = gatewayCertStates();
+  const ids = [...states.entries()].filter(([, s]) => s.state === 'stale' && s.stale_since && now - Date.parse(s.stale_since) > STALE_PROBLEM_MS).map(([id]) => id);
+  if (!ids.length) return [];
+  const names = new Map(require('../db/connection').getDb().prepare(`SELECT id, name FROM peers WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((r) => [r.id, r.name]));
+  return ids.filter((id) => names.has(id)).map((id) => ({ peer_id: id, name: names.get(id), status: states.get(id) }));
 }
 
 function notifyShare() {
@@ -639,6 +723,8 @@ function setShare(input = {}, { ip = null } = {}) {
   const before = new Set(sharePeerIds());
   settings.set(KEY.share, enabled ? '1' : '');
   settings.set(KEY.sharePeers, JSON.stringify(ids));
+  // from now on the gateways can fetch it — "veraltet" counts from here
+  if (enabled && !wasOn) settings.set(KEY.shareFpAt, new Date().toISOString());
   if (enabled !== wasOn) {
     activityLog(enabled ? 'tls_vpn_cert_share_on' : 'tls_vpn_cert_share_off',
       enabled ? 'Passing certificate and key of the VPN names on: switched on' : 'Passing certificate and key of the VPN names on: switched off',
@@ -680,7 +766,7 @@ function shareRefresh() {
   const m = certMaterial();
   const fp = m ? m.fingerprint : '';
   if (fp === get(KEY.shareFp, '')) return false;
-  try { settings.set(KEY.shareFp, fp); } catch { /* no db */ }
+  try { settings.set(KEY.shareFp, fp); settings.set(KEY.shareFpAt, new Date().toISOString()); } catch { /* no db */ }
   notifyShare();
   return true;
 }
@@ -991,7 +1077,7 @@ async function save(input = {}, { ip = null } = {}) {
 async function disable({ ip = null } = {}) {
   const st = state();
   const zones = [st.zone, st.stored_zone].filter(Boolean);
-  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp, KEY.links]) settings.set(k, '');
+  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp, KEY.shareFpAt, KEY.links]) settings.set(k, '');
   removeSecretFiles();
   try { tlsGuard().forgetHosts(zones.map(wildcardOf)); } catch { /* none */ }
   if (st.provider) activityLog('tls_vpn_cert_disabled', 'Wildcard certificate of the VPN names switched off', 'info', { provider: st.provider, zone: st.zone }, ip);
@@ -1234,6 +1320,7 @@ module.exports = {
   servedZone, managementHosts, refreshServed, MANAGEMENT_LABELS,
   setLinks, linksNew,
   setShare, shareSummary, fetchFor, rotateKey, shareRefresh, certMaterial,
+  gatewayCertStatus, gatewayCertStates, staleGateways, GATEWAY_CERT_CAPABILITY, MIN_GATEWAY_CERT, STALE_PROBLEM_MS,
   writeSecretFiles, removeSecretFiles, secretsDir,
   redact, preflight, detect, challengeNames, normDelegate,
   startTest, testView, suggestedDelay,

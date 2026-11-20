@@ -247,7 +247,8 @@ Admin-Sitzung; Handbuch 2.12 „Zertifikat an Geräte weitergeben“.
 
 **Einstellungen:** `vpn_cert.share_enabled`, `vpn_cert.share_peers` (JSON-Liste
 der Peer-IDs), `vpn_cert.share_used` (ein Schlüssel wurde abgeholt),
-`vpn_cert.share_fingerprint`. Einschalten nur mit `accept_risk: true`
+`vpn_cert.share_fingerprint`, `vpn_cert.share_fingerprint_at` (seit wann der
+aktuelle Fingerabdruck zum Abholen bereitsteht). Einschalten nur mit `accept_risk: true`
 (sonst `risk_not_accepted`) und bekannten Peers (sonst `peers_invalid`);
 „Zertifikat ausschalten“ beendet die Weitergabe.
 
@@ -271,6 +272,30 @@ andere nicht. Apps lesen in `GET /api/v1/client/permissions` das Feld
 `vpnCert` (dasselbe Objekt oder `null`). Ändert sich der Fingerabdruck
 (Erneuerung, neuer Schlüssel), meldet der Server die Änderung an die Gateways
 und `config_changed` an die Apps; sie holen dann neu.
+
+**Abgeholt je Gateway** (`vpnCert.gatewayCertStates`, `gatewayCertStatus`,
+`staleGateways`): Ein Gateway ab 1.41.0 nennt im Heartbeat die Capability
+`vpn-cert` und meldet `telemetry.vpn_cert: { fingerprint, not_after }` (`null` =
+nichts gespeichert, gatecontrol-gateway `docs/vpn-cert.md`); der Server liest es
+aus `gateway_meta.last_health`. Nur bei eingeschalteter Weitergabe und nur für
+Gateways in „Darf abholen“:
+
+| `state` | Bedingung |
+|---|---|
+| `fetched` | gemeldeter Fingerabdruck = aktueller (oder kein aktuelles Zertifikat zum Vergleich) |
+| `stale` | gemeldeter Fingerabdruck ≠ aktueller; `stale_since` = später von `notBefore` des aktuellen Zertifikats und `vpn_cert.share_fingerprint_at` |
+| `pending` | Capability da, aber nichts (Gültiges) gemeldet – oder noch nie ein Heartbeat |
+| `too_old` | Heartbeat mit `gateway_version`, aber ohne Capability `vpn-cert` (`min_version` 1.41.0) |
+
+`vpn_cert.share_fingerprint_at` setzen das Einschalten der Weitergabe und
+`shareRefresh` bei neuem Fingerabdruck; „Zertifikat ausschalten“ leert es.
+Ausgabe: `GET /api/v1/gateways` je Gateway `vpn_cert: { state, fingerprint,
+not_after, current_fingerprint, stale_since, min_version } | null`;
+`GET /api/v1/settings/vpn-cert` in `share.peers[].cert` (dasselbe oder `null`).
+Anzeige: Gateway-Detail (Karte „Gerät & Software“, `public/js/gateways.js`) und
+Kürzel in „Darf abholen“ (`public/js/settings.js`). Dashboard-Problem
+`gateway_vpn_cert_stale` (Warnung, Link `/gateways#gw/<id>`) erst nach
+`STALE_PROBLEM_MS` = 24 h ab `stale_since` (`services/dashboardProblems.js`).
 
 **Neuer Schlüssel** (`POST …/rotate-key`): nur bei ausgeschalteter Weitergabe
 (`share_on`) und nur, wenn ein Schlüssel abgeholt wurde (`rotate_not_needed`).

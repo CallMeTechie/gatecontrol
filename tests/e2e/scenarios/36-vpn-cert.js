@@ -314,6 +314,39 @@ module.exports = (ctx) => {
         const sh = (await api('GET', '/api/v1/settings/vpn-cert')).body.data.share;
         step('saved: passing on is on for the chosen gateway, the answer has no key',
           sh.enabled === true && sh.allowed.length === 1 && !JSON.stringify(sh).includes('PRIVATE KEY'), JSON.stringify({ enabled: sh.enabled, allowed: sh.allowed }));
+
+        // ── Hat das Gateway es abgeholt? (heartbeat telemetry.vpn_cert, capability vpn-cert) ──
+        const gwId = db(app, (d) => d.prepare("SELECT id FROM peers WHERE name = 'e2e-gw-home'").get().id);
+        const heartbeat = (tel) => db(app, (d) => d.prepare(`INSERT OR REPLACE INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, created_at, last_seen_at, last_health)
+          VALUES (?, 9876, 'e2e-gw-hash', 'x', ?, ?, ?)`).run(gwId, Date.now(), Date.now(), JSON.stringify({ telemetry: tel })));
+        const certPill = () => p.evaluate(() => {
+          const n = document.querySelector('#st-vc-share-peers .vc-cert-state');
+          return n ? { state: n.dataset.vcState, text: n.textContent, title: n.title } : null;
+        });
+        step('may fetch: a ticked gateway that reported nothing is "noch nicht abgeholt"',
+          await until(p, () => { const n = document.querySelector('#st-vc-share-peers .vc-cert-state'); return !!n && n.dataset.vcState === 'pending'; }), JSON.stringify(await certPill()));
+        heartbeat({ gateway_version: '1.40.0', capabilities: ['udp-routes'] });
+        await p.reload();
+        await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
+        const tooOld = await stText(p, 'st.vc.cert_too_old_hint', { version: '1.41.0' });
+        step('may fetch: a gateway without the capability is "Gateway zu alt", with the version from which it can',
+          await until(p, (want) => { const n = document.querySelector('#st-vc-share-peers .vc-cert-state'); return !!n && n.dataset.vcState === 'too_old' && n.title === want; }, tooOld), JSON.stringify(await certPill()));
+        const fp = 'c0ffee'.padEnd(64, '1');
+        heartbeat({ gateway_version: '1.41.0', capabilities: ['udp-routes', 'vpn-cert'], vpn_cert: { fingerprint: fp, not_after: new Date(Date.now() + 80 * 86400000).toISOString() } });
+        await p.reload();
+        await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
+        step('may fetch: a gateway that reports the certificate is "abgeholt"',
+          await until(p, () => { const n = document.querySelector('#st-vc-share-peers .vc-cert-state'); return !!n && n.dataset.vcState === 'fetched' && n.title.startsWith('c0ffee11…'); }), JSON.stringify(await certPill()));
+        await cardShot(p, 'vpncert-share-fetched');
+        await p.goto(B + '/gateways#gw/' + gwId);
+        step('gateway page: the row "Zertifikat für die Namen" says fetched, short fingerprint and end',
+          await until(p, () => {
+            const v = document.querySelector('.gwo-dev .gwo-vc');
+            return !!v && v.dataset.vcState === 'fetched' && v.querySelector('code').textContent === 'c0ffee11…' && /\d/.test(v.textContent.split('·').pop());
+          }, null, 12000), await p.evaluate(() => { const v = document.querySelector('.gwo-dev .gwo-vc'); return v ? v.textContent : 'no row'; }));
+        await p.locator('.gwo-dev').first().screenshot({ path: path.join(ctx.OUT, 'vpncert-gateway-row.png') }).catch(() => {});
+        await p.goto(B + '/settings/netzwerk');
+        await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
         await p.click('#st-vc-share-on');
         await p.click('#st-save');
         await until(p, () => document.getElementById('st-savebar').hidden);

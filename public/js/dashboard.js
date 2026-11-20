@@ -258,7 +258,7 @@
     gateway_offline: 'dashboard.fix_gateway', entry_down: 'dashboard.fix_entry', tls_failed: 'dashboard.fix_cert',
     tls_paused: 'dashboard.fix_cert', tls_expiring: 'dashboard.fix_cert', update_failed: 'dashboard.fix_update',
     update_rolled_back: 'dashboard.fix_update', backup_failed: 'dashboard.fix_backup', backup_incomplete: 'dashboard.fix_backup',
-    waf_engine_missing: 'dashboard.fix_waf',
+    waf_engine_missing: 'dashboard.fix_waf', gateway_vpn_cert_stale: 'dashboard.fix_gateway',
   };
   function longDate(v) {
     var ts = UI.parseTime(v);
@@ -327,6 +327,11 @@
       }
       case 'waf_engine_missing':
         return { title: t('problems.waf_engine_missing'), detail: [t('problems.waf_engine_detail', { count: (p.waf && p.waf.routes) || 0 })] };
+      case 'gateway_vpn_cert_stale':
+        return {
+          title: t('problems.gateway_vpn_cert_stale', { name: (p.gateway && p.gateway.name) || '?' }),
+          detail: [t('problems.gateway_vpn_cert_stale_detail')],
+        };
       default:
         return { title: String(p.kind || ''), detail: [] };
     }

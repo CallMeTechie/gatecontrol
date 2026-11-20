@@ -508,6 +508,24 @@ mit dem Schlüssel. Der Fingerabdruck (SHA-256 des Zertifikats) steht in der
 Karte; erneuert sich das Zertifikat, ändert er sich, und die Geräte holen das
 neue.
 
+**Hat das Gateway es abgeholt?** Bei jedem angehakten Gateway steht unter
+„Darf abholen“ ein Kürzel, und auf der Gateway-Seite (Übersicht, Karte „Gerät &
+Software“) die Zeile „Zertifikat für die Namen“:
+
+| Anzeige | Bedeutung |
+|---|---|
+| **abgeholt** | Das Gateway hat das Zertifikat, das der Server gerade ausgibt (Fingerabdruck gekürzt, gültig bis …). |
+| **veraltet** | Das Gateway hat noch ein älteres (anderer Fingerabdruck). Meist holt es das neue binnen Minuten. |
+| **noch nicht abgeholt** | Angehakt, aber das Gateway meldet noch keins – z. B. direkt nach dem Einschalten oder solange es offline ist. |
+| **Gateway zu alt** | Das Gateway kann es noch nicht abholen: ab Gateway 1.41.0. |
+
+Die Angabe kommt aus dem Lebenszeichen des Gateways (etwa jede Minute). Bleibt
+ein Gateway **länger als 24 Stunden** auf „veraltet“, erscheint es im
+Dashboard unter „Probleme“ – eine kurze Verzögerung nach der Erneuerung ist
+kein Problem. Dann prüfen, ob das Gateway online ist und den Server über den
+Tunnel erreicht. Bei ausgeschalteter Weitergabe und bei nicht angehakten
+Gateways wird nichts angezeigt.
+
 **Neuer Schlüssel:** Wurde der Schlüssel einmal abgeholt und soll ein Gerät
 ihn nicht mehr haben, schaltest du die Weitergabe aus (oder nimmst das Gerät
 heraus) und klickst auf „Neuen Schlüssel holen“. Der Server löscht das
