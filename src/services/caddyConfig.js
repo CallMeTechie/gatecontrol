@@ -228,6 +228,33 @@ function effectiveAcmeEmail() {
   return String((config.caddy && config.caddy.email) || '').trim();
 }
 
+// The wildcard of the VPN zone into apps.tls: policy first, `certificates.automate`,
+// covered names out of the other policies (a policy left without subjects is
+// dropped — an empty subject list would make it a catch-all). → the covered
+// names (for skip_certificates). Never throws: without the wildcard the config
+// is the one of before.
+function applyVpnCertTls(caddyConfig, tlsDomains) {
+  let vpn = null;
+  try {
+    vpn = require('./vpnCert').caddyTls({ email: effectiveAcmeEmail(), acmeCa: config.caddy.acmeCa });
+  } catch (err) {
+    logger.warn({ err: err.message }, 'vpn cert: policy unavailable');
+  }
+  if (!vpn) return [];
+  const tls = caddyConfig.apps.tls || (caddyConfig.apps.tls = { automation: { policies: [] } });
+  if (!tls.automation) tls.automation = { policies: [] };
+  const covered = [...new Set(tlsDomains.filter(d => vpn.covers(d)).map(d => String(d).toLowerCase()))];
+  const coveredSet = new Set(covered);
+  tls.automation.policies = (tls.automation.policies || []).flatMap((p) => {
+    if (!Array.isArray(p.subjects)) return [p];
+    const subjects = p.subjects.filter(s => !coveredSet.has(String(s).toLowerCase()));
+    return subjects.length > 0 ? [{ ...p, subjects }] : [];
+  });
+  tls.automation.policies.unshift(vpn.policy);
+  tls.certificates = { ...(tls.certificates || {}), automate: [vpn.subject] };
+  return covered;
+}
+
 // Host aliases (docs/feature-security-options.md §A): the HTTP route row
 // carries its host's alias labels (host_aliases, JSON array or array) and the
 // alias mode (host_alias_mode). Alias FQDNs are the labels prefixed to the
@@ -901,6 +928,11 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     .filter(d => !pausedSet.has(String(d).toLowerCase()));
   const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
+  // Wildcard certificate of the VPN zone (services/vpnCert.js): its own
+  // policy with the DNS challenge, first in the list; the names under the zone
+  // that Caddy serves leave the other policies and get the wildcard from the
+  // cache by SNI (automatic_https.skip_certificates below).
+  const vpnSkipCertificates = applyVpnCertTls(caddyConfig, tlsDomains);
 
   // GateControl management UI route
   try {
@@ -1209,9 +1241,16 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     if (wafErrorRoutes) {
       caddyConfig.apps.http.servers.srv0.errors = { routes: wafErrorRoutes };
     }
+    if (vpnSkipCertificates.length > 0) {
+      caddyConfig.apps.http.servers.srv0.automatic_https.skip_certificates = vpnSkipCertificates;
+    }
     // Paused hosts (TLS guard) join the marker in skip: Caddy neither requests
     // a certificate nor redirects to HTTPS — the route stays reachable on :80.
+    // (A paused wildcard of the VPN zone is not a host: its policy is simply
+    // left out, services/vpnCert.js — a skip entry would turn off HTTPS for
+    // every name it matches.)
     for (const h of pausedHosts) {
+      if (String(h).startsWith('*.')) continue;
       if (!caddyConfig.apps.http.servers.srv0.automatic_https.skip.includes(h)) {
         caddyConfig.apps.http.servers.srv0.automatic_https.skip.push(h);
       }
@@ -1398,7 +1437,7 @@ async function _syncToCaddyInner(timing = {}) {
     return false;
   }
 
-  const caddyConfig = buildCaddyConfig();
+  let caddyConfig = buildCaddyConfig();
   lap('build');
 
   // 1. Persist runtime.json FIRST so a Caddy restart always recovers
@@ -1406,10 +1445,32 @@ async function _syncToCaddyInner(timing = {}) {
   _persistRuntimeJson(caddyConfig);
 
   // 2. Fast path: live config update via /load (no downtime when it works).
-  const result = await caddyApi('/load', {
-    method: 'POST',
-    body: JSON.stringify(caddyConfig),
-  });
+  let result;
+  try {
+    result = await caddyApi('/load', {
+      method: 'POST',
+      body: JSON.stringify(caddyConfig),
+    });
+  } catch (loadErr) {
+    // The wildcard of the VPN zone carries a DNS provider that Caddy
+    // provisions at load time (credentials it finds invalid make the whole
+    // load fail). Try once without it: does that load, the provider was the
+    // cause — the wildcard stays suspended until the admin acts; otherwise it
+    // was not, and the error goes on as before.
+    const vpnCert = require('./vpnCert');
+    loadErr.message = vpnCert.redact(loadErr.message);
+    if (!(loadErr.status >= 400 && loadErr.status < 500) || !vpnCert.inConfig(caddyConfig)) throw loadErr;
+    vpnCert.suspend(loadErr.message);
+    const without = buildCaddyConfig();
+    try {
+      result = await caddyApi('/load', { method: 'POST', body: JSON.stringify(without) });
+    } catch (retryErr) {
+      vpnCert.unsuspend();
+      throw loadErr;
+    }
+    _persistRuntimeJson(without);
+    caddyConfig = without;
+  }
   lap('load');
 
   if (result === null) {
@@ -1476,4 +1537,4 @@ module.exports = {
   buildPoolOutageBlock,
 };
 
-module.exports.__test = Object.assign({}, module.exports.__test, { buildExternalBlockHandler });
+module.exports.__test = Object.assign({}, module.exports.__test, { buildExternalBlockHandler, applyVpnCertTls });

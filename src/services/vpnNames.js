@@ -185,6 +185,13 @@ function save(baseRaw, subRaw) {
   settings.set(KEY_BASE, base);
   if (base) settings.set(KEY_SUB, norm(subRaw));
   const restarted = apply();
+  // A wildcard certificate set up for the zone (services/vpnCert.js) is
+  // requested for that zone only: Caddy drops or takes up its policy.
+  try {
+    if (require('./vpnCert').state().provider) {
+      require('./caddyConfig').syncToCaddy().catch((err) => log().warn({ err: err.message }, 'vpn names: Caddy not synced after the zone change'));
+    }
+  } catch (err) { log().debug({ err: err.message }, 'vpn names: wildcard state unavailable'); }
   // the gateways get the zones in `features.internal_dns` of their config pull (part of its hash): told
   // to pull now — one that is not reachable takes them over with its next poll
   try { require('./gatewayFeatures').notifyAllGateways(); } catch (err) { log().debug({ err: err.message }, 'gateways not told about the zones'); }
