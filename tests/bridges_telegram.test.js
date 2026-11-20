@@ -375,7 +375,8 @@ describe('the service with Telegram', () => {
       assert.equal(sg.chat.kind, 'group');
       assert.equal(sg.chat.channel, false, 'a supergroup is no channel');
       assert.equal(sg.chat.members, 340, 'what Telegram counts, not the 100 members in the room');
-      assert.doesNotMatch(JSON.stringify([d, g, sg]), /4001|5001|611000001/);
+      // Ganze Kennungen, nicht Ziffernfolgen in Zeitstempeln (at) oder zufälligen IDs.
+      assert.doesNotMatch(JSON.stringify([d, g, sg]), /(?<![A-Za-z0-9_-])(?:4001|5001|611000001)(?![A-Za-z0-9_-])/);
     });
 
     it('a channel: its own account is in the room — chat.channel, read-only, its posts by the channel', async () => {

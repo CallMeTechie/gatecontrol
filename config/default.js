@@ -95,6 +95,13 @@ const config = {
     // in the background (a failed sync still restores the rows and announces
     // it on the routes event). 0 = always wait (the old behaviour).
     answerBudgetMs: envInt('GC_CADDY_ANSWER_BUDGET_MS', 3000),
+    // The Caddy binary for `caddy gc-dnstest` (connection test of the DNS
+    // provider behind the wildcard certificate of the VPN zone, services/vpnCert.js).
+    bin: env('GC_CADDY_BIN', 'caddy'),
+    // Public resolvers for the DNS-01 challenge of that certificate (zone
+    // lookup, propagation check) and for its connection test. Never the own
+    // dnsmasq: it answers the VPN zone itself and does not know the TXT record.
+    dnsResolvers: envList('GC_VPN_CERT_RESOLVERS', ['9.9.9.9:53', '1.1.1.1:53']),
   },
 
   // Internal DNS — dnsmasq-backed per-peer hostname resolution inside the
