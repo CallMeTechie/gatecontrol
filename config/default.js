@@ -89,9 +89,10 @@ const config = {
     // route was disabled or got auth keeps running on the old config until
     // this delay expires. '0' restores Caddy's close-immediately default.
     streamCloseDelay: env('GC_CADDY_STREAM_CLOSE_DELAY', '1h'),
-    // DELETE /api/routes/:id waits this long for the Caddy sync. Is it not
+    // DELETE /api/routes/:id, DELETE /api/v1/hosts/:id and POST
+    // /api/routes/batch (delete) wait this long for the Caddy sync. Is it not
     // done by then, the answer is 202 { pending: true } and the sync finishes
-    // in the background (a failed sync still restores the row and announces
+    // in the background (a failed sync still restores the rows and announces
     // it on the routes event). 0 = always wait (the old behaviour).
     answerBudgetMs: envInt('GC_CADDY_ANSWER_BUDGET_MS', 3000),
   },

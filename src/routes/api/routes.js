@@ -10,6 +10,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const { validateDomain, validatePort, validateDescription, validateIp, validateCssColor, validateCssBg } = require('../../utils/validate');
 const { uploadLimiter } = require('../../middleware/rateLimit');
 const config = require('../../../config/default');
+const { settledWithin } = require('../../services/routesSync');
 const { requireLimit, requireFeatureField, requireFeature } = require('../../middleware/license');
 const { getDb } = require('../../db/connection');
 const { checkDomainPolicy } = require('../../services/routeDomainPolicy');
@@ -294,7 +295,15 @@ router.post('/batch', async (req, res) => {
       return res.status(400).json({ ok: false, error: req.t('error.batch.no_ids') });
     }
 
-    const affected = await routes.batch(action, ids);
+    const job = routes.batch(action, ids);
+    // delete: the answer budget of DELETE /:id (below) — after it 202
+    // { pending }, the sync completes in the background, a failure restores
+    // the rows and says so on the routes event (`sync: 'failed'`, per route).
+    if (action === 'delete' && !(await settledWithin(job, config.caddy.answerBudgetMs))) {
+      job.catch((err) => logger.error({ routeIds: ids, error: err.message }, 'Batch route delete: Caddy sync failed after the answer — routes restored'));
+      return res.status(202).json({ ok: true, pending: true, affected: ids.length });
+    }
+    const affected = await job;
     res.json({ ok: true, affected });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to batch operate on routes');
@@ -872,15 +881,6 @@ router.put('/:id',
 /**
  * DELETE /api/routes/:id — Delete route
  */
-// Resolves true when `job` settles within `ms` (rejects with its error),
-// false when it is still running then. ms <= 0: wait for the job.
-function settledWithin(job, ms) {
-  if (!(ms > 0)) return job.then(() => true);
-  let timer;
-  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); });
-  return Promise.race([job.then(() => true), late]).finally(() => clearTimeout(timer));
-}
-
 // The row is deleted at once; the answer waits for the Caddy sync only up to
 // config.caddy.answerBudgetMs (a slow sync — Caddy busy, a sync queued in
 // front of it, a TLS self-test with restart — kept the page waiting for many

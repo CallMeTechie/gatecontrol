@@ -56,9 +56,10 @@ server refuses the combination. For UDP (e.g. a game server) use a VPN peer as
 the target. Older UDP entries behind a gateway stay, but the list marks them
 “no effect”: switch them to TCP or choose a VPN peer.
 
-When you delete an entry, its row goes at once. If Caddy needs more than a few
-seconds to apply it, the page says “deleted – the change is still being
-applied”; if applying fails, the entry comes back with a note. How long the
+When you delete an entry – or a whole host with all its entries via “Delete
+host” – its row goes at once. If Caddy needs more than a few seconds to apply
+it, the page says “deleted – the change is still being applied”; if applying
+fails, the entry, or the host with all its entries, comes back with a note. How long the
 page waits for Caddy is set by `GC_CADDY_ANSWER_BUDGET_MS` (default 3000, `0` =
 always wait).
 

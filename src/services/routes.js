@@ -1406,21 +1406,35 @@ async function batch(action, ids) {
     })();
   }
 
-  await withCaddySync(syncToCaddy, () => {
-    const tx = db.transaction(() => {
-      if (action === 'delete') {
-        for (const row of snapshots) reinsertRouteRow(db, row);
-        const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
-        for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
-        const insertGroupAcl = db.prepare('INSERT OR IGNORE INTO route_group_acl (route_id, group_id) VALUES (?, ?)');
-        for (const a of groupAclSnapshots) insertGroupAcl.run(a.route_id, a.group_id);
-        require('./accessRules').restoreRules(accessRuleSnapshots);
-      } else {
-        for (const row of snapshots) restoreRouteRow(db, row.id, row);
-      }
-    });
-    tx();
-  }, `batch ${action}`);
+  try {
+    await withCaddySync(syncToCaddy, () => {
+      const tx = db.transaction(() => {
+        if (action === 'delete') {
+          for (const row of snapshots) reinsertRouteRow(db, row);
+          const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
+          for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
+          const insertGroupAcl = db.prepare('INSERT OR IGNORE INTO route_group_acl (route_id, group_id) VALUES (?, ?)');
+          for (const a of groupAclSnapshots) insertGroupAcl.run(a.route_id, a.group_id);
+          require('./accessRules').restoreRules(accessRuleSnapshots);
+        } else {
+          for (const row of snapshots) restoreRouteRow(db, row.id, row);
+        }
+      });
+      tx();
+    }, `batch ${action}`);
+  } catch (err) {
+    // A delete answered 202 before the sync ended (routes / hosts API):
+    // `sync: 'failed'` with each restored route_id tells the page that
+    // deleted them to say so (like remove()).
+    if (action === 'delete') {
+      const refOf = new Map(refs.map((r) => [r.host_id == null ? 'null' : String(r.host_id), r]));
+      publishRoutesEvent(snapshots.map((row) => ({
+        ...(refOf.get(row.bundle_id == null ? 'null' : String(row.bundle_id)) || { domain_id: null, host_id: null }),
+        route_id: Number(row.id), sync: 'failed',
+      })));
+    }
+    throw err;
+  }
 
   if (action === 'delete') {
     cleanupEmptyBundles(db, snapshots.map((r) => r.bundle_id));

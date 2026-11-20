@@ -504,16 +504,16 @@
   // `gone` then tells from that data whether the delete took place.
   async function runDelete(o) {
     const c = ctx();
-    const done = c.removing ? c.removing(o.ids) : () => {};
+    let done = c.removing ? c.removing(o.ids) : () => {};
     let failure = null;
     try {
       const res = await UI.call(api.del(o.url));
-      // 202 { pending }: deleted, the Caddy sync is still running (routes
-      // API, answer budget). A failed sync brings the entry back and says so
-      // on the routes event (pendingDeletes below).
+      // 202 { pending }: deleted, the Caddy sync is still running (routes /
+      // hosts API, answer budget). A failed sync brings the entries back and
+      // says so on the routes event (pendingDeletes below).
       if (res.pending) {
-        (o.ids && o.ids.entries || []).forEach((id) => pendingDeletes.add(Number(id)));
-        UI.toastOk(t('entry.delete_pending'));
+        done = watchPending({ ids: o.pendingIds || (o.ids && o.ids.entries) || [], hosts: (o.ids && o.ids.hosts) || [], failText: o.failText || t('entry.delete_failed_restored') }, done);
+        UI.toastOk(o.pendingText || t('entry.delete_pending'));
       } else UI.toastOk(o.okText);
     } catch (err) { failure = err; }
     done();
@@ -524,14 +524,41 @@
     return false;
   }
 
-  // Entry deletes answered with 202 (sync still running): a routes event
-  // with sync 'failed' for one of them means the entry is back.
-  const pendingDeletes = new Set();
+  // Deletes answered with 202 (sync still running): a routes event with sync
+  // 'failed' for one of their entries means the entries are back — one note
+  // per delete, also for a host with several entries. A deleted host stays
+  // hidden until its routes event arrives (while the sync runs the host row
+  // is still there, without entries); at the latest after PENDING_HOLD_MS.
+  const pendingDeletes = new Map(); // entry id → pending delete
+  const PENDING_HOLD_MS = 60000;
+  function watchPending(p, unhide) {
+    p.ids = p.ids.map(Number);
+    p.hosts = p.hosts.map(String);
+    p.ids.forEach((id) => pendingDeletes.set(id, p));
+    if (!p.hosts.length) return unhide;
+    let held = true;
+    const release = () => {
+      if (!held) return;
+      held = false;
+      clearTimeout(timer);
+      document.removeEventListener('gc:routes', onEvent);
+      unhide();
+      reloadQuietly();
+    };
+    const onEvent = (ev) => {
+      const d = ev && ev.detail;
+      if (d && (p.hosts.includes(String(d.host_id)) || p.ids.includes(Number(d.route_id)))) release();
+    };
+    const timer = setTimeout(release, PENDING_HOLD_MS);
+    document.addEventListener('gc:routes', onEvent);
+    return () => {};
+  }
   document.addEventListener('gc:routes', (ev) => {
     const d = ev && ev.detail;
-    if (!d || d.sync !== 'failed' || !pendingDeletes.has(Number(d.route_id))) return;
-    pendingDeletes.delete(Number(d.route_id));
-    if (window.showToast) window.showToast(t('entry.delete_failed_restored'), 'error');
+    const p = d && d.sync === 'failed' ? pendingDeletes.get(Number(d.route_id)) : null;
+    if (!p) return;
+    p.ids.forEach((id) => { if (pendingDeletes.get(id) === p) pendingDeletes.delete(id); });
+    if (window.showToast) window.showToast(p.failText, 'error');
   });
 
   async function deleteEntry(e, host, zone, btn) {
@@ -569,6 +596,10 @@
     if (hs && hs.hostId === host.id) { hs.drafts = {}; hs.dlg.close(true); hs = null; }
     return runDelete({
       url: '/api/v1/hosts/' + host.id, ids: { hosts: [host.id] }, okText: t('host.deleted', { host: fqdn }),
+      // 202 { pending }: every entry of the host can come back (routes event).
+      pendingIds: (host.entries || []).map((e) => e.id),
+      pendingText: t('host.delete_pending', { host: fqdn }),
+      failText: t('host.delete_failed_restored', { host: fqdn }),
       gone: () => !findHost(host.id),
     });
   }

@@ -58,10 +58,11 @@ nimm einen VPN-Peer als Ziel. Ältere UDP-Einträge hinter einem Gateway bleiben
 stehen, sind in der Liste aber mit „wirkt nicht“ markiert: Stelle sie auf TCP
 um oder wähle einen VPN-Peer.
 
-Beim Löschen eines Eintrags verschwindet die Zeile sofort. Braucht Caddy
-länger als ein paar Sekunden für die Übernahme, meldet die Seite „gelöscht –
-die Änderung wird noch übernommen“; klappt die Übernahme nicht, kommt der
-Eintrag mit einem Hinweis zurück. Wie lange die Seite auf Caddy wartet,
+Beim Löschen eines Eintrags – oder mit „Host löschen“ eines ganzen Hosts mit
+allen Einträgen – verschwindet die Zeile sofort. Braucht Caddy länger als ein
+paar Sekunden für die Übernahme, meldet die Seite „gelöscht – die Änderung
+wird noch übernommen“; klappt die Übernahme nicht, kommen der Eintrag bzw. der
+Host mit allen Einträgen und einem Hinweis zurück. Wie lange die Seite auf Caddy wartet,
 stellt `GC_CADDY_ANSWER_BUDGET_MS` ein (Standard 3000, `0` = immer warten).
 
 Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
