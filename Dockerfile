@@ -5,7 +5,7 @@
 # the OWASP CRS in as the embedded Go module corazawaf/coraza-coreruleset/v4
 # (no rule downloads at runtime). Pinned; CRS updates arrive with new
 # coraza-caddy / coraza-coreruleset versions. v2.6.1 needs Caddy v2.11.4 and
-# Go 1.26 — both given by caddy:2-builder.
+# Go 1.26 — both given by the builder image below.
 #
 # No OpenTelemetry --replace pin anymore: Caddy v2.11.4 requires otel
 # v1.43.0 itself (CVE-2026-29181 fixed since v1.41.0), so MVS already
@@ -32,7 +32,15 @@
 # database (sum.golang.org "stream error … INTERNAL_ERROR") failed the 1.167.0
 # release after its version bump. The module cache stays between attempts, so
 # a retry only fetches what is still missing; checksums are verified as usual.
-FROM caddy:2-builder AS caddy-builder
+#
+# Caddy version: xcaddy builds the Caddy release named in CADDY_VERSION, but
+# MVS over all --with modules (mirror go.mod included) may still raise it. So
+# the builder image is pinned by tag and digest (the floating caddy:2-builder
+# silently moved with every Caddy release), CADDY_VERSION is set explicitly,
+# caddy-plugins/mirror/go.mod requires the same version, and the build fails
+# if the binary reports any other version. A Caddy bump changes all four.
+FROM caddy:2.11.9-builder@sha256:f9beaa5ddbe7df6f26ebbcf9cbf44e05a1917b9bba464f0c3229038d7e2e6e13 AS caddy-builder
+ENV CADDY_VERSION=v2.11.9
 COPY caddy-plugins/mirror /tmp/caddy-mirror
 RUN for attempt in 1 2 3; do \
       if (cd /tmp/caddy-mirror && go mod tidy) && \
@@ -62,6 +70,11 @@ RUN for attempt in 1 2 3; do \
       sleep $((attempt * 15)); \
     done; \
     exit 1
+RUN caddy_ver="$(/usr/bin/caddy version)" && echo "caddy $caddy_ver" && \
+    case "$caddy_ver" in \
+      "$CADDY_VERSION "*) ;; \
+      *) echo "expected Caddy $CADDY_VERSION, got: $caddy_ver" >&2; exit 1 ;; \
+    esac
 # Go tests of the mirror plugin (IP block, mirror, gc-dnstest with a fake DNS
 # provider and a local DNS server on 127.0.0.1 — no network, no credentials).
 # The module cache of the build above already holds every dependency.
