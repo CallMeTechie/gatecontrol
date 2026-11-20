@@ -11,10 +11,12 @@ const logger = require('../../utils/logger');
 const router = Router();
 
 const HOST_RE = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+// the wildcard of the VPN zone (services/vpnCert.js) is listed like a host
+function validHost(host) { return HOST_RE.test(host.startsWith('*.') ? host.slice(2) : host); }
 
 function hostParam(req, res) {
   const host = String(req.params.host || '').trim().toLowerCase().replace(/\.$/, '');
-  if (!HOST_RE.test(host)) {
+  if (!validHost(host)) {
     res.status(400).json({ ok: false, error: 'Invalid hostname', code: 'INVALID_HOST' });
     return null;
   }
@@ -50,6 +52,9 @@ router.post('/:host/retry', async (req, res) => {
   } catch (err) {
     if (err && err.code === 'PREFLIGHT_FAILED') {
       return res.status(409).json({ ok: false, code: 'PREFLIGHT_FAILED', error: err.message, result: err.result });
+    }
+    if (err && err.statusCode >= 400 && err.statusCode < 500) {
+      return res.status(err.statusCode).json({ ok: false, code: err.code || null, error: req.t('feature_not_available' === err.code ? 'error.license.feature_not_available' : 'st.vpncert.err.' + err.code) });
     }
     logger.warn({ err: err.message, host }, 'POST /tls/:host/retry failed');
     res.status(500).json({ ok: false, error: 'Retry failed: ' + err.message });

@@ -399,6 +399,125 @@
       <div class="st-row-ctl"><button type="button" class="pgx-btn" id="st-vn-back">{{ t('st.names.back', { zone: vpnLegacyZone }) }}</button></div>
     </div>
   </section>
+  {#- Zertifikat für die Namen (services/vpnCert.js, docs/feature-vpn-names.md):
+      a wildcard certificate *.<zone> via ACME DNS-01. Views (data-view, set by
+      settings.js): locked, nozone, off, setup, pending, active, error. The setup
+      fields are saved with the save bar; "Testen" acts at once and saves nothing. -#}
+  <section class="pgx-card stx-card" aria-labelledby="st-c-vc" id="card-vpn-cert" data-view="nozone">
+    <div class="stx-ch">
+      <div class="stx-cht">
+        <h3 class="stx-ct" id="st-c-vc">{{ t('st.vc.title') }}{% if not has('internal_dns') %} {{ pro(PRO) }}{% endif %}</h3>
+        <p class="stx-cd" id="st-vc-desc">{{ t('st.vc.desc_nozone') }}</p>
+      </div>
+      {#- the card's actions, by view (settings.js shows the ones of the view) -#}
+      <div class="stx-cha">
+        <span class="st-pill" id="st-vc-pill" hidden></span>
+        <button type="button" class="pgx-btn pgx-btn-sm pgx-btn-pri" id="st-vc-setup" data-vc-show="off locked"{% if not has('internal_dns') %} disabled{% endif %}>{{ t('st.vc.setup') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm pgx-btn-ghost" id="st-vc-cancel" data-vc-show="setup">{{ t('st.vc.cancel') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm pgx-btn-ghost" id="st-vc-off" data-vc-show="active">{{ t('st.vc.off') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm" id="st-vc-renew" data-vc-show="active" hidden>{{ t('st.vc.renew') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm" id="st-vc-retry" data-vc-show="error" hidden>{{ t('st.vc.retry') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm pgx-btn-pri" id="st-vc-fix" data-vc-show="error">{{ t('st.vc.fix') }}</button>
+      </div>
+    </div>
+    {% if not has('internal_dns') %}{{ lockNote('internal_dns') }}{% endif %}
+
+    <div data-vc-show="nozone locked">
+      <p class="stx-box vc-box" data-tone="info"><b>{{ t('st.vc.nozone_b') }}</b> <span id="st-vc-nozone">{{ t('st.vc.nozone', { legacy: vpnLegacyZone }) }}</span></p>
+    </div>
+
+    <div data-vc-show="off">
+      <div class="st-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.provider') }}</span><span class="st-hint">{{ t('st.vc.provider_off_hint') }}</span><span class="st-hint" id="st-vc-detected-off"></span></div>
+        <div class="st-row-ctl"><span class="st-read">{{ t('st.vc.provider_none') }}</span></div>
+      </div>
+      <p class="stx-box vc-box" id="st-vc-today"></p>
+      <p class="stx-box vc-box" data-tone="warn" id="st-vc-zonechanged" hidden></p>
+    </div>
+
+    <div data-vc-show="setup pending active error">
+      <div class="st-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.covers') }}</span><span class="st-hint" id="st-vc-covers-hint"></span></div>
+        <div class="st-row-ctl"><span class="vn-name"><code id="st-vc-wildcard"></code></span></div>
+      </div>
+    </div>
+
+    <div data-vc-show="setup">
+      <div class="st-row" data-st-row="vc-provider">
+        <div class="st-row-text">
+          <label class="st-label" for="st-vc-provider" id="st-vc-provider-label">{{ t('st.vc.provider') }}</label>
+          <span class="st-hint" id="st-vc-provider-hint"></span>
+          <span class="st-err" id="st-vc-provider-err" role="alert" hidden></span>
+        </div>
+        <div class="st-row-ctl">
+          <select class="st-select" id="st-vc-provider" data-st-field="vc-provider" aria-describedby="st-vc-provider-hint st-vc-provider-err">
+            <option value="">{{ t('st.vc.provider_none') }}</option>
+            <optgroup label="{{ t('st.vc.group_recommended') }}">
+              <option value="desec_delegated">{{ t('st.vc.p.desec_delegated') }}</option>
+            </optgroup>
+            <optgroup label="{{ t('st.vc.group_provider') }}">
+              {%- for id in ['hetzner', 'ionos', 'netcup', 'inwx', 'allinkl', 'ovh', 'desec', 'cloudflare'] %}
+              <option value="{{ id }}">{{ t('st.vc.p.' + id) }}</option>
+              {%- endfor %}
+            </optgroup>
+            <optgroup label="{{ t('st.vc.group_own') }}">
+              <option value="rfc2136">{{ t('st.vc.p.rfc2136') }}</option>
+              <option value="acmedns">{{ t('st.vc.p.acmedns') }}</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+      <p class="stx-box vc-box" id="st-vc-rights" hidden></p>
+      <div id="st-vc-fields"></div>
+      <div class="st-row" data-st-row="vc-delegate" id="st-vc-delegate-row" hidden>
+        <div class="st-row-text">
+          <label class="st-label" for="st-vc-delegate" id="st-vc-delegate-label">{{ t('st.vc.delegate') }}</label>
+          <span class="st-hint" id="st-vc-delegate-hint"></span>
+          <span class="st-err" id="st-vc-delegate-err" role="alert" hidden></span>
+        </div>
+        <div class="st-row-ctl">
+          <input type="text" class="st-input st-mono" id="st-vc-delegate" data-st-field="vc-delegate" maxlength="253" autocomplete="off" spellcheck="false" autocapitalize="none"
+            placeholder="_acme-challenge.vpn-example.dedyn.io" aria-describedby="st-vc-delegate-hint st-vc-delegate-err">
+        </div>
+      </div>
+      <details class="stx-more vc-more" id="st-vc-adv">
+        <summary>{{ t('st.vc.advanced') }}</summary>
+        {{ numRow('st-vc-delay', 'vc-delay', t('st.vc.delay'), t('st.vc.delay_hint'), t('st.unit.seconds'), 0, 900) }}
+        <div id="st-vc-cname-wrap">{{ switchRow('st-vc-cname', 'vc-cname', t('st.vc.cname'), t('st.vc.cname_hint')) }}</div>
+      </details>
+      <div class="st-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.test') }}</span><span class="st-hint" id="st-vc-test-hint"></span></div>
+        <div class="st-row-ctl vc-test-ctl">
+          <button type="button" class="pgx-btn" id="st-vc-test">{{ t('st.vc.test_btn') }}</button>
+          <ul class="vc-checks" id="st-vc-checks" aria-live="polite" hidden></ul>
+        </div>
+      </div>
+    </div>
+
+    <div data-vc-show="pending">
+      <div class="st-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.state') }}</span></div>
+        <div class="st-row-ctl"><span class="st-read">{{ t('st.vc.pending') }}</span></div>
+      </div>
+      <p class="stx-box vc-box" data-tone="info">{{ t('st.vc.pending_box', { legacy: vpnLegacyZone }) }}</p>
+    </div>
+
+    <div data-vc-show="active error">
+      <div class="st-row" id="st-vc-cert-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.cert') }}</span><span class="st-hint">{{ t('st.vc.cert_hint') }}</span></div>
+        <div class="st-row-ctl"><span class="st-read" id="st-vc-valid"></span></div>
+      </div>
+      <div class="st-row">
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.provider') }}</span><span class="st-hint" id="st-vc-saved"></span></div>
+        <div class="st-row-ctl"><span class="st-read" id="st-vc-provider-name"></span><button type="button" class="pgx-btn vc-change" id="st-vc-change">{{ t('st.vc.change') }}</button></div>
+      </div>
+      <div class="st-row" id="st-vc-used-row" hidden>
+        <div class="st-row-text"><span class="st-label">{{ t('st.vc.used') }}</span><span class="st-hint" id="st-vc-used-hint"></span></div>
+        <div class="st-row-ctl"><div class="vc-uses" id="st-vc-used"></div></div>
+      </div>
+      <p class="stx-box vc-box" data-tone="crit" id="st-vc-error" hidden></p>
+    </div>
+  </section>
   <section class="pgx-card stx-card" aria-labelledby="st-c-namestate" id="card-vpn-names-state">
     {% call cardHead('st-c-namestate', t('st.names.state_title'), t('st.names.state_desc')) %}{% endcall %}
     <div class="st-row st-row-read">

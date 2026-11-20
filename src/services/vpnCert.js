@@ -413,10 +413,27 @@ function view() {
     } : null,
     suspended: suspended ? { at: suspended.at || null, error: redact(suspended.error || '') } : null,
     renew_possible: canRenew(st, row),
+    used_by: usedBy(st.zone),
     last_test: parseJson(get(KEY.lastTest, '')),
     resolvers: config.caddy.dnsResolvers,
     catalog: catalog(),
   };
+}
+
+/** Names under the zone the server answers with the wildcard ("Genutzt von"). → [{ host, kind }] */
+function usedBy(zone) {
+  if (!zone) return [];
+  const covers = (h) => { const n = norm(h); if (!n.endsWith('.' + zone)) return false; const l = n.slice(0, -(zone.length + 1)); return !!l && !l.includes('.'); };
+  const out = [];
+  try {
+    const portal = require('./portalConfig').effectivePortalHost();
+    if (portal && portal.host && covers(portal.host)) out.push({ host: norm(portal.host), kind: 'portal' });
+  } catch { /* none */ }
+  try {
+    const rows = require('../db/connection').getDb().prepare("SELECT DISTINCT domain FROM routes WHERE enabled = 1 AND route_type != 'l4' AND https_enabled = 1 AND domain IS NOT NULL AND domain != ''").all();
+    for (const r of rows) if (covers(r.domain) && !out.some((o) => o.host === norm(r.domain))) out.push({ host: norm(r.domain), kind: 'route' });
+  } catch { /* none */ }
+  return out.sort((a, b) => (a.kind === b.kind ? a.host.localeCompare(b.host) : a.kind === 'portal' ? -1 : 1));
 }
 
 function canRenew(st, row) {

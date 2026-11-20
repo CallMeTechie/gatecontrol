@@ -436,6 +436,40 @@ Server **1.271.0**. Mehr dazu:
 
 **Prüfen:** Auf einem Gerät im VPN antwortet `ping` auf den kopierten Namen.
 
+### Der Browser warnt bei `home.gc.internal`
+
+Für Namen wie `home.gc.internal` stellt keine Zertifizierungsstelle ein
+Zertifikat aus. Der Server nimmt deshalb ein eigenes Zertifikat, dem der
+Browser erst vertraut, wenn du es auf dem Gerät bestätigst. Das ist im VPN
+unbedenklich, aber lästig.
+
+Abhilfe: Wähle unter „Namen im VPN“ eine eigene Domain und richte unter
+„Einstellungen“ → „VPN & Netzwerk“ → „Zertifikat für die Namen“ ein Zertifikat
+für die Zone ein. Dann bekommen die Namen unter deiner Zone, die der Server
+beantwortet, ein Zertifikat, dem jeder Browser vertraut. Welche das sind,
+steht in der Karte unter „Genutzt von“. Mehr dazu:
+[2.12 Gültiges Zertifikat für die Namen im VPN](02-server-einrichten.md#212-gültiges-zertifikat-für-die-namen-im-vpn).
+
+### „Testen“ beim Zertifikat für die Namen schlägt fehl
+
+Die Karte zeigt beim fehlgeschlagenen Punkt, was der Anbieter gemeldet hat.
+
+1. **Anmelden beim Anbieter:** Die Zugangsdaten wurden abgelehnt. Prüf sie im
+   Kundenportal des Anbieters; bei INWX mit 2FA gehört das 2FA-Geheimnis dazu.
+2. **Zone gefunden:** Die öffentlichen DNS-Server kennen die Domain nicht, oder
+   bei einer Weiterleitung fehlt der CNAME-Eintrag
+   `_acme-challenge.vpn.example.com` noch. Neue Einträge brauchen beim Anbieter
+   oft einige Minuten.
+3. **Testeintrag geschrieben:** Der Zugang darf den Eintrag nicht anlegen.
+   Begrenzte Tokens müssen `_acme-challenge…` mit Typ TXT erlauben.
+4. **Öffentlich sichtbar:** Der Eintrag kam in 10 Minuten nicht bei allen
+   Nameservern an. Versuch es noch einmal und stell unter „Erweitert“ eine
+   längere Wartezeit ein.
+5. **Testeintrag gelöscht:** Lösch den Eintrag mit dem Testwert `gc-test-…`
+   beim Anbieter von Hand.
+
+**Prüfen:** Alle fünf Punkte haben einen Haken.
+
 ## Gateway einrichten
 
 ### Der Assistent wartet nach 10 Minuten immer noch

@@ -333,6 +333,31 @@ describe('Zertifikat für die Namen', () => {
     });
   });
 
+  describe('certificate list (TLS API)', () => {
+    it('the wildcard can be retried from the certificate list: renew instead of an A-record check', async () => {
+      zone();
+      await put({ provider: 'desec', credentials: { token: DESEC_TOKEN } });
+      tlsGuard.writeRow('*.vpn.example.com', { state: 'paused', paused_reason: 'attempts', attempts: 3 });
+      const res = await api().post('/api/v1/tls/*.vpn.example.com/retry').set('X-CSRF-Token', getCsrf());
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(tlsGuard.getRow('*.vpn.example.com').attempts, 0);
+      assert.notEqual(tlsGuard.getRow('*.vpn.example.com').state, 'paused');
+      const again = await api().post('/api/v1/tls/*.vpn.example.com/retry').set('X-CSRF-Token', getCsrf());
+      assert.equal(again.status, 409, 'nothing to renew yet');
+      assert.equal(again.body.code, 'renew_not_needed');
+      const pf = await tlsGuard.preflight('*.vpn.example.com');
+      assert.equal(pf.ok, true);
+    });
+
+    it('"Genutzt von" lists the names under the zone the server answers', async () => {
+      zone();
+      db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled, route_type, https_enabled) VALUES ('nas-web.vpn.example.com', '10.0.0.5', 5000, 1, 'http', 1)").run();
+      db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled, route_type, https_enabled) VALUES ('app.example.com', '10.0.0.6', 80, 1, 'http', 1)").run();
+      await put({ provider: 'desec', credentials: { token: DESEC_TOKEN } });
+      assert.deepEqual(vpnCert.view().used_by, [{ host: 'nas-web.vpn.example.com', kind: 'route' }]);
+    });
+  });
+
   describe('CAA pre-check', () => {
     it('issuewild without Let\'s Encrypt pauses the wildcard; renew is refused while it stays', async () => {
       const domains = require('../src/services/domains');
