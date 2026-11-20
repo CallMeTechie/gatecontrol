@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.302.4] — 2026-11-20
+
+### Fixes
+- Telegram-Test prüft ganze Kennungen statt Ziffernfolgen (#544)
+
+---
+
 ## [1.302.3] — 2026-11-20
 
 ### Fixes
