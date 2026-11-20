@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.308.0] — 2026-11-20
+
+### Features
+- Zertifikat und Schlüssel an ausgewählte Geräte und Gateways weitergeben (#549)
+
+---
+
 ## [1.307.0] — 2026-11-20
 
 ### Features
