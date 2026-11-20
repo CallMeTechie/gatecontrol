@@ -247,7 +247,9 @@ module.exports = (ctx) => {
           confLines(app.conf, 'local').join() === 'local=/gc.internal/,local=/vpn.example.com/'
           && confLines(app.conf, 'host-record').slice(1).join() === ['gateway', 'server', 'gc-server'].map((n) => `host-record=${n}.vpn.example.com,10.8.0.1`).join()
           && confLines(app.conf, 'server').join() === 'server=1.1.1.1,server=8.8.8.8', conf.length + ' bytes');
-        step('hosts file: the device under both spellings', fs.readFileSync(app.hosts, 'utf8').split('\n').filter((l) => l.startsWith('10.8.0.10\t')).join() === '10.8.0.10\tlaptop-buero.vpn.example.com\tlaptop-buero.gc.internal\tlaptop-buero');
+        step('hosts file: the device under both spellings, and its name in the device area',
+          fs.readFileSync(app.hosts, 'utf8').split('\n').filter((l) => l.startsWith('10.8.0.10\t')).join('|')
+            === '10.8.0.10\tlaptop-buero.vpn.example.com\tlaptop-buero.gc.internal\tlaptop-buero|10.8.0.10\tlaptop-buero.geraete.vpn.example.com');
         await p.reload();
         step('after a reload the choice is still there',
           await until(p, () => document.getElementById('st-vn-domain').value === 'example.com' && document.getElementById('st-vn-sub').value === 'vpn'
