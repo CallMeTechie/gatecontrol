@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.312.0] — 2026-11-20
+
+### Features
+- Statusseite eines Gateways im VPN per HTTPS – Schalter je Gateway und „Im VPN öffnen“ mit Einmal-Ticket (#553)
+
+---
+
 ## [1.311.0] — 2026-11-20
 
 ### Features
