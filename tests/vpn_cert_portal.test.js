@@ -73,7 +73,9 @@ describe('Zertifikat für die Namen: Portal und Verwaltung unter der Zone', () =
     for (const r of cfg.apps.http.servers.srv0.routes) for (const m of r.match || []) for (const h of m.host || []) out.add(h);
     return out;
   }
-  function policySubjects(cfg) { return cfg.apps.tls.automation.policies.flatMap((p) => p.subjects || []); }
+  function policySubjects(cfg) { return new Set(cfg.apps.tls.automation.policies.flatMap((p) => p.subjects || [])); }
+  // host matchers compared as whole names (a Set), never as substrings
+  const hostSet = (list) => new Set((list || []).map((h) => String(h).toLowerCase()));
 
   describe('when the wildcard is served', () => {
     it('without a valid certificate: everything as before', async () => {
@@ -171,20 +173,20 @@ describe('Zertifikat für die Namen: Portal und Verwaltung unter der Zone', () =
       const skip = cfg.apps.http.servers.srv0.automatic_https.skip_certificates;
       assert.deepEqual([...skip].sort(), ['gc-server.vpn.example.com', 'home.vpn.example.com', 'server.vpn.example.com']);
       const subjects = policySubjects(cfg);
-      assert.ok(subjects.includes('*.vpn.example.com'));
-      for (const h of skip) assert.ok(!subjects.includes(h), h + ' has no certificate of its own');
+      assert.ok(subjects.has('*.vpn.example.com'));
+      for (const h of skip) assert.equal(subjects.has(h), false, h + ' has no certificate of its own');
       const internal = cfg.apps.tls.automation.policies.find((p) => p.issuers[0].module === 'internal');
-      assert.ok(internal && internal.subjects.includes(legacy()), 'home.<legacy> keeps the internal CA');
+      assert.ok(internal && hostSet(internal.subjects).has(legacy()), 'home.<legacy> keeps the internal CA');
       // the management names: VPN sources only, then 404
-      const route = cfg.apps.http.servers.srv0.routes.find((r) => r['@id'] !== 'gc_https_redirect' && (r.match || []).some((m) => (m.host || []).includes('server.vpn.example.com')));
+      const route = cfg.apps.http.servers.srv0.routes.find((r) => r['@id'] !== 'gc_https_redirect' && (r.match || []).some((m) => hostSet(m.host).has('server.vpn.example.com')));
       const text = JSON.stringify(route);
       assert.match(text, /"remote_ip"/);
       assert.match(text, /"status_code":404/);
       assert.match(text, /X-GC-Portal-Peer-IP/);
       // https only
       const redirect = cfg.apps.http.servers.srv0.routes.find((r) => r['@id'] === 'gc_https_redirect');
-      assert.ok(redirect && redirect.match[0].host.includes('server.vpn.example.com'));
-      assert.ok(!redirect.match[0].host.includes('home.vpn.example.com'), 'the portal keeps its own rules');
+      assert.ok(redirect && hostSet(redirect.match[0].host).has('server.vpn.example.com'));
+      assert.equal(hostSet(redirect.match[0].host).has('home.vpn.example.com'), false, 'the portal keeps its own rules');
     });
 
     it('a wildcard that could not be set up: no names under the zone, no certificate attempt for them', async () => {
@@ -196,7 +198,7 @@ describe('Zertifikat für die Namen: Portal und Verwaltung unter der Zone', () =
       vpnCert._resetForTest();
       const cfg = caddyConfig.buildCaddyConfig([]);
       assert.ok(!hostsOf(cfg).has('server.vpn.example.com'));
-      assert.ok(!policySubjects(cfg).includes('home.vpn.example.com'));
+      assert.equal(policySubjects(cfg).has('home.vpn.example.com'), false);
     });
   });
 

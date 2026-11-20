@@ -911,6 +911,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // Every name of the portal: with the wildcard of the VPN zone in use
   // (services/vpnCert.js) home.<zone> and home.<legacy>, otherwise one.
   const portalHosts = (portal.hosts && portal.hosts.length ? portal.hosts : [homeHost]).map(h => String(h).toLowerCase());
+  const portalHostSet = new Set(portalHosts);
   // The management also under server.<zone> / gc-server.<zone> then (GC_BASE_URL stays its address).
   let vpnMgmtHosts = [];
   try { vpnMgmtHosts = require('./vpnCert').managementHosts(); } catch (err) { logger.warn({ err: err.message }, 'vpn cert: management names unavailable'); }
@@ -949,7 +950,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const vpnSkipCertificates = applyVpnCertTls(caddyConfig, tlsDomains);
   // Without the wildcard in this config (its provider could not be set up)
   // the names under the zone get no route and no certificate attempt.
-  const vpnServed = vpnOnlyHosts.every(h => vpnSkipCertificates.includes(h));
+  const coveredSet = new Set(vpnSkipCertificates);
+  const vpnServed = vpnOnlyHosts.every(h => coveredSet.has(h));
   if (!vpnServed && vpnOnlyHosts.length > 0) {
     const drop = new Set(vpnOnlyHosts);
     const pols = (caddyConfig.apps.tls && caddyConfig.apps.tls.automation && caddyConfig.apps.tls.automation.policies) || [];
@@ -959,7 +961,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       return subjects.length > 0 ? [{ ...p, subjects }] : [];
     });
   }
-  const servedPortalHosts = portalHosts.filter(h => vpnServed || !vpnOnlyHosts.includes(h));
+  const vpnOnlySet = new Set(vpnOnlyHosts);
+  const servedPortalHosts = portalHosts.filter(h => vpnServed || !vpnOnlySet.has(h));
 
   // GateControl management UI route
   try {
@@ -1092,7 +1095,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const addRedirectHost = (h) => {
     const k = String(h || '').toLowerCase();
     if (!k || redirectSeen.has(k) || pausedSet.has(k)) return;
-    if (portalHosts.includes(k) && !routeDomains.has(k)) return;
+    if (portalHostSet.has(k) && !routeDomains.has(k)) return;
     redirectSeen.add(k);
     redirectHosts.push(k);
   };

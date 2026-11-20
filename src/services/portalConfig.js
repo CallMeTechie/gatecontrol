@@ -59,7 +59,8 @@ function isPublicPortalHost() { return effectivePortalHost().public; }
 /** Does the portal answer under this host name? */
 function isPortalHost(hostname) {
   const h = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
-  try { return !!h && effectivePortalHost().hosts.includes(h); } catch { return false; }
+  // the whole name: equal to one of the portal's names, never a part of one
+  try { return !!h && new Set(effectivePortalHost().hosts).has(h); } catch { return false; }
 }
 
 // Apps that resolve the zone of the device names ("Namen im VPN"): the

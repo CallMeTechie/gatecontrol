@@ -35,7 +35,7 @@ function checkDomainPolicy(domain, { currentDomain = null, routeType = 'http' } 
   // server./gc-server.<zone> while the wildcard of the VPN zone is served)
   try {
     if (require('./portalConfig').isPortalHost(host)) return { error: 'domain_collision' };
-    if (require('./vpnCert').managementHosts().includes(host)) return { error: 'domain_collision' };
+    if (new Set(require('./vpnCert').managementHosts()).has(host)) return { error: 'domain_collision' };
   } catch { /* services unavailable */ }
 
   // The zone of the device names ("Namen im VPN", services/vpnNames.js)
