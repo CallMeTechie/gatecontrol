@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.310.0] — 2026-11-20
+
+### Features
+- je Gateway anzeigen, ob es das Zertifikat für die Namen abgeholt hat (#551)
+
+---
+
 ## [1.309.0] — 2026-11-20
 
 ### Features
