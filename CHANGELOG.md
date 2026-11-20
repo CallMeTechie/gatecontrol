@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.305.0] — 2026-11-20
+
+### Features
+- Karte „Zertifikat für die Namen“, Texte, Browser-Tests und Handbuch 2.12 (#546)
+
+---
+
 ## [1.304.0] — 2026-11-20
 
 ### Features
