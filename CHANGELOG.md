@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.311.0] — 2026-11-20
+
+### Features
+- Weitergabe nur noch über ein eigenes Wildcard für den Geräte-Bereich *.geraete.<zone> (#552)
+
+---
+
 ## [1.310.0] — 2026-11-20
 
 ### Features
