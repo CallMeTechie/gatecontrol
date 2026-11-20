@@ -3,7 +3,9 @@ module github.com/custom/caddy-mirror
 go 1.26.0
 
 require (
-	github.com/caddyserver/caddy/v2 v2.11.5
+	// Caddy: muss zu CADDY_VERSION des Builder-Images im Dockerfile passen
+	// (caddy:2.11.9-builder); der Build prüft die Version des Binarys.
+	github.com/caddyserver/caddy/v2 v2.11.9
 	github.com/go-jose/go-jose/v4 v4.1.9 // indirect; CVE-2026-116587
 	// klauspost/compress: GO-2026-6865 (Panic bei Frames aus zwei Blöcken),
 	// behoben in v1.20.2.
@@ -14,7 +16,10 @@ require (
 	// kam nur über go.step.sm/crypto/jose (< v0.92.0) in den Graph;
 	// go.step.sm/crypto v0.92.0 nutzt go-jose v4. smallstep/certificates
 	// v0.30.2 (letzter Tag) baut nicht gegen crypto v0.92.0, daher der
-	// Master-Stand, den auch Caddy-Master verwendet. Auf den nächsten Tag
+	// Master-Stand, den auch Caddy-Master verwendet. Geprüft am 2026-11-20
+	// (Caddy v2.11.9): proxy.golang.org listet weiterhin keinen Tag
+	// > v0.30.2; Caddy v2.11.9 selbst verlangt nur certificates v0.30.2 und
+	// crypto v0.91.0, MVS behält also diesen Pin. Auf den nächsten Tag
 	// (> v0.30.2) wechseln, sobald es ihn gibt.
 	github.com/smallstep/certificates v0.30.3-0.20261105213751-6d5a251fbe01 // indirect
 	go.step.sm/crypto v0.92.0 // indirect
@@ -70,6 +75,7 @@ require (
 	github.com/dgraph-io/ristretto v0.2.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20240924180020-3414d57e47da // indirect
 	github.com/dunglas/go-urlpattern v1.0.0 // indirect
+	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -154,7 +160,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec // indirect
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261030153154-30a33513ff6d // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
