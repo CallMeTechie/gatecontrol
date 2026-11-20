@@ -474,20 +474,44 @@ name. If you switch on **“Links on the new address”** in the card
 
 ### Passing the certificate on to devices
 
-If a service runs directly on a device or gateway and should answer with the
-wildcard certificate itself (instead of through a route of the server), the
-server can give the certificate **and the private key** to selected devices.
-This is **off by default** and only admins can set it.
+If a service runs directly on a device or gateway and should answer with a
+valid certificate itself (instead of through a route of the server), the server
+can give a certificate **and its private key** to selected devices. This is
+**off by default** and only admins can set it.
 
-> **Risk:** The key fits every name under the zone. Whoever has it can pose as
-> the portal, the management or any route below the zone inside the VPN. Pass
-> it only to devices you fully trust. Once fetched, it cannot be called back –
-> only replaced by a new key.
+**`*.vpn.example.com` is never passed on.** The certificate of the portal, the
+management and routes stays on the server. For the devices the server fetches
+a second certificate for a **device area** of its own, default name `geraete`:
+`*.geraete.vpn.example.com`. A device answers with it under its name in that
+area – the NAS `nas`, for example, under `https://nas.geraete.vpn.example.com`.
+Inside the VPN the server answers these names with the device's tunnel
+address. `mqtt`, `www` and `ca` stay free in the area.
+
+> **Risk:** The key fits every name under `geraete.vpn.example.com`. Whoever
+> has it can pose as any device in that area inside the VPN. The portal, the
+> management and routes are not affected. Pass it only to devices you fully
+> trust. Once fetched, it cannot be called back – only replaced by a new key.
 
 1. In the card “Certificate for the names” (certificate valid), switch on
    “Pass certificate and key on to devices”.
-2. Under “May fetch”, tick the devices and gateways that should get it.
-3. When saving, confirm the risk note.
+2. Under “Device area”, keep `geraete` or choose another name (one word of
+   lowercase letters, digits and hyphens; no device name, no fixed name such
+   as `home` or `server`, no route). It can be changed only while passing on
+   is off.
+3. Under “May fetch”, tick the devices and gateways that should get it.
+4. When saving, confirm the risk note. The server fetches the device area's
+   certificate with the same DNS provider (usually 1–3 minutes); the row
+   “Device certificate” shows when it is there.
+
+**With forwarding (CNAME):** The device area has a challenge of its own. Add
+once more at your domain provider – to the **same target** as the first record:
+
+```
+_acme-challenge.geraete.vpn.example.com.  CNAME  _acme-challenge.vpn-example.dedyn.io.
+```
+
+The card shows the exact record. “Test” checks it as well while passing on is
+on (step “Device area”). Without forwarding there is nothing more to add.
 
 Only a ticked device may fetch it, signed in (a gateway with its token, an app
 with a token bound to the device) and only over its own VPN address. Every
@@ -504,7 +528,7 @@ row “Certificate for the names”:
 | **fetched** | The gateway has the certificate the server hands out now (short fingerprint, valid until …). |
 | **outdated** | The gateway still has an older one (different fingerprint). Usually it fetches the new one within minutes. |
 | **not fetched yet** | Ticked, but the gateway reports none yet – e.g. right after switching on or while it is offline. |
-| **gateway too old** | The gateway cannot fetch it yet: from gateway 1.41.0 on. |
+| **gateway too old** | The gateway cannot fetch it yet: from gateway 1.43.0 on (older gateways do not know the device area). |
 
 It comes from the gateway's heartbeat (about once a minute). If a gateway stays
 **outdated for more than 24 hours**, it appears on the dashboard under
@@ -513,8 +537,14 @@ gateway is online and reaches the server through the tunnel. With passing on
 switched off and for gateways that are not ticked, nothing is shown.
 
 **New key:** Once the key was fetched and a device should no longer have it,
-switch passing on off (or untick the device) and click “Get a new key”. The
-server deletes the stored certificate and gets a new one with a new key from
-Let's Encrypt; until it is there (usually 1–3 minutes), the names under the
-zone have no valid certificate. Switching the certificate off entirely also
-ends passing it on.
+untick the device (or switch passing on off) and click “Get a new key”. The
+server deletes the device area's certificate and gets a new one with a new
+key; the devices still allowed fetch it by themselves. The portal, the
+management and routes are not affected. Switching the certificate off entirely
+also ends passing it on.
+
+**After the update to the device area:** If a device fetched the zone's
+certificate before, the server renews its key once by itself – old copies then
+fit nothing the server serves. The activity log and a note in the card say so.
+For 1–3 minutes the portal and the management go back to their previous
+addresses meanwhile.

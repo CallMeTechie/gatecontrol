@@ -65,7 +65,7 @@ function checkDomainPolicy(domain, { currentDomain = null, routeType = 'http' } 
 /**
  * May a route take this name inside the zone of the device names?
  * → { error: null } | { error: 'device_zone' (no wildcard in use) |
- *   'device_zone_level' (not one level below the zone) | 'domain_collision' (reserved name) }
+ *   'device_zone_level' (not one level below the zone) | 'domain_collision' (reserved name, device area) }
  */
 function zoneRouteCheck(host) {
   const vpnNames = require('./vpnNames');
@@ -77,6 +77,10 @@ function zoneRouteCheck(host) {
   if (!label || label.includes('.')) return { error: 'device_zone_level' };
   // gateway, server, gc-server, home (portal) … belong to the server
   if (require('./dns').RESERVED_HOSTNAMES.has(label)) return { error: 'domain_collision' };
+  // the device area of the certificate passed on (services/vpnCert.js): no route there
+  let deviceLabel = null;
+  try { deviceLabel = require('./vpnCert').deviceLabel(); } catch { deviceLabel = null; }
+  if (deviceLabel && label === deviceLabel) return { error: 'domain_collision' };
   return { error: null };
 }
 

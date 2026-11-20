@@ -1,11 +1,13 @@
 'use strict';
 
-// "Zertifikat für die Namen", part 5: passing certificate and key of the
-// wildcard on to devices and gateways — off by default, a list of allowed
-// peers, an explicit risk confirmation, fetching only authenticated and from
-// the peer's VPN address, every fetch logged without the key, a new key after
-// passing it on. The certificate is a throw-away self-signed one (openssl);
-// all names and values are made up.
+// "Zertifikat für die Namen", part 5: passing certificate and key on to
+// devices and gateways — off by default, a list of allowed peers, an explicit
+// risk confirmation, fetching only authenticated and from the peer's VPN
+// address, every fetch logged without the key, a new key after passing it on.
+// Only the device area's wildcard *.<label>.<zone> is handed out, never the
+// main *.<zone>; a main key passed on before is renewed once. The
+// certificates are throw-away self-signed ones (openssl); all names and
+// values are made up.
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -25,7 +27,7 @@ const TOKEN = 'fake-desec-token-0301';
 
 describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => {
   let db; let vpnCert; let vpnNames; let tlsGuard; let license; let config; let gatewayFeatures;
-  let certDir; let keyPem;
+  let certDir; let keyPem; let mainDir; let mainKeyPem;
 
   before(async () => {
     await setup();
@@ -56,15 +58,19 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     assert.equal(vpnNames.save('example.com', 'vpn').ok, true);
     deviceId = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('laptop', 'pk-laptop', '10.8.0.21/32', 1)").run().lastInsertRowid);
     gatewayId = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type) VALUES ('gw-home', 'pk-gw', '10.8.0.2/32', 1, 'gateway')").run().lastInsertRowid);
-    // the wildcard in Caddy's storage, the way Caddy keeps it
-    certDir = path.join(config.caddy.dataDir, 'caddy', 'certificates', 'acme-v02.api.letsencrypt.org-directory', 'wildcard_.vpn.example.com');
-    fs.rmSync(certDir, { recursive: true, force: true });
-    fs.mkdirSync(certDir, { recursive: true });
-    const crt = path.join(certDir, 'wildcard_.vpn.example.com.crt');
-    const key = path.join(certDir, 'wildcard_.vpn.example.com.key');
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', key, '-out', crt,
-      '-days', '60', '-subj', '/CN=*.vpn.example.com'], { stdio: 'ignore' });
-    keyPem = fs.readFileSync(key, 'utf8');
+    db.prepare('UPDATE peers SET hostname = ? WHERE id = ?').run('gw-home', gatewayId);
+    // both wildcards in Caddy's storage, the way Caddy keeps them
+    const stored = (name) => {
+      const dir = path.join(config.caddy.dataDir, 'caddy', 'certificates', 'acme-v02.api.letsencrypt.org-directory', `wildcard_.${name}`);
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { recursive: true });
+      const key = path.join(dir, `wildcard_.${name}.key`);
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', key,
+        '-out', path.join(dir, `wildcard_.${name}.crt`), '-days', '60', '-subj', `/CN=*.${name}`], { stdio: 'ignore' });
+      return { dir, keyPem: fs.readFileSync(key, 'utf8') };
+    };
+    ({ dir: mainDir, keyPem: mainKeyPem } = stored('vpn.example.com'));
+    ({ dir: certDir, keyPem } = stored('geraete.vpn.example.com'));
     const res = await getAgent().put('/api/v1/settings/vpn-cert').set('X-CSRF-Token', getCsrf()).send({ provider: 'desec', credentials: { token: TOKEN } });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     tlsGuard.writeRow('*.vpn.example.com', { state: 'issued', not_after: new Date(Date.now() + 59 * 86400000).toISOString(), issuer: 'Test' });
@@ -104,9 +110,15 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     assert.equal(vpnCert.fetchFor(gatewayId, { ip: '203.0.113.9' }).code, 'not_from_vpn');
     const r = vpnCert.fetchFor(gatewayId, { via: 'gateway', ip: '::ffff:10.8.0.2' });
     assert.equal(r.ok, true);
+    // the device area's key — never the main one
     assert.equal(r.key_pem, keyPem);
+    assert.notEqual(r.key_pem, mainKeyPem);
     assert.match(r.cert_pem, /BEGIN CERTIFICATE/);
-    assert.equal(r.wildcard, '*.vpn.example.com');
+    assert.equal(r.wildcard, '*.geraete.vpn.example.com');
+    assert.equal(r.zone, 'vpn.example.com');
+    assert.equal(r.device_zone, 'geraete.vpn.example.com');
+    assert.equal(r.server_host, 'server.vpn.example.com');
+    assert.equal(r.host, 'gw-home.geraete.vpn.example.com');
     const log = activity().filter((a) => a.event_type === 'tls_vpn_cert_key_fetched');
     assert.equal(log.length, 1);
     assert.ok(!JSON.stringify(log).includes('PRIVATE KEY'));
@@ -114,6 +126,7 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     // the config pull of the allowed gateway names it; no other gateway's config changes
     const s = vpnCert.shareSummary(gatewayId);
     assert.equal(s.fingerprint, r.fingerprint);
+    assert.deepEqual(Object.keys(s).sort(), ['device_zone', 'fingerprint', 'host', 'not_after', 'server_host', 'wildcard', 'zone']);
     assert.equal(vpnCert.shareSummary(deviceId), null);
     assert.deepEqual(gatewayFeatures.configPayload(gatewayId).vpn_cert, s);
   });
@@ -145,24 +158,99 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     assert.ok(session.status === 403 || session.status === 401);
   });
 
-  it('switching off, then a new key: the stored certificate goes, the row waits for the new one', async () => {
+  it('a new key: only the certificate of the device area goes — portal, management and routes keep theirs', async () => {
     await share({ enabled: true, peers: [gatewayId], accept_risk: true });
     assert.equal(vpnCert.fetchFor(gatewayId, { ip: '10.8.0.2' }).ok, true);
+    // while passing on is on: Caddy fetches the new one at once, the gateways follow
     let res = await getAgent().post('/api/v1/settings/vpn-cert/rotate-key').set('X-CSRF-Token', getCsrf());
-    assert.equal(res.status, 409);
-    assert.equal(res.body.code, 'share_on');
-    res = await share({ enabled: false, peers: [] });
-    assert.equal(res.status, 200);
-    assert.equal(res.body.data.share.used, true);
-    assert.equal(vpnCert.fetchFor(gatewayId, { ip: '10.8.0.2' }).code, 'not_shared');
-    res = await getAgent().post('/api/v1/settings/vpn-cert/rotate-key').set('X-CSRF-Token', getCsrf());
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(fs.existsSync(certDir), false);
-    assert.equal(tlsGuard.getRow('*.vpn.example.com').state, 'pending');
+    assert.equal(fs.existsSync(mainDir), true, 'the main wildcard stays');
+    assert.equal(tlsGuard.getRow('*.geraete.vpn.example.com').state, 'pending');
+    assert.equal(tlsGuard.getRow('*.vpn.example.com').state, 'issued');
+    assert.equal(vpnCert.servedZone({ fresh: true }), 'vpn.example.com');
     assert.equal(res.body.data.share.used, false);
-    assert.ok(activity().some((a) => a.event_type === 'tls_vpn_cert_key_rotated'));
+    assert.ok(activity().some((a) => a.event_type === 'tls_vpn_cert_key_rotated' && JSON.parse(a.details).wildcard === '*.geraete.vpn.example.com'));
     res = await getAgent().post('/api/v1/settings/vpn-cert/rotate-key').set('X-CSRF-Token', getCsrf());
     assert.equal(res.body.code, 'rotate_not_needed');
+    assert.equal(vpnCert.fetchFor(gatewayId, { ip: '10.8.0.2' }).code, 'no_certificate');
+  });
+
+  it('Caddy requests the device area only while passing on is on; Caddy serves nothing there', async () => {
+    const caddyConfig = require('../src/services/caddyConfig');
+    const automate = () => (caddyConfig.buildCaddyConfig([]).apps.tls.certificates || {}).automate;
+    assert.deepEqual(automate(), ['*.vpn.example.com']);
+    await share({ enabled: true, peers: [gatewayId], accept_risk: true });
+    assert.deepEqual(automate(), ['*.vpn.example.com', '*.geraete.vpn.example.com']);
+    const pol = caddyConfig.buildCaddyConfig([]).apps.tls.automation.policies[0];
+    assert.deepEqual(pol.subjects, ['*.vpn.example.com', '*.geraete.vpn.example.com']);
+    // no site under the device area: every host matcher of the HTTP app, compared as whole names
+    const hostsOf = (node, out = []) => {
+      if (Array.isArray(node)) node.forEach((n) => hostsOf(n, out));
+      else if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) { if (k === 'host' && Array.isArray(v)) out.push(...v); else hostsOf(v, out); }
+      return out;
+    };
+    const areaOf = (h) => String(h).toLowerCase().split('.').slice(-4).join('.');
+    const siteHosts = hostsOf(caddyConfig.buildCaddyConfig([]).apps.http || {});
+    assert.ok(siteHosts.length > 0, 'the walk finds host matchers');
+    assert.equal(siteHosts.filter((h) => areaOf(h) === 'geraete.vpn.example.com').length, 0, 'no site under the device area');
+    // the TLS guard lists it, pausing it leaves it out
+    assert.ok(tlsGuard.statusFor(['*.geraete.vpn.example.com'])[0]);
+    tlsGuard.writeRow('*.geraete.vpn.example.com', { state: 'paused', paused_reason: 'attempts' });
+    assert.deepEqual(automate(), ['*.vpn.example.com']);
+    await share({ enabled: false, peers: [] });
+    assert.deepEqual(automate(), ['*.vpn.example.com']);
+  });
+
+  it('the device area: a name of its own, renamed only while off; no route and no device there', async () => {
+    let res = await share({ enabled: false, peers: [], device_label: 'Server' });
+    assert.equal(res.body.code, 'device_label_reserved');
+    res = await share({ enabled: false, peers: [], device_label: 'a.b' });
+    assert.equal(res.body.code, 'device_label_invalid');
+    res = await share({ enabled: false, peers: [], device_label: 'gw-home' });
+    assert.equal(res.body.code, 'device_label_taken', 'a device has that name');
+    res = await share({ enabled: true, peers: [gatewayId], accept_risk: true, device_label: 'devices' });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.data.share.device_zone, 'devices.vpn.example.com');
+    assert.equal(res.body.data.share.wildcard, '*.devices.vpn.example.com');
+    res = await share({ enabled: true, peers: [gatewayId], device_label: 'geraete' });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'share_on');
+    // routes there are refused, a device cannot take the name
+    const { checkDomainPolicy } = require('../src/services/routeDomainPolicy');
+    assert.equal(checkDomainPolicy('devices.vpn.example.com').error, 'domain_collision');
+    assert.equal(require('../src/services/vpnNames').deviceNameCollision('devices'), 'devices.vpn.example.com');
+    // dnsmasq answers <device>.<area>.<zone> with the tunnel address; mqtt & co. stay free
+    db.prepare('UPDATE peers SET hostname = ? WHERE id = ?').run('mqtt', deviceId);
+    const hosts = require('../src/services/dns').renderHostsContent();
+    assert.match(hosts, /^10\.8\.0\.2\tgw-home\.devices\.vpn\.example\.com$/m);
+    const names = new Set(hosts.split('\n').filter((l) => l && !l.startsWith('#')).flatMap((l) => l.split('\t').slice(1)));
+    assert.equal(names.has('gw-home.devices.vpn.example.com'), true);
+    assert.equal(names.has('mqtt.devices.vpn.example.com'), false);
+    assert.equal(names.has('mqtt.vpn.example.com'), true, 'the device keeps its name in the zone');
+    await share({ enabled: false, peers: [], device_label: 'geraete' });
+    assert.equal(vpnCert.deviceLabel(), 'geraete');
+  });
+
+  it('a main key passed on before the device area: renewed once, said in the log and the card', async () => {
+    const settings = require('../src/services/settings');
+    settings.set(vpnCert.KEY.shareUsed, '1');
+    settings.set(vpnCert.KEY.mainKeyMigrated, '');
+    assert.equal(await vpnCert.migrateSharedMainKey(), true);
+    assert.equal(fs.existsSync(mainDir), false);
+    assert.equal(tlsGuard.getRow('*.vpn.example.com').state, 'pending');
+    assert.equal(settings.get(vpnCert.KEY.shareUsed, ''), '');
+    const log = activity().filter((a) => a.event_type === 'tls_vpn_cert_main_key_renewed');
+    assert.equal(log.length, 1);
+    assert.match(log[0].message, /\*\.geraete\.vpn\.example\.com/);
+    assert.ok(vpnCert.view().share.main_key_renewed_at);
+    // once only
+    settings.set(vpnCert.KEY.shareUsed, '1');
+    assert.equal(await vpnCert.migrateSharedMainKey(), false);
+    // a server whose main key never left: nothing renewed
+    settings.set(vpnCert.KEY.mainKeyMigrated, '');
+    settings.set(vpnCert.KEY.shareUsed, '');
+    assert.equal(await vpnCert.migrateSharedMainKey(), false);
   });
 
   it('switching the certificate off ends passing on', async () => {

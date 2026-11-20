@@ -297,6 +297,13 @@ function deviceNameCollision(name) {
   for (const f of fqdns) {
     if (f === ph || f === mh) return f;
   }
+  // the device area of the certificate passed on (services/vpnCert.js): <label>.<zone> is not a device
+  const s = current();
+  if (s.custom) {
+    let label = null;
+    try { label = require('./vpnCert').deviceLabel(); } catch { label = null; }
+    if (label && norm(name) === label) return `${label}.${s.primary}`;
+  }
   const marks = fqdns.map(() => '?').join(',');
   const row = getDb().prepare(`SELECT domain FROM routes WHERE lower(domain) IN (${marks}) LIMIT 1`).get(...fqdns);
   return row ? norm(row.domain) : null;

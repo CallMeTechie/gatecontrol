@@ -234,58 +234,125 @@ Die Karte hat die Ansichten `locked`, `nozone`, `off`, `setup`, `pending`,
 
 ### Weitergabe an Geräte und Gateways
 
-Zertifikat und privater Schlüssel des Wildcards für ausgewählte Peers, für
-Dienste, die direkt auf einem Gerät oder Gateway laufen. Standard aus, nur
-Admin-Sitzung; Handbuch 2.12 „Zertifikat an Geräte weitergeben“.
+Zertifikat und privater Schlüssel für ausgewählte Peers, für Dienste, die
+direkt auf einem Gerät oder Gateway laufen. Standard aus, nur Admin-Sitzung;
+Handbuch 2.12 „Zertifikat an Geräte weitergeben“.
+
+**Nie das Haupt-Wildcard.** `*.<zone>` (Portal, Verwaltung, Routen) verlässt
+den Server nicht. Für die Weitergabe holt er ein zweites Wildcard für den
+**Geräte-Bereich** `*.<label>.<zone>` – `label` Standard `geraete`
+(`vpnCert.DEFAULT_DEVICE_LABEL`), einstellbar in der Karte. Beispiel: Zone
+`vpn.example.com` → Geräte-Bereich `geraete.vpn.example.com` → weitergegeben
+wird `*.geraete.vpn.example.com`.
 
 | Teil | Wo |
 |---|---|
-| Schalter, Liste, Abruf, neuer Schlüssel | `vpnCert.setShare`, `fetchFor`, `shareSummary`, `rotateKey`, `shareRefresh` |
-| Admin-API `PUT /api/v1/settings/vpn-cert/share` `{ enabled, peers: [peerId…], accept_risk }`, `POST …/rotate-key` | `src/routes/api/settings/vpnCert.js` |
+| Geräte-Bereich (Name, Prüfung, Wildcard) | `vpnCert.deviceLabel`, `deviceZone`, `deviceWildcard`, `deviceLabelProblem`, `inDeviceArea` |
+| Schalter, Liste, Abruf, neuer Schlüssel | `vpnCert.setShare`, `fetchFor`, `shareSummary`, `rotateKey`, `renewDevice`, `shareRefresh` |
+| Einmalige Erneuerung des Haupt-Schlüssels | `vpnCert.migrateSharedMainKey` (aus `tlsGuard.start`) |
+| Admin-API `PUT /api/v1/settings/vpn-cert/share` `{ enabled, peers: [peerId…], accept_risk, device_label }`, `POST …/rotate-key` | `src/routes/api/settings/vpnCert.js` |
 | Gateway `GET /api/v1/gateway/vpn-cert` (Gateway-Token) | `src/routes/api/gateway.js` |
 | App `GET /api/v1/client/vpn-cert` (Token mit Scope `client`, an das Gerät gebunden, Maschinenbindung) | `src/routes/api/client/vpnCert.js` |
 
+**Geräte-Bereich:**
+- `label`: ein DNS-Label (`[a-z0-9-]`, höchstens 63 Zeichen; sonst
+  `device_label_invalid`), kein fester Name des Servers (`home`, `server`,
+  `gc-server`, `gateway` …, `device_label_reserved`), kein Gerätename und kein
+  Ort einer Route (`<label>.<zone>` oder darunter, `device_label_taken`).
+  Umbenennen nur bei ausgeschalteter Weitergabe (oder im Aufruf, der sie aus-
+  oder einschaltet; sonst `409 share_on`). Einstellung `vpn_cert.device_label`
+  (leer = Standard).
+- **Caddy** fordert `*.<label>.<zone>` nur bei eingeschalteter Weitergabe an:
+  gleiche Policy wie das Haupt-Wildcard (`subjects: [*.<zone>, *.<label>.<zone>]`,
+  derselbe Anbieter, dieselbe Weiterleitung `override_domain`),
+  `certificates.automate` mit beiden. Caddy liefert unter dem Geräte-Bereich
+  **keine** Seite aus; Routen dort lehnt `routeDomainPolicy` ab
+  (`domain_collision`), ein Gerät kann `label` nicht als Namen bekommen
+  (`vpnNames.deviceNameCollision`). TLS-Wächter: eigene Zeile
+  `*.<label>.<zone>` in `tls_status` (Liste „Domains & Zertifikate“,
+  Fehlversuche, Anhalten – angehalten fordert Caddy es nicht mehr an,
+  „Erneut versuchen“ → `renewDevice`).
+- **Weiterleitung (CNAME):** Die Challenge des Geräte-Bereichs heißt
+  `_acme-challenge.<label>.<zone>` und braucht beim Domain-Anbieter einen
+  eigenen CNAME **auf dasselbe Ziel** wie `_acme-challenge.<zone>` (bei
+  acme-dns auf dieselbe `fulldomain`). Die Karte zeigt den Eintrag
+  (`share.cname { name, target }`).
+- **Testen:** Bei eingeschalteter Weitergabe (oder `devices: true` im
+  Testaufruf) läuft `caddy gc-dnstest` nach dem ersten Durchlauf ein zweites
+  Mal mit `record`/`lookup` des Geräte-Bereichs; Schritt `devices` (`ok`,
+  `fail` mit `code`, sonst `skip`), Testergebnis `devices: { zone, record,
+  lookup }`. Schlägt nur der zweite fehl, ist `result.code` `devices_<code>`.
+- **DNS:** dnsmasq beantwortet zusätzlich `<gerät>.<label>.<zone>` mit der
+  Tunnel-Adresse des Geräts (eigene Zeile in der Hosts-Datei, solange die
+  Zone eine eigene Domain ist). Frei bleiben im Bereich
+  `vpnCert.DEVICE_AREA_RESERVED` (`mqtt`, `www`, `ca`) – kein Gerät bekommt
+  diese Namen dort.
+
 **Einstellungen:** `vpn_cert.share_enabled`, `vpn_cert.share_peers` (JSON-Liste
-der Peer-IDs), `vpn_cert.share_used` (ein Schlüssel wurde abgeholt),
-`vpn_cert.share_fingerprint`, `vpn_cert.share_fingerprint_at` (seit wann der
-aktuelle Fingerabdruck zum Abholen bereitsteht). Einschalten nur mit `accept_risk: true`
-(sonst `risk_not_accepted`) und bekannten Peers (sonst `peers_invalid`);
-„Zertifikat ausschalten“ beendet die Weitergabe.
+der Peer-IDs), `vpn_cert.share_used` (ein Schlüssel des Geräte-Bereichs wurde
+abgeholt), `vpn_cert.share_fingerprint`, `vpn_cert.share_fingerprint_at` (seit
+wann der aktuelle Fingerabdruck zum Abholen bereitsteht), `vpn_cert.device_label`,
+`vpn_cert.main_key_migrated`, `vpn_cert.main_key_renewed_at`. Einschalten nur
+mit `accept_risk: true` (sonst `risk_not_accepted`) und bekannten Peers (sonst
+`peers_invalid`); „Zertifikat ausschalten“ beendet die Weitergabe.
 
 **Abruf** (Gateway und App gleich):
 
 ```
-200 { ok, wildcard, zone, cert_pem, key_pem, not_after, fingerprint }
+200 { ok, wildcard, zone, device_zone, server_host, host, cert_pem, key_pem, not_after, fingerprint }
 403 { ok: false, error: 'not_allowed' | 'not_from_vpn' }   (App zusätzlich token_required, scope_required, not_registered)
 404 { ok: false, error: 'not_shared' | 'no_certificate' }
 ```
 
+| Feld | Inhalt | Beispiel |
+|---|---|---|
+| `wildcard` | das weitergegebene Wildcard – **immer das des Geräte-Bereichs** | `*.geraete.vpn.example.com` |
+| `zone` | die Zone der VPN-Namen (Haupt-Wildcard, nie weitergegeben) | `vpn.example.com` |
+| `device_zone` | der Geräte-Bereich = `wildcard` ohne `*.` | `geraete.vpn.example.com` |
+| `server_host` | Name, unter dem der Server den Abruf beantwortet (SNI/`Host`, Haupt-Wildcard) | `server.vpn.example.com` |
+| `host` | der eigene Name dieses Peers im Geräte-Bereich (`<hostname>.<device_zone>`), `null` ohne Gerätenamen oder bei einem freigehaltenen Namen | `gw-home.geraete.vpn.example.com` |
+| `fingerprint` | SHA-256 des Zertifikats (DER, hex, klein) | |
+| `not_after` | Ablauf (ISO 8601) | |
+
+Ein Dienst auf dem Gerät (z. B. die HTTPS-Statusseite eines Gateways) nutzt
+`host` als Namen; er liegt unter `wildcard` und löst im VPN auf die
+Tunnel-Adresse des Peers auf. Der Abruf geht an die VPN-Adresse des Servers
+mit SNI/`Host` = `server_host` – **nicht** `server.` + Bereich aus `wildcard`
+(das deckt das Zertifikat des Servers nicht ab).
+
 `Cache-Control: no-store`. Die Quelladresse muss die VPN-Adresse des Peers sein
-(`allowed_ips`), sonst `not_from_vpn`. `fingerprint` ist SHA-256 des
-Zertifikats (DER, hex, klein). Jeder erfolgreiche Abruf schreibt
-`tls_vpn_cert_key_fetched` ins Protokoll (Peer, Weg, Fingerabdruck – nie
-den Schlüssel); Schalter und Liste schreiben `tls_vpn_cert_share_on|off|peers`.
+(`allowed_ips`), sonst `not_from_vpn`. Jeder erfolgreiche Abruf schreibt
+`tls_vpn_cert_key_fetched` ins Protokoll (Peer, Weg, Wildcard, Fingerabdruck –
+nie den Schlüssel); Schalter und Liste schreiben `tls_vpn_cert_share_on|off|peers`,
+ein neuer Name des Bereichs `tls_vpn_cert_device_area`.
 
 **Bekanntgabe:** Erlaubte Gateways bekommen in der Konfiguration
-(`GET /api/v1/gateway/config`) `vpn_cert: { wildcard, fingerprint, not_after }`;
+(`GET /api/v1/gateway/config`) `vpn_cert: { wildcard, zone, device_zone,
+server_host, host, fingerprint, not_after }` (die Felder wie oben, ohne Schlüssel);
 andere nicht. Apps lesen in `GET /api/v1/client/permissions` das Feld
 `vpnCert` (dasselbe Objekt oder `null`). Ändert sich der Fingerabdruck
 (Erneuerung, neuer Schlüssel), meldet der Server die Änderung an die Gateways
 und `config_changed` an die Apps; sie holen dann neu.
 
+**Vorausgesetztes Gateway:** gatecontrol-gateway **1.43.0** (Capability
+`vpn-cert-devices`): holt bei `server_host` (ohne das Feld, bei älteren
+Servern, wie bisher `server.<zone aus wildcard>`) und prüft, dass `wildcard`
+im Zertifikat steht. Gateways 1.41/1.42 (nur `vpn-cert`) würden
+`server.<device_zone>` fragen und scheitern – sie gelten als `too_old`.
+
 **Abgeholt je Gateway** (`vpnCert.gatewayCertStates`, `gatewayCertStatus`,
-`staleGateways`): Ein Gateway ab 1.41.0 nennt im Heartbeat die Capability
-`vpn-cert` und meldet `telemetry.vpn_cert: { fingerprint, not_after }` (`null` =
-nichts gespeichert, gatecontrol-gateway `docs/vpn-cert.md`); der Server liest es
-aus `gateway_meta.last_health`. Nur bei eingeschalteter Weitergabe und nur für
-Gateways in „Darf abholen“:
+`staleGateways`): Ein Gateway nennt im Heartbeat die Capabilities `vpn-cert`
+und (ab 1.43.0) `vpn-cert-devices` und meldet `telemetry.vpn_cert:
+{ fingerprint, not_after }` (`null` = nichts gespeichert, gatecontrol-gateway
+`docs/vpn-cert.md`); der Server liest es aus `gateway_meta.last_health`. Nur bei
+eingeschalteter Weitergabe und nur für Gateways in „Darf abholen“:
 
 | `state` | Bedingung |
 |---|---|
 | `fetched` | gemeldeter Fingerabdruck = aktueller (oder kein aktuelles Zertifikat zum Vergleich) |
 | `stale` | gemeldeter Fingerabdruck ≠ aktueller; `stale_since` = später von `notBefore` des aktuellen Zertifikats und `vpn_cert.share_fingerprint_at` |
-| `pending` | Capability da, aber nichts (Gültiges) gemeldet – oder noch nie ein Heartbeat |
-| `too_old` | Heartbeat mit `gateway_version`, aber ohne Capability `vpn-cert` (`min_version` 1.41.0) |
+| `pending` | Capabilities da, aber nichts (Gültiges) gemeldet – oder noch nie ein Heartbeat |
+| `too_old` | Heartbeat mit `gateway_version`, aber ohne `vpn-cert` und `vpn-cert-devices` (`min_version` 1.43.0) |
 
 `vpn_cert.share_fingerprint_at` setzen das Einschalten der Weitergabe und
 `shareRefresh` bei neuem Fingerabdruck; „Zertifikat ausschalten“ leert es.
@@ -297,10 +364,19 @@ Kürzel in „Darf abholen“ (`public/js/settings.js`). Dashboard-Problem
 `gateway_vpn_cert_stale` (Warnung, Link `/gateways#gw/<id>`) erst nach
 `STALE_PROBLEM_MS` = 24 h ab `stale_since` (`services/dashboardProblems.js`).
 
-**Neuer Schlüssel** (`POST …/rotate-key`): nur bei ausgeschalteter Weitergabe
-(`share_on`) und nur, wenn ein Schlüssel abgeholt wurde (`rotate_not_needed`).
-Löscht das Zertifikat im Caddy-Speicher, setzt die Zeile auf `pending` und
-lässt Caddy neu ausstellen (neuer Schlüssel).
+**Neuer Schlüssel** (`POST …/rotate-key`): nur, wenn ein Schlüssel abgeholt
+wurde (`rotate_not_needed`). Löscht das Zertifikat des **Geräte-Bereichs** im
+Caddy-Speicher; bei eingeschalteter Weitergabe geht seine Zeile auf `pending`
+und Caddy stellt sofort neu aus (die erlaubten Geräte holen den neuen
+Schlüssel), sonst beim nächsten Einschalten. Das Haupt-Wildcard bleibt.
+
+**Umstieg (einmalig):** War vor dem Update mit dem Geräte-Bereich der
+Haupt-Schlüssel abgeholt worden (`vpn_cert.share_used`), erneuert der Server
+beim ersten Start einmal das Haupt-Wildcard wie „Neuen Schlüssel holen“
+(`migrateSharedMainKey`): Zertifikat im Speicher weg, Zeile `pending`,
+Protokoll `tls_vpn_cert_main_key_renewed`, Hinweis in der Karte 30 Tage
+(`share.main_key_renewed_at`). Bis das neue da ist (meist 1–3 Minuten), gehen
+Portal und Verwaltung auf ihre bisherigen Adressen.
 
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 

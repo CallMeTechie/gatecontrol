@@ -1,7 +1,8 @@
 'use strict';
 
 // "Zertifikat für die Namen", passing on: has a gateway in "Darf abholen"
-// fetched the wildcard? The gateway (since 1.41.0, capability `vpn-cert`)
+// fetched the device area's wildcard? The gateway (since 1.43.0, capabilities
+// `vpn-cert` + `vpn-cert-devices`)
 // reports telemetry.vpn_cert { fingerprint, not_after } in its heartbeat;
 // the server compares it with the certificate it hands out now:
 // abgeholt · veraltet · noch nicht abgeholt · Gateway zu alt. "veraltet" for
@@ -66,12 +67,12 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
     deviceId = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('laptop', 'pk-laptop', '10.8.0.21/32', 1)").run().lastInsertRowid);
     gatewayId = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type) VALUES ('gw-home', 'pk-gw', '10.8.0.2/32', 1, 'gateway')").run().lastInsertRowid);
     otherGwId = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type) VALUES ('gw-garage', 'pk-gw2', '10.8.0.3/32', 1, 'gateway')").run().lastInsertRowid);
-    const certDir = path.join(config.caddy.dataDir, 'caddy', 'certificates', 'acme-v02.api.letsencrypt.org-directory', 'wildcard_.vpn.example.com');
+    const certDir = path.join(config.caddy.dataDir, 'caddy', 'certificates', 'acme-v02.api.letsencrypt.org-directory', 'wildcard_.geraete.vpn.example.com');
     fs.rmSync(certDir, { recursive: true, force: true });
     fs.mkdirSync(certDir, { recursive: true });
-    const crt = path.join(certDir, 'wildcard_.vpn.example.com.crt');
+    const crt = path.join(certDir, 'wildcard_.geraete.vpn.example.com.crt');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
-      '-keyout', path.join(certDir, 'wildcard_.vpn.example.com.key'), '-out', crt, '-days', '60', '-subj', '/CN=*.vpn.example.com'], { stdio: 'ignore' });
+      '-keyout', path.join(certDir, 'wildcard_.geraete.vpn.example.com.key'), '-out', crt, '-days', '60', '-subj', '/CN=*.geraete.vpn.example.com'], { stdio: 'ignore' });
     const x509 = new crypto.X509Certificate(fs.readFileSync(crt));
     currentFp = x509.fingerprint256.replace(/:/g, '').toLowerCase();
     notAfter = new Date(x509.validTo).toISOString();
@@ -82,7 +83,7 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
   });
 
   it('passing on off: nothing is shown, not on the gateway, not in the card', async () => {
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], null));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], null));
     assert.equal(vpnCert.gatewayCertStates().size, 0);
     assert.ok(vpnCert.view().share.peers.every((p) => p.cert === null));
     const res = await getAgent().get('/api/v1/gateways');
@@ -91,8 +92,8 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
   });
 
   it('only gateways in "Darf abholen" — no devices, no other gateways', async () => {
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], null));
-    gatewayMeta(otherGwId, heartbeat('1.41.0', ['vpn-cert'], null));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], null));
+    gatewayMeta(otherGwId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], null));
     const res = await share({ enabled: true, peers: [gatewayId, deviceId], accept_risk: true });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const states = vpnCert.gatewayCertStates();
@@ -116,26 +117,29 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
     gatewayMeta(gatewayId, heartbeat('1.40.2', ['udp-routes']));
     let s = vpnCert.gatewayCertStates().get(gatewayId);
     assert.equal(s.state, 'too_old');
-    assert.equal(s.min_version, '1.41.0');
+    assert.equal(s.min_version, '1.43.0');
+    // 1.41/1.42 fetch the main wildcard only (server.<area>): too old for the device area
+    gatewayMeta(gatewayId, heartbeat('1.42.0', ['udp-routes', 'vpn-cert'], null));
+    assert.equal(stateOf(gatewayId), 'too_old');
     // able, nothing stored
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['udp-routes', 'vpn-cert'], null));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['udp-routes', 'vpn-cert', 'vpn-cert-devices'], null));
     assert.equal(stateOf(gatewayId), 'pending');
     // the current one (fingerprint as the gateway writes it, also with colons/upper case)
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: currentFp.toUpperCase().match(/../g).join(':'), not_after: notAfter }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: currentFp.toUpperCase().match(/../g).join(':'), not_after: notAfter }));
     s = vpnCert.gatewayCertStates().get(gatewayId);
     assert.equal(s.state, 'fetched');
     assert.equal(s.fingerprint, currentFp);
     assert.equal(s.not_after, notAfter);
     assert.equal(s.stale_since, null);
     // an older one
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: OTHER_FP, not_after: notAfter }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: OTHER_FP, not_after: notAfter }));
     s = vpnCert.gatewayCertStates().get(gatewayId);
     assert.equal(s.state, 'stale');
     assert.equal(s.fingerprint, OTHER_FP);
     assert.equal(s.current_fingerprint, currentFp);
     assert.ok(Date.parse(s.stale_since) > Date.now() - 60000, 'counts from switching on');
     // garbage instead of a fingerprint: nothing usable reported
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: 'not-a-fingerprint' }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: 'not-a-fingerprint' }));
     assert.equal(stateOf(gatewayId), 'pending');
     db.prepare("UPDATE gateway_meta SET last_health = '{broken' WHERE peer_id = ?").run(gatewayId);
     assert.equal(stateOf(gatewayId), 'pending');
@@ -143,7 +147,7 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
 
   it('"veraltet" is a dashboard problem only after 24 h', async () => {
     await share({ enabled: true, peers: [gatewayId], accept_risk: true });
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: OTHER_FP, not_after: notAfter }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: OTHER_FP, not_after: notAfter }));
     const soon = await problems.list({ now: Date.now() + 2 * 3600 * 1000, access: null });
     assert.equal(soon.problems.some((p) => p.kind === 'gateway_vpn_cert_stale'), false, 'a short delay is no problem');
     const later = await problems.list({ now: Date.now() + DAY + 60000, access: null });
@@ -155,7 +159,7 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
     assert.equal(row.vpn_cert.current_fingerprint, currentFp);
     assert.ok(row.since);
     // fetched, too old or not yet fetched: never a problem
-    for (const h of [heartbeat('1.41.0', ['vpn-cert'], { fingerprint: currentFp, not_after: notAfter }), heartbeat('1.40.0', []), heartbeat('1.41.0', ['vpn-cert'], null)]) {
+    for (const h of [heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: currentFp, not_after: notAfter }), heartbeat('1.40.0', []), heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], null)]) {
       gatewayMeta(gatewayId, h);
       const p = await problems.list({ now: Date.now() + 3 * DAY, access: null });
       assert.equal(p.problems.some((x) => x.kind === 'gateway_vpn_cert_stale'), false);
@@ -164,7 +168,7 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
 
   it('a new fingerprint starts the 24 h anew', async () => {
     await share({ enabled: true, peers: [gatewayId], accept_risk: true });
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: OTHER_FP, not_after: notAfter }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: OTHER_FP, not_after: notAfter }));
     // switched on two days ago, the certificate changed just now
     db.prepare("UPDATE settings SET value = ? WHERE key = 'vpn_cert.share_fingerprint_at'").run(new Date(Date.now() - 2 * DAY).toISOString());
     assert.equal(vpnCert.staleGateways(Date.now() + DAY + 60000).length, 1);
@@ -176,7 +180,7 @@ describe('Zertifikat für die Namen: abgeholt je Gateway', () => {
 
   it('passing on switched off: gone again; "Ausschalten" forgets the time', async () => {
     await share({ enabled: true, peers: [gatewayId], accept_risk: true });
-    gatewayMeta(gatewayId, heartbeat('1.41.0', ['vpn-cert'], { fingerprint: OTHER_FP, not_after: notAfter }));
+    gatewayMeta(gatewayId, heartbeat('1.43.0', ['vpn-cert', 'vpn-cert-devices'], { fingerprint: OTHER_FP, not_after: notAfter }));
     await share({ enabled: false, peers: [gatewayId] });
     assert.equal(vpnCert.gatewayCertStates().size, 0);
     assert.equal(vpnCert.staleGateways(Date.now() + 3 * DAY).length, 0);

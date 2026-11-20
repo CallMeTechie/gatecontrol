@@ -31,6 +31,7 @@ process.stdin.on('data', (c) => { raw += c; });
 process.stdin.on('end', () => {
   const req = JSON.parse(raw);
   fs.writeFileSync(process.argv[1] + '.request.json', raw); // the server passes no environment but PATH/HOME
+  fs.appendFileSync(process.argv[1] + '.requests.log', raw.replace(/\\n/g, ' ') + '\\n');
   const vals = [];
   for (const [k, v] of Object.entries(req.provider)) {
     if (k === 'name') continue;
@@ -388,7 +389,8 @@ describe('Zertifikat für die Namen', () => {
       assert.equal(res.status, 202, JSON.stringify(res.body));
       const t = await waitTest();
       assert.equal(t.result.ok, true, JSON.stringify(t));
-      assert.deepEqual(t.steps.map((s) => s.status), ['ok', 'ok', 'ok', 'ok', 'ok']);
+      assert.deepEqual(t.steps.map((s) => s.status), ['ok', 'ok', 'ok', 'ok', 'ok', 'skip'], 'the device area only while passing on is on');
+      assert.equal(t.devices, null);
       assert.equal(t.result.propagation_ms, 42000);
       assert.equal(t.result.suggested_delay, 80);
       const req = JSON.parse(fs.readFileSync(stubOut, 'utf8'));
@@ -403,6 +405,41 @@ describe('Zertifikat für die Namen', () => {
       const last = settings.get(vpnCert.KEY.lastTest, '');
       assert.ok(last.includes('"ok":true'));
       assert.ok(!last.includes(NETCUP.api_key));
+    });
+
+    it('while passing on is on: once more at the device area — its own CNAME to the same target', async () => {
+      zone();
+      const log = stubPath + '.requests.log';
+      fs.rmSync(log, { force: true });
+      settings.set(vpnCert.KEY.share, '1');
+      try {
+        await api().post('/api/v1/settings/vpn-cert/test').set('X-CSRF-Token', getCsrf())
+          .send({ provider: 'desec_delegated', credentials: { token: DESEC_TOKEN }, delegate: 'vpn-example.dedyn.example.net' });
+        let t = await waitTest();
+        assert.equal(t.result.ok, true, JSON.stringify(t));
+        assert.deepEqual(t.steps.map((x) => x.status), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+        assert.deepEqual(t.devices, { zone: 'geraete.vpn.example.com', record: '_acme-challenge.vpn-example.dedyn.example.net', lookup: '_acme-challenge.geraete.vpn.example.com' });
+        const reqs = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+        assert.deepEqual(reqs.map((r) => [r.record, r.lookup]), [
+          ['_acme-challenge.vpn-example.dedyn.example.net', '_acme-challenge.vpn.example.com'],
+          ['_acme-challenge.vpn-example.dedyn.example.net', '_acme-challenge.geraete.vpn.example.com'],
+        ]);
+        assert.notEqual(reqs[0].value, reqs[1].value);
+        // without forwarding the record is written at the device area's challenge itself; a failure there fails the test
+        vpnCert._resetForTest();
+        settings.set(vpnCert.KEY.deviceLabel, 'fail-area');
+        await api().post('/api/v1/settings/vpn-cert/test').set('X-CSRF-Token', getCsrf()).send({ provider: 'netcup', credentials: NETCUP });
+        t = await waitTest();
+        assert.equal(t.result.ok, false);
+        assert.equal(t.result.code, 'devices_credentials');
+        const dev = t.steps.find((x) => x.step === 'devices');
+        assert.equal(dev.status, 'fail');
+        assert.equal(dev.detail, '_acme-challenge.fail-area.vpn.example.com');
+        assert.ok(!JSON.stringify(t).includes(NETCUP.api_key), 'values redacted');
+      } finally {
+        settings.set(vpnCert.KEY.share, '');
+        settings.set(vpnCert.KEY.deviceLabel, '');
+      }
     });
 
     it('forwarding and acme-dns: the record lands at the CNAME target, the challenge name is the lookup', async () => {

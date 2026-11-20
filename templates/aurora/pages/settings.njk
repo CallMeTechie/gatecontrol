@@ -525,7 +525,17 @@
       </div>
       <div id="st-vc-share" data-vc-show="active">
         {{ switchRow('st-vc-share-on', 'vc-share', t('st.vc.share'), t('st.vc.share_hint')) }}
+        <p class="stx-box vc-box" data-tone="warn" id="st-vc-share-migrated" hidden></p>
         <p class="stx-box vc-box" data-tone="crit" id="st-vc-share-risk"></p>
+        <div id="st-vc-share-area" hidden>
+          {{ textRow('st-vc-share-label', 'vc-share-label', t('st.vc.devices_label'), t('st.vc.devices_label_hint'), mono=true, width='sm', maxlength=63) }}
+          <p class="stx-box vc-box" data-tone="info" id="st-vc-share-area-note"></p>
+          <p class="stx-box vc-box" data-tone="warn" id="st-vc-share-cname" hidden></p>
+        </div>
+        <div class="st-row st-row-read" id="st-vc-share-cert-row" hidden>
+          <div class="st-row-text"><span class="st-label">{{ t('st.vc.devices_cert') }}</span><span class="st-hint">{{ t('st.vc.devices_cert_hint') }}</span></div>
+          <div class="st-row-ctl"><span class="st-read" id="st-vc-share-cert"></span></div>
+        </div>
         <div class="st-row st-row-stack" data-st-row="vc-share-peers" id="st-vc-share-peers-row" hidden>
           <div class="st-row-text"><span class="st-label" id="st-vc-share-peers-label">{{ t('st.vc.share_peers') }}</span><span class="st-hint">{{ t('st.vc.share_peers_hint') }}</span>
             <span class="st-err" id="st-vc-share-peers-err" role="alert" hidden></span></div>

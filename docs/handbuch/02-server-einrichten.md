@@ -485,21 +485,49 @@ die neue Adresse“** ein (Standard aus, nur Admins), zeigen sie auf
 
 ### Zertifikat an Geräte weitergeben
 
-Läuft ein Dienst direkt auf einem Gerät oder Gateway und soll selbst mit dem
-Wildcard-Zertifikat antworten (statt über eine Route des Servers), kann der
-Server Zertifikat **und privaten Schlüssel** an ausgewählte Geräte geben. Das
-ist **standardmäßig aus** und nur für Admins einstellbar.
+Läuft ein Dienst direkt auf einem Gerät oder Gateway und soll selbst mit einem
+gültigen Zertifikat antworten (statt über eine Route des Servers), kann der
+Server ein Zertifikat **und seinen privaten Schlüssel** an ausgewählte Geräte
+geben. Das ist **standardmäßig aus** und nur für Admins einstellbar.
 
-> **Risiko:** Der Schlüssel gilt für jeden Namen unter der Zone. Wer ihn hat,
-> kann sich im VPN als Portal, Verwaltung oder jede Route unter der Zone
-> ausgeben. Gib ihn nur an Geräte, denen du voll vertraust. Einmal abgeholt,
-> lässt er sich nicht zurückholen – nur durch einen neuen Schlüssel ersetzen.
+**Weitergegeben wird nie `*.vpn.example.com`.** Das Zertifikat von Portal,
+Verwaltung und Routen bleibt auf dem Server. Für die Geräte holt der Server ein
+zweites Zertifikat für einen eigenen **Geräte-Bereich**, Standardname
+`geraete`: `*.geraete.vpn.example.com`. Ein Gerät antwortet damit unter seinem
+Namen in diesem Bereich – das NAS `nas` zum Beispiel unter
+`https://nas.geraete.vpn.example.com`. Der Server beantwortet diese Namen im
+VPN mit der Tunnel-Adresse des Geräts. `mqtt`, `www` und `ca` bleiben im
+Bereich frei.
+
+> **Risiko:** Der Schlüssel gilt für jeden Namen unter
+> `geraete.vpn.example.com`. Wer ihn hat, kann sich im VPN als jedes Gerät in
+> diesem Bereich ausgeben. Portal, Verwaltung und Routen sind nicht betroffen.
+> Gib ihn nur an Geräte, denen du voll vertraust. Einmal abgeholt, lässt er
+> sich nicht zurückholen – nur durch einen neuen Schlüssel ersetzen.
 
 1. In der Karte „Zertifikat für die Namen“ (Zertifikat gültig) schaltest du
    „Zertifikat und Schlüssel an Geräte weitergeben“ ein.
-2. Unter „Darf abholen“ hakst du die Geräte und Gateways an, die es bekommen
+2. Unter „Geräte-Bereich“ lässt du `geraete` stehen oder wählst einen anderen
+   Namen (ein Wort aus Kleinbuchstaben, Ziffern und Bindestrich; kein
+   Gerätename, kein fester Name wie `home` oder `server`, keine Route). Ändern
+   lässt er sich nur, solange die Weitergabe aus ist.
+3. Unter „Darf abholen“ hakst du die Geräte und Gateways an, die es bekommen
    sollen.
-3. Beim Speichern bestätigst du den Risikohinweis.
+4. Beim Speichern bestätigst du den Risikohinweis. Der Server holt das
+   Zertifikat des Geräte-Bereichs mit demselben DNS-Anbieter (meist 1–3
+   Minuten); die Zeile „Geräte-Zertifikat“ zeigt, wann es da ist.
+
+**Mit Weiterleitung (CNAME):** Der Geräte-Bereich hat eine eigene
+Challenge. Trag bei deinem Domain-Anbieter einmal zusätzlich ein – auf
+**dasselbe Ziel** wie den ersten Eintrag:
+
+```
+_acme-challenge.geraete.vpn.example.com.  CNAME  _acme-challenge.vpn-example.dedyn.io.
+```
+
+Die Karte zeigt den genauen Eintrag. „Testen“ prüft ihn mit, solange die
+Weitergabe an ist (Schritt „Geräte-Bereich“). Ohne Weiterleitung ist nichts
+weiter einzutragen.
 
 Abholen darf nur ein angehaktes Gerät, angemeldet (Gateway mit seinem Token,
 App mit einem an das Gerät gebundenen Token) und nur über seine eigene
@@ -517,7 +545,7 @@ Software“) die Zeile „Zertifikat für die Namen“:
 | **abgeholt** | Das Gateway hat das Zertifikat, das der Server gerade ausgibt (Fingerabdruck gekürzt, gültig bis …). |
 | **veraltet** | Das Gateway hat noch ein älteres (anderer Fingerabdruck). Meist holt es das neue binnen Minuten. |
 | **noch nicht abgeholt** | Angehakt, aber das Gateway meldet noch keins – z. B. direkt nach dem Einschalten oder solange es offline ist. |
-| **Gateway zu alt** | Das Gateway kann es noch nicht abholen: ab Gateway 1.41.0. |
+| **Gateway zu alt** | Das Gateway kann es noch nicht abholen: ab Gateway 1.43.0 (ältere Gateways kennen den Geräte-Bereich nicht). |
 
 Die Angabe kommt aus dem Lebenszeichen des Gateways (etwa jede Minute). Bleibt
 ein Gateway **länger als 24 Stunden** auf „veraltet“, erscheint es im
@@ -527,9 +555,15 @@ Tunnel erreicht. Bei ausgeschalteter Weitergabe und bei nicht angehakten
 Gateways wird nichts angezeigt.
 
 **Neuer Schlüssel:** Wurde der Schlüssel einmal abgeholt und soll ein Gerät
-ihn nicht mehr haben, schaltest du die Weitergabe aus (oder nimmst das Gerät
-heraus) und klickst auf „Neuen Schlüssel holen“. Der Server löscht das
-gespeicherte Zertifikat und holt bei Let's Encrypt ein neues mit neuem
-Schlüssel; bis es da ist (meist 1–3 Minuten), haben die Namen unter der Zone
-kein gültiges Zertifikat. Schaltest du das Zertifikat ganz aus, endet auch die
+ihn nicht mehr haben, nimmst du das Gerät heraus (oder schaltest die
+Weitergabe aus) und klickst auf „Neuen Schlüssel holen“. Der Server löscht das
+Zertifikat des Geräte-Bereichs und holt ein neues mit neuem Schlüssel; die
+noch erlaubten Geräte holen es von selbst. Portal, Verwaltung und Routen sind
+davon nicht betroffen. Schaltest du das Zertifikat ganz aus, endet auch die
 Weitergabe.
+
+**Nach dem Update auf den Geräte-Bereich:** Hatte ein Gerät früher das
+Zertifikat der Zone abgeholt, erneuert der Server einmal von selbst dessen
+Schlüssel – alte Kopien passen dann zu nichts mehr, was der Server ausliefert.
+Das steht im Protokoll und als Hinweis in der Karte. Für 1–3 Minuten gehen
+Portal und Verwaltung dabei auf ihre bisherigen Adressen.

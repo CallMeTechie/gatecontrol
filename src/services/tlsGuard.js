@@ -379,7 +379,9 @@ async function retryHost(hostIn) {
   // The wildcard of the VPN zone has no A record by design: its own pre-check
   // (CAA issuewild) and reset live in services/vpnCert.js.
   if (host.startsWith('*.')) {
-    try { await require('./vpnCert').renew(); }
+    const vpnCert = require('./vpnCert');
+    // the device area's wildcard (passing on) has its own reset
+    try { if (host === vpnCert.deviceWildcard()) await vpnCert.renewDevice(); else await vpnCert.renew(); }
     catch (err) {
       if (err.code === 'preflight_failed') { const e = new Error('Preflight failed: ' + ((err.result && err.result.code) || 'caa_blocked')); e.code = 'PREFLIGHT_FAILED'; e.statusCode = 409; e.result = err.result; throw e; }
       throw err;
@@ -929,11 +931,20 @@ function loadUniverse() {
     const st = require('./vpnCert').state();
     if (st.wildcard && ['pending', 'active', 'failed', 'paused', 'suspended'].includes(st.state) && !map.has(st.wildcard)) {
       map.set(st.wildcard, { kinds: ['acme'], route_id: null, host_id: null, domain_id: null, vpn_cert: true });
+      // the device area's wildcard while passing on is on (only that one is handed out)
+      const device = require('./vpnCert').deviceWildcard(st.zone);
+      if (device && settingsShareOn() && !map.has(device)) {
+        map.set(device, { kinds: ['acme'], route_id: null, host_id: null, domain_id: null, vpn_cert: true, vpn_cert_devices: true });
+      }
     }
   } catch (err) {
     logger.warn({ err: err.message }, 'tls: vpn cert state unavailable');
   }
   return map;
+}
+
+function settingsShareOn() {
+  try { return require('./settings').get('vpn_cert.share_enabled', '') === '1'; } catch { return false; }
 }
 
 function loadRows() {
@@ -992,6 +1003,10 @@ function entryTls(routeRow, rows, opts) {
 function start({ watcher = true } = {}) {
   // the names under the VPN zone served with its wildcard, as they are now
   vpnCertChanged('*.start', 'start');
+  // once after the update that brought the device area: renew a main key that was passed on before
+  try {
+    require('./vpnCert').migrateSharedMainKey().catch((err) => logger.warn({ err: err.message }, 'vpn cert: main key migration failed'));
+  } catch (err) { logger.warn({ err: err.message }, 'vpn cert: main key migration failed'); }
   if (acmeEmailMissing()) {
     logger.warn('No ACME contact e-mail configured (caddy.acme_email / GC_CADDY_EMAIL) — Let\'s Encrypt cannot send expiry notices');
   }

@@ -14,7 +14,7 @@ const router = Router();
 const ERROR_CODES = new Set([
   'provider_unknown', 'field_required', 'field_invalid', 'delegate_required', 'delegate_invalid',
   'delay_invalid', 'no_zone', 'not_configured', 'renew_not_needed', 'preflight_failed', 'test_running',
-  'peers_invalid', 'risk_not_accepted', 'links_invalid', 'share_on', 'rotate_not_needed',
+  'peers_invalid', 'risk_not_accepted', 'device_label_invalid', 'device_label_reserved', 'device_label_taken', 'links_invalid', 'share_on', 'rotate_not_needed',
 ]);
 
 function fail(req, res, err, what) {
@@ -100,14 +100,16 @@ router.post('/vpn-cert/renew', async (req, res) => {
 });
 
 /**
- * PUT /api/v1/settings/vpn-cert/share { enabled, peers: [peer ids], accept_risk }
+ * PUT /api/v1/settings/vpn-cert/share { enabled, peers: [peer ids], accept_risk, device_label }
  * — pass certificate and key on to these devices / gateways (off by default).
- * Switching on needs accept_risk: true (the key fits every name of the zone).
+ * Switching on needs accept_risk: true (the key fits every name of the device
+ * area *.<label>.<zone>); device_label renames that area while passing on is off.
  */
 router.put('/vpn-cert/share', (req, res) => {
   try {
     const b = req.body || {};
-    res.json({ ok: true, data: vpnCert.setShare({ enabled: b.enabled === true, peers: b.peers, accept_risk: b.accept_risk === true }, { ip: req.ip }) });
+    const device_label = typeof b.device_label === 'string' ? b.device_label : undefined;
+    res.json({ ok: true, data: vpnCert.setShare({ enabled: b.enabled === true, peers: b.peers, accept_risk: b.accept_risk === true, device_label }, { ip: req.ip }) });
   } catch (err) { fail(req, res, err, 'PUT /vpn-cert/share'); }
 });
 

@@ -369,7 +369,15 @@ function renderHostsContent() {
   const db = getDb();
   // Primary zone first (reverse lookups answer with it), then the legacy
   // zone as the second spelling — see services/vpnNames.js.
-  const zones = require('./vpnNames').current().zones;
+  const names = require('./vpnNames').current();
+  const zones = names.zones;
+  let deviceZone = null;
+  let deviceAreaReserved = new Set();
+  try {
+    const vpnCert = require('./vpnCert');
+    if (names.custom) deviceZone = vpnCert.deviceZone(names.primary);
+    deviceAreaReserved = vpnCert.DEVICE_AREA_RESERVED;
+  } catch { deviceZone = null; }
 
   const peers = db.prepare(`
     SELECT id, hostname, allowed_ips
@@ -400,6 +408,9 @@ function renderHostsContent() {
     // Format: <ip> <fqdn in the primary zone> [<fqdn in the legacy zone>] <short>
     // dnsmasq serves every name. The first one is what a reverse lookup answers.
     lines.push([ip, ...zones.map((z) => `${hostname}.${z}`), hostname].join('\t'));
+    // the device area (services/vpnCert.js): <device>.<label>.<zone> as well, for
+    // services on the device with the certificate passed on; a few names stay free
+    if (deviceZone && !deviceAreaReserved.has(hostname)) lines.push(`${ip}\t${hostname}.${deviceZone}`);
   }
 
   // Route domains resolve to the VPN gateway so VPN clients always reach
