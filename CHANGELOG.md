@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.314.0] — 2026-11-20
+
+### Features
+- Unterschalter „Zweiter Port für Geräte mit Fingerabdruck (8884)“ in der TLS-Karte (#555)
+
+---
+
 ## [1.313.0] — 2026-11-20
 
 ### Features
