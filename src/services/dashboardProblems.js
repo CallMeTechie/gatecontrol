@@ -21,6 +21,9 @@
 //   backup_incomplete    the newest local backup misses a plugin part
 //                        (plugins_incomplete of the file, autobackup.latestBackupInfo)
 //   waf_engine_missing   waf.engineAvailable() while entries have the WAF on
+//   gateway_vpn_cert_stale  a gateway in "Darf abholen" still holds an older
+//                        wildcard of the VPN names for more than 24 h
+//                        (vpnCert.staleGateways — a short delay is no problem)
 //
 // "Gateway erreichbar, Dienst im LAN antwortet nicht": the reason cannot be
 // read literally — Caddy's access log carries no `error` field, only the
@@ -206,6 +209,7 @@ const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
 const KIND_RANK = [
   'gateway_offline', 'entry_down', 'tls_failed', 'tls_paused', 'tls_expiring',
   'update_failed', 'update_rolled_back', 'backup_failed', 'backup_incomplete', 'waf_engine_missing',
+  'gateway_vpn_cert_stale',
 ];
 
 // Offline = the live state of services/gatewayLiveState.js: not a gateway that
@@ -387,6 +391,22 @@ function wafEngineProblem(db) {
   }];
 }
 
+// A gateway still holds an older certificate of the VPN names (> 24 h): its
+// services there show the old one until it fetches the new.
+function gatewayVpnCertProblems(now) {
+  let list;
+  try { list = require('./vpnCert').staleGateways(now); } catch (err) { logger.warn({ err: err.message }, 'problems: vpn cert state unavailable'); return []; }
+  return list.map((g) => ({
+    id: 'gateway_vpn_cert:' + g.peer_id,
+    kind: 'gateway_vpn_cert_stale',
+    severity: 'warning',
+    href: '/gateways#gw/' + g.peer_id,
+    since: isoOf(g.status.stale_since),
+    gateway: { peer_id: g.peer_id, name: g.name },
+    vpn_cert: { fingerprint: g.status.fingerprint, current_fingerprint: g.status.current_fingerprint, not_after: g.status.not_after },
+  }));
+}
+
 /**
  * All current problems. `now` and `access` are injectable for tests.
  */
@@ -450,8 +470,8 @@ async function list({ now = Date.now(), access } = {}) {
     problems.push({ ...base, severity: row.external_enabled ? 'error' : 'warning' });
   }
 
-  // 3–6. Certificates (broken or expiring), update, off-site backups, WAF module.
-  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...(await backupIncompleteProblem()), ...wafEngineProblem(db));
+  // 3–7. Certificates (broken or expiring), update, off-site backups, WAF module, gateways with an old VPN certificate.
+  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...(await backupIncompleteProblem()), ...wafEngineProblem(db), ...gatewayVpnCertProblems(now));
 
   problems.sort((a, b) => {
     const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];

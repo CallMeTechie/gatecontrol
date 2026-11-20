@@ -42,6 +42,9 @@ const router = Router();
  *     location: { id, name, city, country } | null,   // Gateway-Standort (services/gatewayLocations.js)
  *     features_on: ['print', 'cameras', …],  // switched-on functions for the chips of the fleet card
  *                                   // (services/gatewayFeatures.js enabledKeys, names: gwp.fname.<key>)
+ *     vpn_cert: { state, fingerprint, not_after, current_fingerprint, stale_since, min_version } | null,
+ *                                   // "Zertifikat für die Namen" fetched? only while passing on is on and
+ *                                   // the gateway is in "Darf abholen" (vpnCert.gatewayCertStates)
  *   }
  *
  * `?peek=1` is a side-effect-free read (the dashboard polls it): the
@@ -137,8 +140,14 @@ router.get('/', (req, res) => {
     // Gateway-Standorte: { id, name, city, country } | null
     const locations = require('../../services/gatewayLocations').byGateway();
     const gatewayFeatures = require('../../services/gatewayFeatures');
+    // "Zertifikat für die Namen": fetched by the gateways in "Darf abholen"? (null = not shown)
+    let vpnCerts = new Map();
+    try { vpnCerts = require('../../services/vpnCert').gatewayCertStates(); } catch (err) {
+      logger.debug({ err: err.message }, 'vpn cert state of the gateways unavailable');
+    }
     for (const g of gateways) {
       g.location = locations.get(g.peer_id) || null;
+      g.vpn_cert = vpnCerts.get(g.peer_id) || null;
       g.discovery = require('../../services/gateways').getDiscoverySettings(g.peer_id) || { enabled: 0, active_scan: 0 };
       try { g.features_on = gatewayFeatures.enabledKeys(g.peer_id, g.health && g.health.telemetry); } catch (err) {
         logger.debug({ err: err.message, peerId: g.peer_id }, 'switched-on functions unavailable');

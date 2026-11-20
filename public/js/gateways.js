@@ -294,6 +294,34 @@
     var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8);
     return di.slice(-12);
   }
+  // "Zertifikat für die Namen" (only while passing on is on and the gateway may fetch it):
+  // abgeholt · veraltet · noch nicht abgeholt · Gateway zu alt — with the short fingerprint and the end
+  var VC_TONE = { fetched: 'green', stale: 'amber', pending: 'grey', too_old: 'amber' };
+  function shortFp(fp) { return fp ? String(fp).slice(0, 8) + '…' : ''; }
+  function vcDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    try { return d.toLocaleDateString(document.documentElement.lang || undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return ''; }
+  }
+  function vpnCertVal(vc) {
+    var v = el('span', 'gwo-vc'); v.setAttribute('data-vc-state', vc.state);
+    v.appendChild(tagEl(VC_TONE[vc.state] || 'grey', T('gwp.vc.' + vc.state, vc.state), true));
+    var parts = [];
+    if (vc.state === 'fetched' || vc.state === 'stale') {
+      if (vc.fingerprint) { var c = el('code', null, shortFp(vc.fingerprint)); c.title = vc.fingerprint; parts.push(c); }
+      if (vc.not_after && vcDate(vc.not_after)) parts.push(document.createTextNode(TT('gwp.vc.valid_until', { date: vcDate(vc.not_after) })));
+      if (vc.state === 'stale' && vc.current_fingerprint) {
+        var cur = el('span'); var w = String(T('gwp.vc.current', 'aktuell: {{fp}}')).split('{{fp}}');
+        cur.appendChild(document.createTextNode(w[0] || '')); var cc = el('code', null, shortFp(vc.current_fingerprint)); cc.title = vc.current_fingerprint; cur.appendChild(cc);
+        if (w[1]) cur.appendChild(document.createTextNode(w[1]));
+        parts.push(cur);
+      }
+    } else if (vc.state === 'too_old') {
+      parts.push(document.createTextNode(TT('gwp.vc.too_old_hint', { version: vc.min_version || '1.41.0' })));
+    }
+    parts.forEach(function (n) { v.appendChild(document.createTextNode(' · ')); v.appendChild(n); });
+    return v;
+  }
   // "Gerät & Software" (was "Versionen & System"): the everyday facts on top,
   // the technical rows in <details> "Technische Details" (open state kept per gateway).
   function deviceCard(g) {
@@ -315,6 +343,7 @@
     var upd = [t.last_pull_at ? agoT(t.last_pull_at) : T('gateways.last_pull_never', 'never')];
     var dg = shortDigest(t); if (dg) upd.push(TT('gwp.dev.image', { digest: dg }));
     body.appendChild(kvRow(T('gwp.dev.updated', 'Letztes Update'), upd.join(' · ')));
+    if (g.vpn_cert) body.appendChild(kvRow(T('gwp.dev.vpn_cert', 'Zertifikat für die Namen'), vpnCertVal(g.vpn_cert)));
     var d = el('details', 'gwo-tech'); d.open = !!techOpen[g.peer_id];
     d.addEventListener('toggle', function () { techOpen[g.peer_id] = d.open; });
     var sum = el('summary', null, T('gwp.dev.tech', 'Technische Details')); sum.dataset.fk = 'gwo-tech'; d.appendChild(sum);

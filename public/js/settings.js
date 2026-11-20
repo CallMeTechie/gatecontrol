@@ -1290,6 +1290,17 @@
       document.querySelectorAll('#st-vc-share-peers input[type=checkbox]').forEach((c) => { c.checked = want.has(Number(c.value)); });
     },
   };
+  // a gateway in "Darf abholen": has it fetched the certificate? (same states as on the gateway page)
+  const VC_CERT_STATE = { fetched: 'good', stale: 'warn', pending: 'off', too_old: 'warn' };
+  function vcCertPill(c) {
+    if (!c || !VC_CERT_STATE[c.state]) return null;
+    const node = pill(VC_CERT_STATE[c.state], t('st.vc.cert_' + c.state));
+    node.classList.add('vc-cert-state');
+    node.dataset.vcState = c.state;
+    if (c.state === 'too_old') node.title = t('st.vc.cert_too_old_hint', { version: c.min_version || '1.41.0' });
+    else if (c.fingerprint) node.title = c.fingerprint.slice(0, 8) + '…' + (c.not_after ? ' · ' + vcDate(c.not_after) : '');
+    return node;
+  }
   function vcRenderSharePeers() {
     const d = vc.saved || {};
     const sh = d.share || { peers: [] };
@@ -1298,7 +1309,7 @@
     clear(box);
     sh.peers.forEach((p) => {
       const cb = el('input', { type: 'checkbox', value: String(p.id) });
-      box.appendChild(el('label', { class: 'st-check' }, [cb, el('span', { text: p.name + (p.gateway ? ' · ' + t('st.vc.share_gateway') : '') })]));
+      box.appendChild(el('label', { class: 'st-check' }, [cb, el('span', { text: p.name + (p.gateway ? ' · ' + t('st.vc.share_gateway') : '') }), vcCertPill(p.cert)]));
     });
     if (!sh.peers.length) box.appendChild(el('span', { class: 'st-hint', text: t('st.vc.share_no_peers') }));
     CUSTOM['vc-share-peers'].set(keep.length ? keep : sh.allowed);

@@ -324,6 +324,7 @@
     ['backup_failed', 'dashboard.sum_backup'],
     ['backup_incomplete', 'dashboard.sum_backup_incomplete'],
     ['waf_engine_missing', 'dashboard.sum_waf'],
+    ['gateway_vpn_cert_stale', 'dashboard.sum_gateway_vpn_cert'],
   ];
   /**
    * → { title: [key, params], sub: [[key, params], …] } — "Alles läuft" or
