@@ -326,11 +326,14 @@
     if (k === 'paused') {
       return h.paused_reason === 'preflight' ? t('tls.paused_preflight') : t('tls.paused_attempts', { n: h.attempts || 0 });
     }
+    // a name covered by the wildcard of the VPN zone says so (its dates are the wildcard's)
+    const via = h.kind === 'wildcard' && h.wildcard ? t('tls.kind_wildcard_hint', { wildcard: h.wildcard }) : '';
     if ((k === 'issued' || k === 'expiring') && typeof h.days_left === 'number') {
-      if (h.days_left < 0) return t('tls.expired');
-      return h.days_left === 1 ? t('tls.days_left_one') : t('tls.days_left', { days: h.days_left });
+      const days = h.days_left < 0 ? t('tls.expired') : (h.days_left === 1 ? t('tls.days_left_one') : t('tls.days_left', { days: h.days_left }));
+      return via ? via + ' · ' + days : days;
     }
     if (k === 'internal') return t('tls.kind_internal_hint');
+    if (via) return via;
     if (k === 'none') return t('tls.kind_none_hint');
     return '';
   }

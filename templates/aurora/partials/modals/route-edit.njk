@@ -235,6 +235,8 @@
             </div>
             <div class="toggle" id="edit-route-external" aria-label="{{ t('routes.external_label') }}"></div>
           </div>
+          {#- below the VPN zone (wildcard of the zone): internal only, the switch is locked (entry-editor.js lockExternalForZone) -#}
+          <div class="rt-hint" id="edit-route-external-zone" hidden>{{ t('entry.vpn_zone_internal') }}</div>
           <div id="edit-route-block-wrap" class="route-block-wrap rt-ee-http-only" style="display:none">
             <label class="rt-label" for="edit-route-block-action">{{ t('routes.block_action_label') }}</label>
             <select id="edit-route-block-action" class="rt-select">

@@ -236,7 +236,10 @@ function checkFqdn(fqdn, currentFqdn, zone) {
     throw httpError(400, 'Domain collides with the management or portal host', 'DOMAIN_COLLISION');
   }
   if (pol.error === 'device_zone') {
-    throw httpError(400, 'Names below ' + pol.zone + ' belong to the VPN devices', 'DEVICE_ZONE');
+    throw httpError(400, 'Names below ' + pol.zone + ' belong to the VPN devices (routes there need the certificate for the names)', 'DEVICE_ZONE');
+  }
+  if (pol.error === 'device_zone_level') {
+    throw httpError(400, 'Only one level below ' + pol.zone + ' is possible', 'DEVICE_ZONE_LEVEL');
   }
   if (pol.error === 'device_name') {
     throw httpError(400, 'A VPN device already has this name', 'DEVICE_NAME');

@@ -289,6 +289,8 @@ function toApiRows(list) {
       // TCP/UDP entry behind a gateway/pool: does it forward UDP? On a UDP
       // entry false = the page says "no effect yet – update the gateway"
       ...((r.route_type === 'l4' && (r.target_kind || 'peer') === 'gateway') ? { gateway_udp: udpJudge(r) } : {}),
+      // below the zone of the device names: internal only, always (the editor locks the switch)
+      ...(r.domain && internalOnlyDomain(r.domain) ? { vpn_internal: true } : {}),
     };
   });
 }
@@ -349,8 +351,15 @@ function getById(id) {
  * orchestrators (service bundles) that create several rows and want a single
  * sync with their own compensating rollback. Callers own cleanup on failure.
  */
+// Routes below the zone of the device names (wildcard of the VPN zone,
+// services/routeDomainPolicy.js) are internal only, whatever the request says.
+function internalOnlyDomain(domain) {
+  try { return require('./routeDomainPolicy').internalOnlyDomain(domain); } catch { return false; }
+}
+
 async function create(data, opts = {}) {
   const routeType = data.route_type || 'http';
+  if (internalOnlyDomain(data.domain)) data = { ...data, external_enabled: false };
 
   if (routeType === 'l4') {
     const protoErr = validateL4Protocol(data.l4_protocol);
@@ -724,6 +733,9 @@ async function update(id, data, opts = {}) {
 
   // Snapshot for rollback
   const snapshot = { ...route };
+
+  // below the zone of the device names: internal only (also when the name stays)
+  if (internalOnlyDomain(data.domain !== undefined ? data.domain : route.domain)) data = { ...data, external_enabled: false };
 
   const routeType = data.route_type || route.route_type || 'http';
   const prevType = route.route_type || 'http';
@@ -1549,7 +1561,8 @@ function bulkNextColumns(route, set) {
   const pickBool = (field) => (set[field] !== undefined ? set[field] : (route[field] ? 1 : 0));
   return {
     enabled: pickBool('enabled'),
-    external_enabled: pickBool('external_enabled'),
+    // below the zone of the device names: internal only, a bulk change included
+    external_enabled: internalOnlyDomain(route.domain) ? 0 : pickBool('external_enabled'),
     monitoring_enabled: pickBool('monitoring_enabled'),
     waf_enabled: waf.waf_enabled,
     waf_mode: waf.waf_mode,

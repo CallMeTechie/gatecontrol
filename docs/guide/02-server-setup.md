@@ -322,6 +322,9 @@ interface of the NAS, a printer, a camera – create a route under “Services�
 address of the device in the home network and the port (for example
 `192.168.1.20` and `5000`). The host of the route must not be below the zone
 of the device names: `nas.example.com` works, `nas.vpn.example.com` does not.
+Exception: with a valid “certificate for the names”, internal routes with a
+name of their own work below the zone, such as `nas-web.vpn.example.com` (see
+[2.12](#212-a-valid-certificate-for-the-names-in-the-vpn)).
 
 Names under your own domain exist from server **1.271.0**. The Windows apps
 resolve them from GateControl Pro **1.85.0** and Community **1.49.0** – they
@@ -426,6 +429,16 @@ device, for example the interface of a NAS under `nas.vpn.example.com:5001`:
 their TLS ends on the device. And a certificate covers one level:
 `nas-web.vpn.example.com` yes, `a.b.vpn.example.com` no. Which names the
 server answers with it is listed in the card under “Used by”.
+
+**Internal routes below the zone:** For a service on a device or behind a
+gateway, create a host with a name of its own below the zone under “Services”
+→ “Domains / Routes”, for example `nas-web` under `example.com` (that is
+`nas-web.vpn.example.com`), target the NAS. That works while the certificate
+is valid, and one level deep only. Such routes are **always reachable in the
+VPN only** – the dialog says so, and the switch “Reachable externally” stays
+off. A name a VPN device already has and the fixed names of the server
+(`home`, `server`, `gateway` …) do not work. The route gets the wildcard
+certificate; when that ends, it gets an internal certificate of the server.
 
 **Check:** The card “Certificate for the names” says “valid” with the expiry
 date, “Used by” lists `home.vpn.example.com` (portal) and

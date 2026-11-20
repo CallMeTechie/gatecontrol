@@ -278,7 +278,35 @@ module.exports = (ctx) => {
         const perm = await p.request.fetch(B + '/api/v1/settings/portal');
         step('the portal settings name home.<zone> next to the internal name',
           (await perm.json()).data.vpnHost === 'home.vpn.example.com');
+        step('valid: the card points to routes with a name of their own under the zone',
+          await until(p, () => {
+            const box = document.getElementById('st-vc-routes');
+            const mono = [...box.querySelectorAll('.st-mono')].map((n) => n.textContent).join();
+            return !box.hidden && mono === 'nas.vpn.example.com:5001,nas-web.vpn.example.com' && box.querySelector('a').getAttribute('href') === '/routes';
+          }));
         await cardShot(p, 'vpncert-active');
+
+        // ── "Neuer Host" under the zone: internal only, no access choice ──
+        const domId = db(app, (d) => d.prepare("SELECT id FROM domains WHERE domain = 'example.com'").get().id);
+        await p.goto(B + '/routes');
+        await until(p, () => !!(window.GCZonesPage && window.GCZonesPage.openNewHost));
+        await p.evaluate((z) => window.GCZonesPage.openNewHost(z), domId);
+        await until(p, () => !!document.querySelector('[data-rt-dialog="new-host"] .rt-dlg'));
+        const nh = p.locator('[data-rt-dialog="new-host"]');
+        await nh.locator('[data-rt-key="nh-sub"]').fill('nas-web.vpn');
+        step('"Neuer Host" below the zone: "internal only" instead of the access choice',
+          await until(p, () => {
+            const d = document.querySelector('[data-rt-dialog="new-host"]');
+            const hint = d && d.querySelector('[data-vpn-zone="internal"]');
+            const want = String((window.GC && window.GC.t && window.GC.t['host.vpn_zone_internal']) || '').split('{{zone}}').join('vpn.example.com');
+            return !!hint && !!want && hint.textContent === want && !d.querySelector('#rt-nh-acc');
+          }));
+        await nh.locator('[data-rt-key="nh-sub"]').fill('nas-web');
+        step('… and outside the zone the access choice is back',
+          await until(p, () => !document.querySelector('[data-rt-dialog="new-host"] [data-vpn-zone]')));
+        await p.keyboard.press('Escape');
+        await p.goto(B + '/settings/netzwerk');
+        await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
 
         // ── Ändern ──
         await p.click('#st-vc-change');

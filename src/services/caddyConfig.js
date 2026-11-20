@@ -941,7 +941,15 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const aliasSubjects = Object.values(caddyRoutes).flatMap(s => (Array.isArray(s._aliasFqdns) ? s._aliasFqdns : []));
   const tlsDomains = [...new Set([...Object.keys(caddyRoutes), ...aliasSubjects, ...portalHosts, ...vpnOnlyHosts, gcHost].filter(Boolean))]
     .filter(d => !pausedSet.has(String(d).toLowerCase()));
-  const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
+  // Names below the zone of the device names (internal routes, home./server.<zone>)
+  // never ask Let's Encrypt themselves: the wildcard covers them
+  // (applyVpnCertTls below), without it the internal CA does.
+  let zoneHosts = [];
+  try {
+    const vpnNames = require('./vpnNames');
+    zoneHosts = tlsDomains.filter(d => vpnNames.insideDeviceZone(d));
+  } catch (err) { logger.warn({ err: err.message }, 'vpn names: zone unavailable'); }
+  const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, [...forceInternal, ...zoneHosts]);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
   // Wildcard certificate of the VPN zone (services/vpnCert.js): its own
   // policy with the DNS challenge, first in the list; the names under the zone

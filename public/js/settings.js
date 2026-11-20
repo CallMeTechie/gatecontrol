@@ -1247,6 +1247,11 @@
     const ub = $('st-vc-used');
     clear(ub);
     used.forEach((u) => ub.appendChild(el('span', { class: 'vn-name' }, [el('code', { text: u.host }), el('small', { text: t('st.vc.used_' + u.kind) })])));
+    // a service directly on a device keeps its own certificate: a route with a name of its own
+    const rb = $('st-vc-routes');
+    vcText(rb, 'st.vc.routes_box', { device: '[[nas.' + zone + ':5001]]', route: '[[nas-web.' + zone + ']]' });
+    rb.appendChild(document.createTextNode(' '));
+    rb.appendChild(el('a', { href: '/routes', class: 'vn-link', text: t('st.vc.routes_link') }));
     vcErrorBox();
     $('st-vc-renew').hidden = !(view === 'active' && d.renew_possible);
     $('st-vc-retry').hidden = !(view === 'error' && d.renew_possible);

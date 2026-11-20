@@ -46,7 +46,7 @@ test('GET /tls/status, preflight and retry', async () => {
   assert.equal(h.paused_reason, 'preflight'); assert.equal(h.last_error_code, 'preflight:aaaa_without_ipv6');
   assert.equal(h.preflight.code, 'aaaa_without_ipv6');
   assert.deepEqual(Object.keys(h).sort(), ['alias_of', 'attempts', 'days_left', 'domain_id', 'host', 'host_id', 'issuer', 'kind', 'last_attempt_at',
-    'last_error', 'last_error_code', 'max_attempts', 'next_retry_at', 'not_after', 'paused_at', 'paused_reason', 'preflight', 'route_id', 'state']);
+    'last_error', 'last_error_code', 'max_attempts', 'next_retry_at', 'not_after', 'paused_at', 'paused_reason', 'preflight', 'route_id', 'state', 'wildcard']);
   assert.equal(h.alias_of, null);
   assert.equal(res.body.summary.paused, 1);
   assert.equal(res.body.summary.acme_email_missing, true);

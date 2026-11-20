@@ -564,7 +564,16 @@ function listZones() {
     }));
   const pools = ctx.pools.map((p) => ({ id: p.id, name: p.name }));
 
-  return { zones: outZones, unassigned, gateways, pools };
+  // The zone of the device names and whether its wildcard is in use
+  // (services/vpnCert.js): the new-host dialog shows a host there as
+  // "internal only, certificate from the wildcard" instead of an error.
+  let vpnZone = null;
+  try {
+    const names = require('./vpnNames').current();
+    if (names.custom) vpnZone = { zone: names.primary, served: require('./vpnCert').servedZone() === names.primary };
+  } catch { vpnZone = null; }
+
+  return { zones: outZones, unassigned, gateways, pools, vpn_zone: vpnZone };
 }
 
 function getZone(domainId) {

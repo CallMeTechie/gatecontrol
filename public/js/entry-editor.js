@@ -1430,6 +1430,8 @@
     var extToggle = byId('edit-route-external');
     if (extToggle) {
       extToggle.addEventListener('click', function () {
+        // locked below the VPN zone: it stays off whatever was clicked
+        if (extToggle.dataset.vpnLocked === '1') setToggle('edit-route-external', false);
         setTimeout(function () { syncBlockVisibility('edit'); }, 0);
       });
     }
@@ -1522,6 +1524,18 @@
         }
       });
     }
+  }
+
+  // A route below the zone of the device names is internal only (the server
+  // enforces it too): switch off and locked, with a line that says why.
+  function lockExternalForZone(locked) {
+    var tg = byId('edit-route-external');
+    if (!tg) return;
+    tg.dataset.vpnLocked = locked ? '1' : '';
+    tg.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    if (locked) setToggle('edit-route-external', false);
+    var note = byId('edit-route-external-zone');
+    if (note) note.hidden = !locked;
   }
 
   function setToggle(id, on) {
@@ -1669,6 +1683,8 @@
     cls('edit-route-backend-https', route.backend_https);
     setToggle('edit-route-compress', route.compress_enabled);
     setToggle('edit-route-external', route.external_enabled);
+    // below the VPN zone (wildcard of the zone): internal only, the switch is locked
+    lockExternalForZone(!!route.vpn_internal);
 
     var blockAction = byId('edit-route-block-action');
     if (blockAction) {
