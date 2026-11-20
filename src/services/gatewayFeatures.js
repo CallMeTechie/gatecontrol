@@ -286,7 +286,18 @@ function configPayload(peerId) {
     setup_page: { status: s.setupPage.status },
     // "Namen im VPN": the zones of the device names (capability `dns-vpn-names`; an older gateway ignores it)
     internal_dns: internalDns(peerId),
+    // "Zertifikat für die Namen" passed on to this gateway (off by default; only when allowed):
+    // { wildcard, fingerprint, not_after } — the gateway fetches certificate and key itself
+    // (GET /api/v1/gateway/vpn-cert). Absent otherwise, so no other gateway's hash changes.
+    ...vpnCertShare(peerId),
   };
+}
+
+function vpnCertShare(peerId) {
+  try {
+    const s = require('./vpnCert').shareSummary(peerId);
+    return s ? { vpn_cert: s } : {};
+  } catch (e) { logger.warn({ err: e.message }, 'features.vpn_cert not built'); return {}; }
 }
 
 /**

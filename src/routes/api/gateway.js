@@ -53,6 +53,22 @@ router.get('/config', (req, res) => {
   res.json({ ...cfg, config_hash: hash });
 });
 
+/**
+ * GET /api/v1/gateway/vpn-cert — certificate and key of the wildcard of the VPN
+ * zone, for a gateway the admin allowed it (Einstellungen › VPN & Netzwerk ›
+ * Zertifikat für die Namen › "An Geräte weitergeben", off by default). Gateway
+ * token over the tunnel only. Every answer with a key is logged (never the key).
+ * Only from the gateway's own VPN address (through the tunnel).
+ *   200 { ok, wildcard, zone, cert_pem, key_pem, not_after, fingerprint }
+ *   404 { ok: false, error: 'not_shared' | 'no_certificate' }   403 { error: 'not_allowed' | 'not_from_vpn' }
+ */
+router.get('/vpn-cert', (req, res) => {
+  const r = require('../../services/vpnCert').fetchFor(req.gateway.peer_id, { via: 'gateway', ip: req.ip });
+  res.set('Cache-Control', 'no-store');
+  if (!r.ok) return res.status(r.code === 'not_allowed' || r.code === 'not_from_vpn' ? 403 : 404).json({ ok: false, error: r.code });
+  res.json(r);
+});
+
 /** GET /api/v1/gateway/config/check?hash=sha256:... */
 router.get('/config/check', (req, res) => {
   const peerId = req.gateway.peer_id;

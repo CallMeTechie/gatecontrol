@@ -14,6 +14,7 @@ const router = Router();
 const ERROR_CODES = new Set([
   'provider_unknown', 'field_required', 'field_invalid', 'delegate_required', 'delegate_invalid',
   'delay_invalid', 'no_zone', 'not_configured', 'renew_not_needed', 'preflight_failed', 'test_running',
+  'peers_invalid', 'risk_not_accepted', 'share_on', 'rotate_not_needed',
 ]);
 
 function fail(req, res, err, what) {
@@ -96,6 +97,25 @@ router.post('/vpn-cert/renew', async (req, res) => {
   try {
     res.json({ ok: true, data: await vpnCert.renew({ ip: req.ip }) });
   } catch (err) { fail(req, res, err, 'POST /vpn-cert/renew'); }
+});
+
+/**
+ * PUT /api/v1/settings/vpn-cert/share { enabled, peers: [peer ids], accept_risk }
+ * — pass certificate and key on to these devices / gateways (off by default).
+ * Switching on needs accept_risk: true (the key fits every name of the zone).
+ */
+router.put('/vpn-cert/share', (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json({ ok: true, data: vpnCert.setShare({ enabled: b.enabled === true, peers: b.peers, accept_risk: b.accept_risk === true }, { ip: req.ip }) });
+  } catch (err) { fail(req, res, err, 'PUT /vpn-cert/share'); }
+});
+
+/** POST /api/v1/settings/vpn-cert/rotate-key — a new key after passing it on (passing on must be off) */
+router.post('/vpn-cert/rotate-key', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await vpnCert.rotateKey({ ip: req.ip }) });
+  } catch (err) { fail(req, res, err, 'POST /vpn-cert/rotate-key'); }
 });
 
 module.exports = router;

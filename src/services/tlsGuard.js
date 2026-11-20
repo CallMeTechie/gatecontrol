@@ -490,7 +490,12 @@ function parseTlsLogLine(line) {
 // under the zone follow (services/vpnCert.js refreshServed).
 function vpnCertChanged(host, reason) {
   if (!String(host || '').startsWith('*.')) return;
-  try { require('./vpnCert').refreshServed(reason); } catch (err) { logger.warn({ err: err.message }, 'tls: vpn cert refresh failed'); }
+  try {
+    const vpnCert = require('./vpnCert');
+    vpnCert.refreshServed(reason);
+    // a renewed certificate (new fingerprint): the peers that may fetch it are told
+    vpnCert.shareRefresh();
+  } catch (err) { logger.warn({ err: err.message }, 'tls: vpn cert refresh failed'); }
 }
 
 /** Apply one parsed log event to tls_status. Returns the row or null. */

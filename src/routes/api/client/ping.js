@@ -51,6 +51,9 @@ router.get('/permissions', (req, res) => {
     // { plugin, enabled, state: 'off' | 'starting' | 'filtering' | 'fallback' }. `vpnDns` above is unchanged —
     // apps that only know that field keep their behaviour (docs/plugins.md "DNS protection").
     dnsProtection: dnsProtectionInfo(),
+    // "Zertifikat für die Namen" passed on to this device (off by default): { wildcard, fingerprint, not_after }
+    // or null — the app fetches certificate and key itself (GET /api/v1/client/vpn-cert)
+    vpnCert: req.tokenPeerId != null ? (() => { try { return require('../../../services/vpnCert').shareSummary(req.tokenPeerId); } catch { return null; } })() : null,
     // Client policy version (see GET /api/v1/client/policy)
     policyVersion: clientPolicy.versionFor(
       req.tokenPeerId != null ? (peers.getById(req.tokenPeerId) || null) : null,

@@ -10587,6 +10587,9 @@ a.gwp-mrow-n{color:var(--teal)}
 .stx .vc-checks small{display:block; color:var(--pg-muted); font-size:12.5px}
 .stx #st-vc-fields .st-row-ctl{flex-wrap:nowrap}
 .stx #st-vc-fields .st-row-ctl > .st-input{min-width:0; width:auto}
+.stx .vc-share-list{display:flex; flex-direction:column; gap:2px; padding:0 0 4px}
+.stx .vc-share-list .st-check{min-height:36px; font-weight:500}
+.stx .vc-fp{overflow-wrap:anywhere; font-size:12px}
 .stx .vc-uses{display:flex; flex-direction:column; gap:6px; width:100%}
 .stx .vc-uses .vn-name small{color:var(--pg-muted); font-size:12px; white-space:nowrap; padding-right:6px}
 .pl-vn + .pl-chips:empty{display:none}

@@ -454,3 +454,36 @@ Ablaufdatum, unter „Genutzt von“ stehen `home.vpn.example.com` (Portal) und
 `server.vpn.example.com` (Verwaltung), und unter „Domains & Zertifikate“
 erscheint `*.vpn.example.com` mit Let's Encrypt als Aussteller. Auf einem
 Gerät im VPN öffnet `https://home.vpn.example.com` das Portal ohne Warnung.
+
+### Zertifikat an Geräte weitergeben
+
+Läuft ein Dienst direkt auf einem Gerät oder Gateway und soll selbst mit dem
+Wildcard-Zertifikat antworten (statt über eine Route des Servers), kann der
+Server Zertifikat **und privaten Schlüssel** an ausgewählte Geräte geben. Das
+ist **standardmäßig aus** und nur für Admins einstellbar.
+
+> **Risiko:** Der Schlüssel gilt für jeden Namen unter der Zone. Wer ihn hat,
+> kann sich im VPN als Portal, Verwaltung oder jede Route unter der Zone
+> ausgeben. Gib ihn nur an Geräte, denen du voll vertraust. Einmal abgeholt,
+> lässt er sich nicht zurückholen – nur durch einen neuen Schlüssel ersetzen.
+
+1. In der Karte „Zertifikat für die Namen“ (Zertifikat gültig) schaltest du
+   „Zertifikat und Schlüssel an Geräte weitergeben“ ein.
+2. Unter „Darf abholen“ hakst du die Geräte und Gateways an, die es bekommen
+   sollen.
+3. Beim Speichern bestätigst du den Risikohinweis.
+
+Abholen darf nur ein angehaktes Gerät, angemeldet (Gateway mit seinem Token,
+App mit einem an das Gerät gebundenen Token) und nur über seine eigene
+VPN-Adresse. Jeder Abruf steht im Protokoll mit Gerät und Fingerabdruck – nie
+mit dem Schlüssel. Der Fingerabdruck (SHA-256 des Zertifikats) steht in der
+Karte; erneuert sich das Zertifikat, ändert er sich, und die Geräte holen das
+neue.
+
+**Neuer Schlüssel:** Wurde der Schlüssel einmal abgeholt und soll ein Gerät
+ihn nicht mehr haben, schaltest du die Weitergabe aus (oder nimmst das Gerät
+heraus) und klickst auf „Neuen Schlüssel holen“. Der Server löscht das
+gespeicherte Zertifikat und holt bei Let's Encrypt ein neues mit neuem
+Schlüssel; bis es da ist (meist 1–3 Minuten), haben die Namen unter der Zone
+kein gültiges Zertifikat. Schaltest du das Zertifikat ganz aus, endet auch die
+Weitergabe.

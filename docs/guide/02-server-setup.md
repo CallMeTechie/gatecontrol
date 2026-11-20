@@ -445,3 +445,33 @@ date, “Used by” lists `home.vpn.example.com` (portal) and
 `server.vpn.example.com` (management), and `*.vpn.example.com` appears under
 “Domains & certificates” with Let's Encrypt as issuer. On a device in the VPN,
 `https://home.vpn.example.com` opens the portal without a warning.
+
+### Passing the certificate on to devices
+
+If a service runs directly on a device or gateway and should answer with the
+wildcard certificate itself (instead of through a route of the server), the
+server can give the certificate **and the private key** to selected devices.
+This is **off by default** and only admins can set it.
+
+> **Risk:** The key fits every name under the zone. Whoever has it can pose as
+> the portal, the management or any route below the zone inside the VPN. Pass
+> it only to devices you fully trust. Once fetched, it cannot be called back –
+> only replaced by a new key.
+
+1. In the card “Certificate for the names” (certificate valid), switch on
+   “Pass certificate and key on to devices”.
+2. Under “May fetch”, tick the devices and gateways that should get it.
+3. When saving, confirm the risk note.
+
+Only a ticked device may fetch it, signed in (a gateway with its token, an app
+with a token bound to the device) and only over its own VPN address. Every
+fetch is logged with device and fingerprint – never with the key. The
+fingerprint (SHA-256 of the certificate) is shown in the card; when the
+certificate renews it changes, and the devices fetch the new one.
+
+**New key:** Once the key was fetched and a device should no longer have it,
+switch passing on off (or untick the device) and click “Get a new key”. The
+server deletes the stored certificate and gets a new one with a new key from
+Let's Encrypt; until it is there (usually 1–3 minutes), the names under the
+zone have no valid certificate. Switching the certificate off entirely also
+ends passing it on.
