@@ -184,7 +184,16 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     assert.deepEqual(automate(), ['*.vpn.example.com', '*.geraete.vpn.example.com']);
     const pol = caddyConfig.buildCaddyConfig([]).apps.tls.automation.policies[0];
     assert.deepEqual(pol.subjects, ['*.vpn.example.com', '*.geraete.vpn.example.com']);
-    assert.ok(!JSON.stringify(caddyConfig.buildCaddyConfig([]).apps.http || {}).includes('geraete.vpn.example.com'), 'no site under the device area');
+    // no site under the device area: every host matcher of the HTTP app, compared as whole names
+    const hostsOf = (node, out = []) => {
+      if (Array.isArray(node)) node.forEach((n) => hostsOf(n, out));
+      else if (node && typeof node === 'object') for (const [k, v] of Object.entries(node)) { if (k === 'host' && Array.isArray(v)) out.push(...v); else hostsOf(v, out); }
+      return out;
+    };
+    const areaOf = (h) => String(h).toLowerCase().split('.').slice(-4).join('.');
+    const siteHosts = hostsOf(caddyConfig.buildCaddyConfig([]).apps.http || {});
+    assert.ok(siteHosts.length > 0, 'the walk finds host matchers');
+    assert.equal(siteHosts.filter((h) => areaOf(h) === 'geraete.vpn.example.com').length, 0, 'no site under the device area');
     // the TLS guard lists it, pausing it leaves it out
     assert.ok(tlsGuard.statusFor(['*.geraete.vpn.example.com'])[0]);
     tlsGuard.writeRow('*.geraete.vpn.example.com', { state: 'paused', paused_reason: 'attempts' });
@@ -215,7 +224,10 @@ describe('Zertifikat für die Namen: Weitergabe an Geräte und Gateways', () => 
     db.prepare('UPDATE peers SET hostname = ? WHERE id = ?').run('mqtt', deviceId);
     const hosts = require('../src/services/dns').renderHostsContent();
     assert.match(hosts, /^10\.8\.0\.2\tgw-home\.devices\.vpn\.example\.com$/m);
-    assert.ok(!hosts.includes('mqtt.devices.vpn.example.com'));
+    const names = new Set(hosts.split('\n').filter((l) => l && !l.startsWith('#')).flatMap((l) => l.split('\t').slice(1)));
+    assert.equal(names.has('gw-home.devices.vpn.example.com'), true);
+    assert.equal(names.has('mqtt.devices.vpn.example.com'), false);
+    assert.equal(names.has('mqtt.vpn.example.com'), true, 'the device keeps its name in the zone');
     await share({ enabled: false, peers: [], device_label: 'geraete' });
     assert.equal(vpnCert.deviceLabel(), 'geraete');
   });

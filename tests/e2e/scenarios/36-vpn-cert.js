@@ -312,7 +312,7 @@ module.exports = (ctx) => {
               && document.getElementById('st-vc-share-label').value === 'geraete'
               && !document.getElementById('st-vc-share-label').disabled
               && mono('st-vc-share-risk').join() === '*.geraete.vpn.example.com,*.vpn.example.com'
-              && mono('st-vc-share-area-note').includes('nas.geraete.vpn.example.com')
+              && new Set(mono('st-vc-share-area-note')).has('nas.geraete.vpn.example.com')
               && document.getElementById('st-vc-share-cname').hidden;
           }));
         await p.check('#st-vc-share-peers input[type=checkbox]');
