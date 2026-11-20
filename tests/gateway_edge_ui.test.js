@@ -321,6 +321,32 @@ describe('gateway-edge-kit: MQTT accounts as the server takes them', () => {
     }
     assert.match(de['gwe.tls.vpn.dns'], /DNS von GateControl/);
     assert.match(de['gwe.tls.vpn.dns'], /Router/);
+    // "Zweiter Port für Geräte mit Fingerabdruck (8884)": only under the switched-on device certificate, only with
+    // the capability mqtt-fingerprint-port (or while on); the fingerprint and PEM of the self-made certificate
+    const fpPart = (o, vo) => part({ enabled: true, state: 'active', tunnel: 'listening', ...vo,
+      fingerprintPort: { enabled: false, supported: true, port: 8884, state: null, tunnel: null, minGateway: '1.45.0', ...o } });
+    const fpStatus = { tls: 'on', tlsSource: 'vpn-cert', tlsSha256: 'ab'.repeat(32), tlsHost: H,
+      tlsFp: { port: 8884, sha256: fp, cert: 'PEM', validTo: '2036-11-08T11:16:10.000Z' } };
+    assert.equal(K.fpPortView(part({ enabled: true }), fpStatus), null, 'an overview without the part (older server data)');
+    assert.equal(K.fpPortView(fpPart({}, { enabled: false }), fpStatus), null, 'the device certificate off: no sub-switch');
+    assert.equal(K.fpPortView(fpPart({ supported: false }), fpStatus), null, 'an older gateway (1.44.0): no sub-switch');
+    assert.deepEqual(K.fpPortView(fpPart({ supported: false, enabled: true }), fpStatus).hint, 'old', 'switching it off again always works');
+    assert.deepEqual(K.fpPortView(fpPart(), fpStatus), { enabled: false, port: 8884, hint: null, fingerprint: null, cert: null, validTo: null });
+    assert.deepEqual(K.fpPortView(fpPart({ enabled: true, state: 'active', tunnel: 'listening' }), fpStatus),
+      { enabled: true, port: 8884, hint: null, fingerprint: K.fingerprintText(fp), cert: 'PEM', validTo: '2036-11-08T11:16:10.000Z' });
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'active', tunnel: 'port_in_use' }), fpStatus).hint, 'tunnel_port_in_use');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'active' }), { ...fpStatus, tlsFp: undefined }).hint, 'pending', 'reported active, the fingerprint not there yet');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'fallback' }), { tls: 'on', tlsSource: 'self', tlsSha256: fp }).hint, 'fallback');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'fallback' }), { tls: 'on', tlsSource: 'self', tlsSha256: fp }).fingerprint, null, 'no 8884 fingerprint while 8883 has the self-made one');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'no_cert' }), fpStatus).hint, 'no_cert');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: null }), fpStatus).hint, 'pending');
+    assert.equal(K.fpPortView(fpPart({ enabled: true, state: 'broker_off' }), fpStatus).hint, null);
+    for (const k of ['switch', 'text', 'k_port', 'self', 'hint', 'on_done', 'off_done', 'hint_old', 'hint_fallback', 'hint_no_cert', 'hint_tunnel_no_address',
+      'hint_tunnel_port_in_use', 'hint_pending']) {
+      assert.ok(de['gwe.tls.fpport.' + k] && en['gwe.tls.fpport.' + k], 'gwe.tls.fpport.' + k);
+    }
+    assert.equal(de['gwe.tls.fpport.switch'].replace('{{port}}', '8884'), 'Zweiter Port für Geräte mit Fingerabdruck (8884)');
+    assert.equal(de['gwe.tls.fpport.hint'].replace('{{port}}', '8884'), 'Für Geräte, die nur einen festen Fingerabdruck prüfen können: dort nur den Port auf 8884 ändern.');
     assert.equal(K.brokerStatus({ mqttEnabled: false }).key, 'off');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: false }).key, 'waits_edge');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false).key, 'offline');

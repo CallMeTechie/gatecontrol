@@ -467,6 +467,37 @@ Brokers `tlsSource` (`self` | `vpn-cert`) und `tlsHost`. Die Edge-Übersicht
 supported, shared, wildcard, notAfter, host, problem, state, tunnel,
 minGateway }` (`services/gatewayFeatures.js` `mqttVpnCertPart`).
 
+**Zweiter Port 8884 für Geräte mit Fingerabdruck:** Manche Geräte prüfen TLS
+nur über einen fest hinterlegten Fingerabdruck; der des Gerätezertifikats
+wechselt bei jeder Erneuerung. Dafür gibt es unter „Gerätezertifikat verwenden“
+den Unterschalter **„Zweiter Port für Geräte mit Fingerabdruck (8884)“**
+(Standard aus, nur zusammen mit dem Schalter, Gateway ab **1.45.0** mit der
+Capability `mqtt-fingerprint-port`):
+
+- Gespeichert in `gateway_features.settings.mqttVpnCert.fingerprintPort`,
+  geändert mit `PUT /api/v1/gateways/:id/features { mqttVpnCert: { fingerprintPort } }`.
+  Einschalten ohne `enabled` wird abgelehnt (400), Ausschalten von `enabled`
+  schaltet ihn mit aus. Ausschalten geht immer.
+- **Konfiguration:** eingeschaltet kommt `fingerprint_port: true` zu
+  `features.mqtt_tls`. Ausgeschaltet fehlt es, `mqtt_tls` und der Hash sind wie
+  ohne Unterschalter. Ein Gateway ohne die Capability ignoriert das Feld.
+- **Gateway:** solange Port 8883 das Gerätezertifikat hat, lauscht zusätzlich
+  Port 8884 mit dem selbst erzeugten Zertifikat (derselbe Fingerabdruck wie
+  vorher auf 8883), an denselben Adressen wie 8883 (am Tunnel nur, wenn 8884
+  dort frei ist). Fällt 8883 auf das selbst erzeugte zurück, entfällt 8884.
+- **Rückmeldung:** Heartbeat `telemetry.mqtt_tls.fingerprint_port: { enabled,
+  port, state, tunnel }` (`state`: `off`, `broker_off`, `fallback`, `no_cert`,
+  `active`); im Edge-Status des Brokers `tlsFp: { port, sha256, validTo, cert }`
+  – das PEM nur, wenn sein SHA-256 der gemeldete Fingerabdruck ist
+  (`services/edge/hub.js` `tlsFpOf`). Die Edge-Übersicht liefert
+  `mqttVpnCert.fingerprintPort: { enabled, supported, port, state, tunnel,
+  minGateway }`.
+- **Oberfläche:** der Unterschalter in der TLS-Karte nur bei eingeschaltetem
+  „Gerätezertifikat verwenden“ und einem Gateway mit der Capability (oder solange
+  er an ist). Eingeschaltet die Zeile „Port 8884 – selbst erzeugtes Zertifikat“
+  mit Fingerabdruck (SHA-256) und PEM zum Kopieren und dem Hinweis, bei solchen
+  Geräten nur den Port auf 8884 zu ändern.
+
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 
 `GET /api/v1/settings/vpn-names/status`:

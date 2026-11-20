@@ -111,6 +111,25 @@ default. The switch exists from gateway 1.44.0.
   already called `mqtt-<name>` (the device keeps its name), TLS off, or a TCP
   route uses port 8883 at the tunnel address (then home network only).
 
+**Switching the devices over.** With the switch on there are two kinds of devices:
+
+- **Devices that check the certificate** (chain and name, e.g. Home Assistant,
+  Node-RED, most apps): change the address to the name
+  `mqtt-<gateway name>.geraete.<zone>` with port **8883** and use the standard
+  CA (the built-in root certificates) – no certificate of their own, no
+  fingerprint.
+- **Devices that can only check a fixed fingerprint** (many small smart home
+  devices): switch on **“Second port for devices with a fingerprint (8884)”**
+  (off by default, from gateway 1.45.0). Port 8884 then has the self-made
+  certificate with the previous fingerprint; on the device **only change the
+  port from 8883 to 8884**, address and fingerprint stay. The card shows the row
+  “Port 8884 – self-made certificate” with the fingerprint (SHA-256) and the
+  certificate (PEM) to copy.
+- Port 8884 exists only while port 8883 has the device certificate. If the
+  gateway goes back to the self-made one, 8883 has the old fingerprint again and
+  8884 goes away. Renewing the device certificate does not drop connections on
+  8884.
+
 ## 4.3 Where do my devices show up?
 
 The devices show up **in the plugin**, on the left under “Home” →

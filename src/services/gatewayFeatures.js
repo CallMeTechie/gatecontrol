@@ -55,6 +55,10 @@ const MIN_GATEWAY_SETUP_PAGE_VPN = '1.42.0';
 // MQTT-TLS mit dem Gerätezertifikat (gateway docs/vpn-cert.md „MQTT mit dem Gerätezertifikat“): only by the
 // capability `mqtt-vpn-cert` — the version is the hint
 const MIN_GATEWAY_MQTT_VPN_CERT = '1.44.0';
+// second TLS port 8884 with the self-made certificate next to the device certificate (gateway docs/vpn-cert.md
+// „Zweiter Port für Geräte mit Fingerabdruck“): only by the capability `mqtt-fingerprint-port` — the version is the hint
+const MIN_GATEWAY_MQTT_FP_PORT = '1.45.0';
+const MQTT_FP_PORT = 8884;
 // the broker's name in the device area: one label, "mqtt-<gateway's name>" — one level below the device
 // area (the wildcard covers no deeper names), one per gateway ("mqtt" alone is kept free there)
 const MQTT_HOST_PREFIX = 'mqtt-';
@@ -83,7 +87,8 @@ const DEFAULTS = Object.freeze({
   // "Gerätezertifikat verwenden" (Edge › MQTT › TLS): port 8883 of the gateway's broker with the device
   // wildcard under mqtt-<hostname>.<device area> instead of its self-made certificate — off by default;
   // the name resolves in the VPN only while this is on (services/dns.js)
-  mqttVpnCert: { enabled: false },
+  // fingerprintPort: "Zweiter Port für Geräte mit Fingerabdruck (8884)" — only together with enabled (off by default)
+  mqttVpnCert: { enabled: false, fingerprintPort: false },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -99,6 +104,13 @@ class FeatureError extends Error {
 
 function db() { return getDb(); }
 function bool(v, d) { return typeof v === 'boolean' ? v : d; }
+
+/** The sub-switch (port 8884) only counts with the main switch: without it, it is stored as off. */
+function mqttVpnCertSettings(raw) {
+  const m = raw && typeof raw === 'object' ? raw : {};
+  const enabled = bool(m.enabled, DEFAULTS.mqttVpnCert.enabled);
+  return { enabled, fingerprintPort: enabled && bool(m.fingerprintPort, DEFAULTS.mqttVpnCert.fingerprintPort) };
+}
 function json(s) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
 
 function publicIpv4(ip) {
@@ -135,7 +147,7 @@ function normalize(raw) {
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
     setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
     setupPageVpn: { enabled: bool((r.setupPageVpn || {}).enabled, DEFAULTS.setupPageVpn.enabled) },
-    mqttVpnCert: { enabled: bool((r.mqttVpnCert || {}).enabled, DEFAULTS.mqttVpnCert.enabled) },
+    mqttVpnCert: mqttVpnCertSettings(r.mqttVpnCert),
   };
 }
 
@@ -176,7 +188,7 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'], mqttVpnCert: ['enabled'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'], mqttVpnCert: ['enabled', 'fingerprintPort'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -209,7 +221,8 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
           throw new FeatureError('invalid_host', 'print.manual: up to 16 private IPv4 addresses (RFC 1918)');
         }
         out.print.manual = [...new Set(val.map((x) => x.trim()))];
-      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups') || (k === 'print' && ['convert', 'ocr', 'office'].includes(f))) {
+      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups') || (k === 'print' && ['convert', 'ocr', 'office'].includes(f))
+        || (k === 'mqttVpnCert' && f === 'fingerprintPort')) {
         if (typeof val !== 'boolean') throw new FeatureError('invalid', `${k}.${f}: must be true or false`);
         out[k][f] = val;
       } else if (f === 'speedtest') {
@@ -237,6 +250,11 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
     }
   }
   if (!any) throw new FeatureError('invalid', 'nothing to change');
+  // port 8884 only next to the device certificate: switching it on alone is refused, switching the device
+  // certificate off switches it off as well (normalize)
+  if (p.mqttVpnCert && p.mqttVpnCert.fingerprintPort === true && !out.mqttVpnCert.enabled) {
+    throw new FeatureError('invalid', 'mqttVpnCert.fingerprintPort: needs mqttVpnCert.enabled');
+  }
   // Lokale KI: the pinned certificate belongs to the address it was confirmed for
   if (p.ai) out.ai = require('./ai/local').afterPatch(current.ai, out.ai, p.ai);
   if (out.ups.enabled && !out.ups.host) throw new FeatureError('ups_host_required', 'ups.host is needed to switch the UPS status on');
@@ -397,7 +415,9 @@ function hostnameOf(peerId) {
 function mqttVpnCertPayload(peerId, s) {
   if (!s.mqttVpnCert.enabled) return {};
   const n = mqttVpnName(hostnameOf(peerId));
-  return { mqtt_tls: { vpn_cert: true, ...(n.label ? { vpn_name: n.label } : {}) } };
+  // fingerprint_port: also port 8884 with the self-made certificate (capability `mqtt-fingerprint-port`;
+  // an older gateway ignores it) — absent while off, no hash changes
+  return { mqtt_tls: { vpn_cert: true, ...(n.label ? { vpn_name: n.label } : {}), ...(s.mqttVpnCert.fingerprintPort ? { fingerprint_port: true } : {}) } };
 }
 
 function vpnCertShare(peerId) {
@@ -508,6 +528,9 @@ function support(tel) {
     // port 8883 of the MQTT broker with the device certificate (gateway docs/vpn-cert.md)
     mqttVpnCert: !!(caps && caps.includes('mqtt-vpn-cert')),
     minGatewayMqttVpnCert: MIN_GATEWAY_MQTT_VPN_CERT,
+    // port 8884 with the self-made certificate next to the device certificate
+    mqttFingerprintPort: !!(caps && caps.includes('mqtt-fingerprint-port')),
+    minGatewayMqttFingerprintPort: MIN_GATEWAY_MQTT_FP_PORT,
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
@@ -833,6 +856,10 @@ function setupPageVpnPart(g, tel, s) {
  *   host       mqtt-<hostname>.<device area> | null (problem says why)
  *   state      off | broker_off | no_name | no_cert | active | null (gateway not reported yet)
  *   tunnel     listening | no_address | port_in_use | null
+ *   fingerprintPort  "Zweiter Port für Geräte mit Fingerabdruck (8884)" (telemetry.mqtt_tls.fingerprint_port):
+ *              { enabled, supported (capability mqtt-fingerprint-port), port, state, tunnel, minGateway }
+ *              state  off | broker_off | fallback | no_cert | active | null; the fingerprint and PEM come
+ *              with the edge status (mqtt.status.tlsFp)
  */
 function mqttVpnCertPart(peerId) {
   const g = needGateway(peerId);
@@ -844,9 +871,13 @@ function mqttVpnCertPart(peerId) {
   const STATES = ['off', 'broker_off', 'no_name', 'no_cert', 'active'];
   const TUNNEL = ['listening', 'no_address', 'port_in_use'];
   const n = mqttVpnName(hostnameOf(g.id));
+  const f = tel.mqtt_tls && typeof tel.mqtt_tls === 'object' && tel.mqtt_tls.fingerprint_port && typeof tel.mqtt_tls.fingerprint_port === 'object'
+    ? tel.mqtt_tls.fingerprint_port : null;
+  const FP_STATES = ['off', 'broker_off', 'fallback', 'no_cert', 'active'];
+  const sup = support(tel);
   return {
     enabled: s.mqttVpnCert.enabled,
-    supported: support(tel).mqttVpnCert,
+    supported: sup.mqttVpnCert,
     shared: !!cert,
     wildcard: cert && typeof cert.wildcard === 'string' ? cert.wildcard : null,
     notAfter: cert && typeof cert.not_after === 'string' ? cert.not_after : null,
@@ -855,11 +886,19 @@ function mqttVpnCertPart(peerId) {
     state: v && STATES.includes(v.state) ? v.state : null,
     tunnel: v && TUNNEL.includes(v.tunnel) ? v.tunnel : null,
     minGateway: MIN_GATEWAY_MQTT_VPN_CERT,
+    fingerprintPort: {
+      enabled: s.mqttVpnCert.fingerprintPort,
+      supported: sup.mqttFingerprintPort,
+      port: MQTT_FP_PORT,
+      state: f && FP_STATES.includes(f.state) ? f.state : null,
+      tunnel: f && TUNNEL.includes(f.tunnel) ? f.tunnel : null,
+      minGateway: MIN_GATEWAY_MQTT_FP_PORT,
+    },
   };
 }
 
 module.exports = {
-  mqttVpnName, mqttVpnRecords, mqttVpnCertPart, MIN_GATEWAY_MQTT_VPN_CERT,
+  mqttVpnName, mqttVpnRecords, mqttVpnCertPart, MIN_GATEWAY_MQTT_VPN_CERT, MIN_GATEWAY_MQTT_FP_PORT, MQTT_FP_PORT,
   DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, MIN_GATEWAY_SETUP_PAGE_VPN, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, vpnNamesProblem, publicIpv4,

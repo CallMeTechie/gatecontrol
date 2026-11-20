@@ -365,6 +365,35 @@
   }
 
   /**
+   * The sub-switch "Zweiter Port für Geräte mit Fingerabdruck (8884)" under "Gerätezertifikat verwenden": null
+   * while that is off, or while the gateway does not know it (no capability mqtt-fingerprint-port) and it is
+   * off — switching it off again always works. Otherwise { enabled, port, hint, fingerprint, cert, validTo }:
+   *   hint         gwe.tls.fpport.hint_<hint> or null
+   *   fingerprint  "AB:CD:…" of the self-made certificate on port 8884 (status.tlsFp), cert its PEM
+   * `v`: overview().mqttVpnCert; `status`: the broker's edge status (mqtt.status).
+   */
+  function fpPortView(v, status) {
+    const f = v && v.fingerprintPort;
+    if (!v || !v.enabled || !f || (!f.supported && !f.enabled)) return null;
+    const out = { enabled: !!f.enabled, port: Number.isInteger(f.port) ? f.port : 8884, hint: null, fingerprint: null, cert: null, validTo: null };
+    if (!f.supported) { out.hint = 'old'; return out; }
+    if (!f.enabled) return out;
+    const fp = status && status.tls === 'on' && status.tlsSource === 'vpn-cert' && status.tlsFp && typeof status.tlsFp === 'object' ? status.tlsFp : null;
+    if (fp) {
+      out.fingerprint = fingerprintText(fp.sha256);
+      out.cert = typeof fp.cert === 'string' && fp.cert ? fp.cert : null;
+      out.validTo = typeof fp.validTo === 'string' ? fp.validTo : null;
+      if (Number.isInteger(fp.port)) out.port = fp.port;
+    }
+    if (f.state === 'fallback' || f.state === 'no_cert') out.hint = f.state;
+    else if (f.state === 'active') {
+      if (f.tunnel === 'no_address' || f.tunnel === 'port_in_use') out.hint = 'tunnel_' + f.tunnel;
+      else if (!out.fingerprint) out.hint = 'pending';
+    } else if (f.state !== 'broker_off') out.hint = 'pending';
+    return out;
+  }
+
+  /**
    * Status line of the broker: { key, tone } (gwe.mqtt.status.<key>); while the edge channel is down
    * and the server knows why (connection.reason), also `reason` with the tone of that reason.
    */
@@ -413,6 +442,6 @@
     TABS, STATES, REASONS, reasonDoc, reasonTopic, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
-    topicPrefix, brokerAddress, fingerprintText, tlsView, vpnCertView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
+    topicPrefix, brokerAddress, fingerprintText, tlsView, vpnCertView, fpPortView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
   };
 });
