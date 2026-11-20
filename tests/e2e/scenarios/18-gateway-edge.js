@@ -488,7 +488,7 @@ module.exports = (ctx) => {
       }));
       step('mqtt mock: TLS on, gateway reports missing_cert → "Zertifikat fehlt"', await page.evaluate(() => !!document.querySelector('[aria-labelledby="gwe-h-tls"] .gwe-note-warn')));
       // TLS on port 8883: the gateway made its certificate — fingerprint and certificate to copy into devices
-      const tlsBefore = { gateway: { ...pi.gateway }, settings: { ...pi.settings }, status: { ...pi.mqtt.status } };
+      const tlsBefore = { gateway: { ...pi.gateway }, settings: { ...pi.settings }, status: { ...pi.mqtt.status }, selfPem: '-----BEGIN CERTIFICATE-----\nMIIBlDCCATmg\n-----END CERTIFICATE-----\n' };
       const fp = 'efcc6bcba293fa77e8c2a59f5e8c5dfb3d4673e5174905628a2e201e98e84853';
       pi.gateway.mqttTlsSupported = true;
       pi.mqtt.status = { ...pi.mqtt.status, tls: 'on', tlsSha256: fp, tlsValidTo: '2036-11-08T11:16:10.000Z', tlsCert: '-----BEGIN CERTIFICATE-----\nMIIBlDCCATmg\n-----END CERTIFICATE-----\n' };
@@ -515,6 +515,13 @@ module.exports = (ctx) => {
       await page.route(FEATURES_RE, (r) => {
         const b = JSON.parse(r.request().postData() || '{}');
         featureCalls.push({ method: r.request().method(), body: b });
+        // the sub-switch "Zweiter Port für Geräte mit Fingerabdruck (8884)": port 8884 with the self-made certificate
+        if (b.mqttVpnCert && 'fingerprintPort' in b.mqttVpnCert) {
+          const fon = b.mqttVpnCert.fingerprintPort === true;
+          pi.mqttVpnCert = { ...pi.mqttVpnCert, fingerprintPort: { ...pi.mqttVpnCert.fingerprintPort, enabled: fon, state: fon ? 'active' : 'off', tunnel: fon ? 'listening' : null } };
+          pi.mqtt.status = { ...pi.mqtt.status, tlsFp: fon ? { port: 8884, sha256: fp, validTo: '2036-11-08T11:16:10.000Z', cert: tlsBefore.selfPem } : undefined };
+          return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, gateway: {} }) });
+        }
         const on = !!(b.mqttVpnCert && b.mqttVpnCert.enabled === true);
         pi.mqttVpnCert = { ...pi.mqttVpnCert, enabled: on, state: on ? 'active' : 'off', tunnel: on ? 'listening' : null };
         pi.mqtt.status = on ? { ...pi.mqtt.status, tlsSource: 'vpn-cert', tlsHost: VPN_HOST, tlsCert: undefined, tlsValidTo: undefined }
@@ -563,6 +570,57 @@ module.exports = (ctx) => {
         const host = c && c.querySelector('[data-tls-vpn-host]');
         return !!host && host.textContent === h + ':8883' && !!host.parentElement.querySelector('.gwe-copy') && !!c.querySelector('.gwe-note-warn') && !!c.querySelector('[data-tls-fp]');
       }, VPN_HOST));
+      // "Zweiter Port für Geräte mit Fingerabdruck (8884)" (capability mqtt-fingerprint-port): a sub-switch under
+      // "Gerätezertifikat verwenden", off; switched on, port 8884 with the self-made certificate — fingerprint and PEM
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, state: 'active', tunnel: 'listening',
+        fingerprintPort: { enabled: false, supported: true, port: 8884, state: 'off', tunnel: null, minGateway: '1.45.0' } };
+      pi.mqtt.status = { ...pi.mqtt.status, tlsSource: 'vpn-cert', tlsHost: VPN_HOST, tlsCert: undefined, tlsValidTo: undefined };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: gateway with mqtt-fingerprint-port → sub-switch "Zweiter Port für Geräte mit Fingerabdruck (8884)", off, no fingerprint', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const sw = c && c.querySelector('[data-fk="gwe-tls-fpport-sw"]');
+        return !!sw && sw.getAttribute('aria-checked') === 'false' && !sw.disabled && !c.querySelector('[data-tls-fpport-on]') && !c.querySelector('[data-tls-fp]')
+          && /8884/.test(c.querySelector('[data-tls-fpport]').textContent);
+      }));
+      featureCalls.length = 0;
+      await page.click('[data-fk="gwe-tls-fpport-sw"]');
+      step('mqtt mock: sub-switch on → PUT { mqttVpnCert: { fingerprintPort: true } }, "Port 8884" with the old fingerprint and the PEM to copy, hint "Port auf 8884"',
+        await until(page, (hex) => {
+          const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+          const rows = c && c.querySelector('[data-tls-fpport-on]');
+          const code = rows && rows.querySelector('[data-tls-fpport-fp]');
+          return !!code && code.textContent === hex.toUpperCase().match(/../g).join(':') && rows.querySelectorAll('.gwe-copy').length === 2
+            && /8884/.test(rows.textContent) && /8884/.test(c.textContent.slice(c.textContent.indexOf(rows.textContent) + rows.textContent.length))
+            && c.querySelector('[data-fk="gwe-tls-fpport-sw"]').getAttribute('aria-checked') === 'true'
+            && !!c.querySelector('[data-tls-vpn-addr]') && !c.querySelector('[data-tls-fp]') && !c.querySelector('.gwe-note-warn');
+        }, fp) && featureCalls.length === 1 && JSON.stringify(featureCalls[0].body) === '{"mqttVpnCert":{"fingerprintPort":true}}', JSON.stringify(featureCalls));
+      await shot(page, 'gwe-mqtt-tls-fpport-dark');
+      // 8884 taken by a TCP route at the tunnel address → a warning with port 8884, the LAN listener stays
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, fingerprintPort: { ...pi.mqttVpnCert.fingerprintPort, tunnel: 'port_in_use' } };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: port 8884 taken at the tunnel → warning with port 8884, fingerprint still shown', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const n = c && c.querySelector('[data-tls-fpport] ~ .gwe-note-warn, .gwe-note-warn');
+        return !!n && /8884/.test(n.textContent) && !!c.querySelector('[data-tls-fpport-fp]');
+      }));
+      await page.click('[data-fk="gwe-tls-fpport-sw"]');
+      step('mqtt mock: sub-switch off → PUT { mqttVpnCert: { fingerprintPort: false } }, port 8884 row gone', await until(page, () => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        return !!c && !c.querySelector('[data-tls-fpport-on]') && c.querySelector('[data-fk="gwe-tls-fpport-sw"]').getAttribute('aria-checked') === 'false';
+      }) && JSON.stringify(featureCalls[featureCalls.length - 1].body) === '{"mqttVpnCert":{"fingerprintPort":false}}', JSON.stringify(featureCalls));
+      // a gateway without the capability (1.44.0): no sub-switch
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, fingerprintPort: { ...pi.mqttVpnCert.fingerprintPort, enabled: false, supported: false, state: null, tunnel: null } };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: gateway without mqtt-fingerprint-port → no sub-switch, "Gerätezertifikat verwenden" stays', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        return !!c && !c.querySelector('[data-tls-fpport]') && !!c.querySelector('[data-fk="gwe-tls-vpn-sw"]');
+      }));
       await page.unroute(FEATURES_RE);
       // a gateway without the capability (older than 1.44.0) and the switch off: no new row at all
       pi.mqttVpnCert = { ...pi.mqttVpnCert, enabled: false, supported: false, state: null, tunnel: null };

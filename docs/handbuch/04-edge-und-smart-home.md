@@ -114,6 +114,25 @@ Standard aus. Den Schalter gibt es ab Gateway 1.44.0.
   heißt schon `mqtt-<Name>` (das Gerät behält seinen Namen), TLS aus, oder eine
   TCP-Route belegt Port 8883 an der Tunnel-Adresse (dann nur im Heimnetz).
 
+**Geräte umstellen.** Mit eingeschaltetem Schalter gibt es zwei Arten von Geräten:
+
+- **Geräte, die das Zertifikat prüfen** (Kette und Namen, z. B. Home Assistant,
+  Node-RED, die meisten Apps): Adresse auf den Namen
+  `mqtt-<Name des Gateways>.geraete.<Zone>` mit Port **8883** ändern und die
+  Standard-CA (die eingebauten Stammzertifikate) verwenden – kein eigenes
+  Zertifikat, kein Fingerabdruck.
+- **Geräte, die nur einen festen Fingerabdruck prüfen können** (viele kleine
+  Smart-Home-Geräte): Unterschalter **„Zweiter Port für Geräte mit Fingerabdruck
+  (8884)“** einschalten (Standard aus, ab Gateway 1.45.0). Port 8884 hat dann das
+  selbst erzeugte Zertifikat mit dem bisherigen Fingerabdruck; im Gerät ändert
+  man **nur den Port von 8883 auf 8884**, Adresse und Fingerabdruck bleiben. Die
+  Karte zeigt die Zeile „Port 8884 – selbst erzeugtes Zertifikat“ mit dem
+  Fingerabdruck (SHA-256) und dem Zertifikat (PEM) zum Kopieren.
+- Port 8884 gibt es nur, solange Port 8883 das Gerätezertifikat hat. Fällt das
+  Gateway auf das selbst erzeugte zurück, hat 8883 wieder den alten Fingerabdruck
+  und 8884 entfällt. Die Erneuerung des Gerätezertifikats trennt Verbindungen auf
+  8884 nicht.
+
 ## 4.3 Wo erscheinen meine Geräte?
 
 Die Geräte erscheinen **im Plugin**, also links unter „Zuhause“ →

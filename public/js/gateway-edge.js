@@ -911,6 +911,52 @@
       wrap.appendChild(note('info', [t('gwe.tls.vpn.dns')]));
     }
     if (v.hint) wrap.appendChild(note(v.hint === 'pending' ? 'info' : 'warn', [t('gwe.tls.vpn.hint_' + v.hint, { min: (d.mqttVpnCert && d.mqttVpnCert.minGateway) || '1.44.0', port: 8883 })]));
+    const fpRow = fpPortRow(g, d);
+    if (fpRow) wrap.appendChild(fpRow);
+    return wrap;
+  }
+
+  /**
+   * "Zweiter Port für Geräte mit Fingerabdruck (8884)" (gateway docs/vpn-cert.md): the sub-switch under
+   * "Gerätezertifikat verwenden", only while that is on and with a gateway that reports the capability
+   * mqtt-fingerprint-port (or while it is on). Switched on: port 8884 with the self-made certificate —
+   * fingerprint and PEM to copy, as for port 8883 without the device certificate.
+   * Stored with the gateway's features: PUT /api/v1/gateways/:id/features { mqttVpnCert: { fingerprintPort } }.
+   */
+  function fpPortRow(g, d) {
+    const v = K.fpPortView(d.mqttVpnCert, d.mqtt && d.mqtt.status);
+    if (!v) return null;
+    const name = t('gwe.tls.fpport.switch', { port: v.port });
+    const sw = switchBtn(v.enabled, name, 'gwe-tls-fpport-sw', () => {
+      const next = sw.getAttribute('aria-checked') !== 'true';
+      sw.disabled = true;
+      sw.setAttribute('aria-checked', next ? 'true' : 'false');
+      api('PUT', '/api/v1/gateways/' + encodeURIComponent(String(g.peer_id)) + '/features', { mqttVpnCert: { fingerprintPort: next } })
+        .then(() => { toast(t(next ? 'gwe.tls.fpport.on_done' : 'gwe.tls.fpport.off_done', { port: v.port })); return reload(g.peer_id); })
+        .catch((e) => {
+          sw.disabled = false;
+          sw.setAttribute('aria-checked', next ? 'false' : 'true');
+          D.alert({ message: errText(e), danger: true });
+        });
+    });
+    const box = h('div', { class: 'gwe-kvs', 'data-tls-fpport': '' }, [kv(name, [sw])]);
+    const wrap = h('div', null, [box, h('p', { class: 'gwe-d', text: t('gwe.tls.fpport.text', { port: v.port }) })]);
+    if (v.enabled && v.fingerprint) {
+      const rows = h('div', { class: 'gwe-kvs', 'data-tls-fpport-on': '' }, [kv(t('gwe.tls.fpport.k_port', { port: v.port }),
+        [tag('green', t('gwe.tls.active'), true), ' ', h('span', { text: t('gwe.tls.fpport.self') })])]);
+      rows.appendChild(kv(t('gwe.tls.k_fp'), [h('code', { class: 'gwe-mono', 'data-tls-fpport-fp': '' }, [v.fingerprint.slice(0, 48), h('wbr'), v.fingerprint.slice(48)]),
+        copyBtn(() => v.fingerprint, t('gwe.tls.copy_fp'))]));
+      if (v.cert) {
+        rows.appendChild(kv(t('gwe.tls.k_cert'), [h('span', { text: v.validTo ? t('gwe.tls.cert_self_until', { date: fmtDate(v.validTo) }) : t('gwe.tls.cert_self') }),
+          copyBtn(() => v.cert, t('gwe.tls.copy_cert'))]));
+      }
+      wrap.appendChild(rows);
+      wrap.appendChild(note('info', [t('gwe.tls.fpport.hint', { port: v.port })]));
+    }
+    if (v.hint) {
+      const min = (d.mqttVpnCert && d.mqttVpnCert.fingerprintPort && d.mqttVpnCert.fingerprintPort.minGateway) || '1.45.0';
+      wrap.appendChild(note(v.hint === 'pending' || v.hint === 'fallback' ? 'info' : 'warn', [t('gwe.tls.fpport.hint_' + v.hint, { min, port: v.port })]));
+    }
     return wrap;
   }
 

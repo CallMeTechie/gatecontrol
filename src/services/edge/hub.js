@@ -131,6 +131,20 @@ function tlsCertOf(m) {
   return out;
 }
 
+/**
+ * Port 8884 next to the device certificate (gateway: status.tlsFp { port, sha256, cert }): the self-made
+ * certificate with its fixed fingerprint → { tlsFp: { port, sha256, validTo?, cert? } } (checked like
+ * tlsCertOf: the PEM only when its SHA-256 is the reported fingerprint). Nothing usable → {}.
+ */
+function tlsFpOf(m) {
+  const f = m && m.tlsFp && typeof m.tlsFp === 'object' && !Array.isArray(m.tlsFp) ? m.tlsFp : null;
+  if (!f || m.tlsSource !== 'vpn-cert') return {};
+  const port = Number.isInteger(f.port) && f.port > 0 && f.port <= 65535 ? f.port : null;
+  const c = tlsCertOf({ tlsSha256: f.sha256, tlsCert: f.cert });
+  if (!port || !c.tlsSha256) return {};
+  return { tlsFp: { port, sha256: c.tlsSha256, ...(c.tlsCert ? { validTo: c.tlsValidTo, cert: c.tlsCert } : {}) } };
+}
+
 function boundedJson(v, max) {
   try { const s = JSON.stringify(v); return s && s.length <= max ? JSON.parse(s) : null; } catch { return null; }
 }
@@ -299,6 +313,8 @@ class Conn {
         // which certificate port 8883 has: self (made by the gateway) | vpn-cert (the device wildcard, then
         // also the name it answers under — no PEM, clients check the name)
         ...(tls === 'on' ? tlsSourceOf(m.mqtt) : {}),
+        // port 8884 with the self-made certificate next to the device certificate (fingerprint + PEM to copy)
+        ...(tls === 'on' ? tlsFpOf(m.mqtt) : {}),
         clients: Number.isSafeInteger(m.mqtt.clients) && m.mqtt.clients >= 0 ? m.mqtt.clients : 0,
         accounts: accounts.filter((x) => x && typeof x.user === 'string').map((x) => ({
           user: str(x.user, 64), connected: x.connected === true, lastSeen: str(x.lastSeen, 40),
@@ -591,5 +607,5 @@ function _resetForTest() {
 
 module.exports = {
   attach, handleUpgrade, call, configure, refresh, refreshSoon, online, connectionInfo, closeAll, EdgeError,
-  PATH, PROTOCOL, FRAME_MAX, LIMITS, _setForTest, _resetForTest, tlsSourceOf,
+  PATH, PROTOCOL, FRAME_MAX, LIMITS, _setForTest, _resetForTest, tlsSourceOf, tlsFpOf,
 };

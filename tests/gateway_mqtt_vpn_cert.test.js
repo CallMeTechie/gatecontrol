@@ -57,7 +57,7 @@ describe('MQTT with the device certificate: switch and config pull', () => {
   it('is off by default: no mqtt_tls in the config pull, no name in the DNS', () => {
     customZone();
     assert.ok(hostname, 'the gateway has a name in the VPN');
-    assert.deepEqual(features.get(id).mqttVpnCert, { enabled: false });
+    assert.deepEqual(features.get(id).mqttVpnCert, { enabled: false, fingerprintPort: false });
     assert.equal('mqtt_tls' in features.configPayload(id), false);
     assert.ok(!dns.renderHostsContent().includes(`mqtt-${hostname}.`));
   });
@@ -67,7 +67,7 @@ describe('MQTT with the device certificate: switch and config pull', () => {
     vpnCert.shareSummary = (peerId) => (Number(peerId) === id ? summary() : null);
     const hash0 = gateways.computeConfigHash(id);
     await put({ mqttVpnCert: { enabled: true } }).expect(200);
-    assert.deepEqual(features.get(id).mqttVpnCert, { enabled: true });
+    assert.deepEqual(features.get(id).mqttVpnCert, { enabled: true, fingerprintPort: false });
     assert.deepEqual(features.configPayload(id).mqtt_tls, { vpn_cert: true, vpn_name: `mqtt-${hostname}` });
     assert.notEqual(gateways.computeConfigHash(id), hash0);
     const ip = db.prepare('SELECT allowed_ips FROM peers WHERE id = ?').get(id).allowed_ips.split('/')[0];
@@ -112,7 +112,8 @@ describe('MQTT with the device certificate: the part for the TLS card', () => {
     await heartbeat({ gateway_version: '1.43.0', capabilities: ['vpn-cert', 'vpn-cert-devices'] });
     let v = features.mqttVpnCertPart(id);
     assert.deepEqual(v, { enabled: false, supported: false, shared: true, wildcard: `*.${AREA}`, notAfter: '2027-02-01T00:00:00.000Z',
-      host: `mqtt-${hostname}.${AREA}`, problem: null, state: null, tunnel: null, minGateway: '1.44.0' });
+      host: `mqtt-${hostname}.${AREA}`, problem: null, state: null, tunnel: null, minGateway: '1.44.0',
+      fingerprintPort: { enabled: false, supported: false, port: 8884, state: null, tunnel: null, minGateway: '1.45.0' } });
     await put({ mqttVpnCert: { enabled: true } }).expect(200);
     await heartbeat({ gateway_version: '1.44.0', capabilities: ['vpn-cert', 'vpn-cert-devices', 'mqtt-vpn-cert'],
       mqtt_tls: { vpn_cert: { enabled: true, state: 'active', host: `mqtt-${hostname}.${AREA}`, tunnel: 'port_in_use' } } });
