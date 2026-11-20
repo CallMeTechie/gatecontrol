@@ -418,6 +418,7 @@
         <button type="button" class="pgx-btn pgx-btn-sm" id="st-vc-renew" data-vc-show="active" hidden>{{ t('st.vc.renew') }}</button>
         <button type="button" class="pgx-btn pgx-btn-sm" id="st-vc-retry" data-vc-show="error" hidden>{{ t('st.vc.retry') }}</button>
         <button type="button" class="pgx-btn pgx-btn-sm pgx-btn-pri" id="st-vc-fix" data-vc-show="error">{{ t('st.vc.fix') }}</button>
+        <button type="button" class="pgx-btn pgx-btn-sm" id="st-vc-rotate" data-vc-show="active" hidden>{{ t('st.vc.rotate') }}</button>
       </div>
     </div>
     {% if not has('internal_dns') %}{{ lockNote('internal_dns') }}{% endif %}
@@ -516,6 +517,21 @@
         <div class="st-row-ctl"><div class="vc-uses" id="st-vc-used"></div></div>
       </div>
       <p class="stx-box vc-box" id="st-vc-routes" data-vc-show="active"></p>
+      {#- Passing certificate and key on (services/vpnCert.js setShare): off by default,
+          a list of the devices / gateways allowed to fetch, a plain risk note. -#}
+      <div id="st-vc-share" data-vc-show="active">
+        {{ switchRow('st-vc-share-on', 'vc-share', t('st.vc.share'), t('st.vc.share_hint')) }}
+        <p class="stx-box vc-box" data-tone="crit" id="st-vc-share-risk"></p>
+        <div class="st-row st-row-stack" data-st-row="vc-share-peers" id="st-vc-share-peers-row" hidden>
+          <div class="st-row-text"><span class="st-label" id="st-vc-share-peers-label">{{ t('st.vc.share_peers') }}</span><span class="st-hint">{{ t('st.vc.share_peers_hint') }}</span>
+            <span class="st-err" id="st-vc-share-peers-err" role="alert" hidden></span></div>
+          <div class="vc-share-list" id="st-vc-share-peers" data-st-field="vc-share-peers" role="group" aria-labelledby="st-vc-share-peers-label"></div>
+        </div>
+        <div class="st-row st-row-read" id="st-vc-share-fp-row" hidden>
+          <div class="st-row-text"><span class="st-label">{{ t('st.vc.share_fp') }}</span><span class="st-hint">{{ t('st.vc.share_fp_hint') }}</span></div>
+          <div class="st-row-ctl"><span class="st-read st-mono vc-fp" id="st-vc-share-fp"></span></div>
+        </div>
+      </div>
       <p class="stx-box vc-box" data-tone="crit" id="st-vc-error" hidden></p>
     </div>
   </section>

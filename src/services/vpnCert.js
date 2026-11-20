@@ -57,6 +57,10 @@ const KEY = {
   suspended: 'vpn_cert.suspended',
   lastTest: 'vpn_cert.last_test',
   served: 'vpn_cert.served_zone',
+  share: 'vpn_cert.share_enabled',
+  sharePeers: 'vpn_cert.share_peers',
+  shareUsed: 'vpn_cert.share_used',
+  shareFp: 'vpn_cert.share_fingerprint',
 };
 
 const FEATURE = 'internal_dns';
@@ -417,6 +421,7 @@ function view() {
     suspended: suspended ? { at: suspended.at || null, error: redact(suspended.error || '') } : null,
     renew_possible: canRenew(st, row),
     used_by: usedBy(st.zone),
+    share: shareView(),
     last_test: parseJson(get(KEY.lastTest, '')),
     resolvers: config.caddy.dnsResolvers,
     catalog: catalog(),
@@ -477,6 +482,168 @@ function refreshServed(reason = '') {
   try { syncCaddy().catch((err) => log().warn({ err: redact(err.message) }, 'vpn cert: Caddy not synced')); } catch { /* none */ }
   try { require('./notify/control').configChanged({ all: true }); } catch { /* best effort */ }
   if (now) activityLog('tls_vpn_cert_serving', `Portal and management also under home.${now} / server.${now}`, 'info', { zone: now });
+  return true;
+}
+
+// ─── Passing certificate and key on (off by default) ───────
+
+// The private key of the wildcard fits every name of the zone: whoever has it
+// can pose as the portal, the management and every route below the zone to
+// devices in the VPN. So: a switch of its own (off), a list of the devices
+// and gateways allowed to fetch it (empty), an explicit "I accept the risk"
+// when switching on, fetching only authenticated (gateway token over the
+// tunnel; app token bound to that device, from a VPN address), and every
+// fetch logged — never the key itself. Switching off offers a new key
+// (rotateKey), since a fetched key cannot be called back.
+
+function sharePeerIds() {
+  const v = parseJson(get(KEY.sharePeers, ''));
+  return Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n > 0))] : [];
+}
+function shareEnabled() { return get(KEY.share, '') === '1'; }
+
+/** The certificate files of the wildcard in Caddy's storage → { certPem, keyPem, notAfter, fingerprint } | null */
+function certMaterial() {
+  const st = state();
+  if (!st.wildcard) return null;
+  let entry = null;
+  try { entry = tlsGuard().scanCertificates(undefined, st.wildcard).get(st.wildcard) || null; } catch { entry = null; }
+  if (!entry || !entry.file) return null;
+  try {
+    const certPem = fs.readFileSync(entry.file, 'utf8');
+    const keyPem = fs.readFileSync(entry.file.replace(/\.crt$/, '.key'), 'utf8');
+    const x509 = new crypto.X509Certificate(certPem);
+    if (!x509.checkPrivateKey(crypto.createPrivateKey(keyPem))) return null;
+    if (new Date(x509.validTo).getTime() <= Date.now()) return null;
+    return { certPem, keyPem, notAfter: new Date(x509.validTo).toISOString(), fingerprint: x509.fingerprint256.replace(/:/g, '').toLowerCase(), dir: path.dirname(entry.file) };
+  } catch { return null; }
+}
+
+/** What a peer may know about the shared certificate (config pull, app permissions) → { wildcard, fingerprint, not_after } | null */
+function shareSummary(peerId) {
+  if (!shareEnabled() || !sharePeerIds().includes(Number(peerId)) || !servedZone()) return null;
+  const m = certMaterial();
+  if (!m) return null;
+  return { wildcard: `*.${servedZone()}`, fingerprint: m.fingerprint, not_after: m.notAfter };
+}
+
+/**
+ * Certificate and key for a fetching peer. → { ok: true, ... } | { ok: false, code }
+ *   code: not_shared (switch off / zone not served) | not_allowed | no_certificate
+ * Logs every handed-out key (peer, fingerprint — never the key).
+ */
+// Does the request come from the VPN address of this peer? (the key only through the tunnel)
+function fromPeerAddress(peerId, ip) {
+  const addr = String(ip || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  if (!addr) return false;
+  try {
+    const row = require('../db/connection').getDb().prepare('SELECT allowed_ips FROM peers WHERE id = ?').get(Number(peerId));
+    if (!row || !row.allowed_ips) return false;
+    return String(row.allowed_ips).split(',').map((x) => x.trim().split('/')[0].toLowerCase()).some((a) => a === addr);
+  } catch { return false; }
+}
+
+function fetchFor(peerId, { via = 'gateway', ip = null } = {}) {
+  if (!hasFeature(FEATURE) || !shareEnabled() || !servedZone()) return { ok: false, code: 'not_shared' };
+  const id = Number(peerId);
+  if (!sharePeerIds().includes(id)) return { ok: false, code: 'not_allowed' };
+  if (!fromPeerAddress(id, ip)) return { ok: false, code: 'not_from_vpn' };
+  const m = certMaterial();
+  if (!m) return { ok: false, code: 'no_certificate' };
+  let name = String(id);
+  try { const row = require('../db/connection').getDb().prepare('SELECT name FROM peers WHERE id = ?').get(id); if (row) name = row.name; } catch { /* name stays the id */ }
+  try { settings.set(KEY.shareUsed, '1'); } catch { /* best effort */ }
+  activityLog('tls_vpn_cert_key_fetched', `Certificate and key of *.${servedZone()} fetched by ${name}`, 'warning',
+    { peer_id: id, peer: name, via, fingerprint: m.fingerprint, not_after: m.notAfter }, ip);
+  return { ok: true, wildcard: `*.${servedZone()}`, zone: servedZone(), cert_pem: m.certPem, key_pem: m.keyPem, not_after: m.notAfter, fingerprint: m.fingerprint };
+}
+
+function shareView() {
+  const ids = new Set(sharePeerIds());
+  let peers = [];
+  try {
+    peers = require('../db/connection').getDb()
+      .prepare("SELECT id, name, peer_type, hostname FROM peers WHERE enabled = 1 ORDER BY (CASE WHEN peer_type = 'gateway' THEN 0 ELSE 1 END), name COLLATE NOCASE").all()
+      .map((p) => ({ id: p.id, name: p.name, gateway: p.peer_type === 'gateway', hostname: p.hostname || null, allowed: ids.has(p.id) }));
+  } catch { peers = []; }
+  const m = shareEnabled() ? certMaterial() : null;
+  return {
+    enabled: shareEnabled(),
+    peers,
+    allowed: [...ids],
+    used: get(KEY.shareUsed, '') === '1',
+    fingerprint: m ? m.fingerprint : null,
+  };
+}
+
+function notifyShare() {
+  try { require('./gatewayFeatures').notifyAllGateways(); } catch { /* best effort */ }
+  try { require('./notify/control').configChanged({ all: true }); } catch { /* best effort */ }
+}
+
+/** Switch passing on, and who may fetch. input: { enabled, peers: [ids], accept_risk } */
+function setShare(input = {}, { ip = null } = {}) {
+  if (!hasFeature(FEATURE)) { const err = new Error('feature_not_available'); err.code = 'feature_not_available'; err.statusCode = 403; throw err; }
+  const enabled = input.enabled === true;
+  const ids = Array.isArray(input.peers) ? [...new Set(input.peers.map(Number))] : sharePeerIds();
+  if (ids.some((n) => !Number.isInteger(n) || n < 1)) throw validationError('peers_invalid', 'peers');
+  if (ids.length > 0) {
+    const db = require('../db/connection').getDb();
+    const known = new Set(db.prepare(`SELECT id FROM peers WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((r) => r.id));
+    if (ids.some((n) => !known.has(n))) throw validationError('peers_invalid', 'peers');
+  }
+  const wasOn = shareEnabled();
+  if (enabled && !wasOn) {
+    if (input.accept_risk !== true) throw validationError('risk_not_accepted', 'accept_risk');
+    const st = state();
+    if (!['active', 'failed', 'pending'].includes(st.state)) throw validationError('not_configured');
+  }
+  const before = new Set(sharePeerIds());
+  settings.set(KEY.share, enabled ? '1' : '');
+  settings.set(KEY.sharePeers, JSON.stringify(ids));
+  if (enabled !== wasOn) {
+    activityLog(enabled ? 'tls_vpn_cert_share_on' : 'tls_vpn_cert_share_off',
+      enabled ? 'Passing certificate and key of the VPN names on: switched on' : 'Passing certificate and key of the VPN names on: switched off',
+      enabled ? 'warning' : 'info', { peers: ids }, ip);
+  } else if (ids.length !== before.size || ids.some((n) => !before.has(n))) {
+    activityLog('tls_vpn_cert_share_peers', 'Devices allowed to fetch certificate and key of the VPN names changed', 'warning', { peers: ids }, ip);
+  }
+  notifyShare();
+  return view();
+}
+
+/**
+ * A new key after passing it on: Caddy's stored certificate of the wildcard
+ * is removed and Caddy fetches a new one (with a new key). Only while passing
+ * on is off and a key was fetched. The names under the zone use the internal
+ * names' fallback for the minute until the new certificate is there.
+ */
+async function rotateKey({ ip = null } = {}) {
+  requireZone();
+  if (shareEnabled()) { const err = validationError('share_on'); err.statusCode = 409; throw err; }
+  if (get(KEY.shareUsed, '') !== '1') { const err = validationError('rotate_not_needed'); err.statusCode = 409; throw err; }
+  const st = state();
+  if (!['active', 'failed'].includes(st.state)) throw validationError('not_configured');
+  const m = certMaterial();
+  if (m && m.dir && path.basename(m.dir).startsWith('wildcard_.')) {
+    try { fs.rmSync(m.dir, { recursive: true, force: true }); } catch (err) { log().warn({ err: err.message }, 'vpn cert: stored certificate not removed'); }
+  }
+  tlsGuard().writeRow(st.wildcard, { state: 'pending', attempts: 0, last_error: null, last_error_code: null, next_retry_at: null, paused_at: null, paused_reason: null, not_after: null, issuer: null });
+  settings.set(KEY.shareUsed, '');
+  activityLog('tls_vpn_cert_key_rotated', `New key for ${st.wildcard} requested after passing it on`, 'warning', { zone: st.zone }, ip);
+  await syncCaddy();
+  refreshServed('key rotated');
+  return view();
+}
+
+/** After a certificate change: tell the peers that may fetch it (new fingerprint). */
+function shareRefresh() {
+  if (!shareEnabled()) return false;
+  const m = certMaterial();
+  const fp = m ? m.fingerprint : '';
+  if (fp === get(KEY.shareFp, '')) return false;
+  try { settings.set(KEY.shareFp, fp); } catch { /* no db */ }
+  notifyShare();
   return true;
 }
 
@@ -786,7 +953,7 @@ async function save(input = {}, { ip = null } = {}) {
 async function disable({ ip = null } = {}) {
   const st = state();
   const zones = [st.zone, st.stored_zone].filter(Boolean);
-  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended]) settings.set(k, '');
+  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp]) settings.set(k, '');
   removeSecretFiles();
   try { tlsGuard().forgetHosts(zones.map(wildcardOf)); } catch { /* none */ }
   if (st.provider) activityLog('tls_vpn_cert_disabled', 'Wildcard certificate of the VPN names switched off', 'info', { provider: st.provider, zone: st.zone }, ip);
@@ -1027,6 +1194,7 @@ module.exports = {
   save, disable, renew, applyAfterRestore,
   caddyTls, inConfig, suspend, unsuspend,
   servedZone, managementHosts, refreshServed, MANAGEMENT_LABELS,
+  setShare, shareSummary, fetchFor, rotateKey, shareRefresh, certMaterial,
   writeSecretFiles, removeSecretFiles, secretsDir,
   redact, preflight, detect, challengeNames, normDelegate,
   startTest, testView, suggestedDelay,

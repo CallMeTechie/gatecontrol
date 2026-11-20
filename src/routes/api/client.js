@@ -75,6 +75,8 @@ router.use(require('./client/policy'));
 router.use(require('./client/supportBundle'));
 // One-time portal login link after connecting (routes/portal.js GET /auto).
 router.use(require('./client/portalLink'));
+// certificate and key of the VPN zone's wildcard, for devices the admin allowed it (off by default)
+router.use(require('./client/vpnCert'));
 // Trusted-network detection of the apps: is the device in the server's LAN?
 router.use(require('./client/homeNetwork'));
 // Notification center: ack, inbox, prefs, test (the stream itself is mounted

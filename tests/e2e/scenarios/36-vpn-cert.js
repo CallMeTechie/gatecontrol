@@ -286,6 +286,34 @@ module.exports = (ctx) => {
           }));
         await cardShot(p, 'vpncert-active');
 
+        // ── An Geräte weitergeben: off by default, risk note, peers, confirmation ──
+        db(app, (d) => d.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type) VALUES ('e2e-gw-home', 'pk-e2e-gw', '10.8.0.2/32', 1, 'gateway')").run());
+        await p.reload();
+        await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'active');
+        step('passing on: off by default, no device list',
+          await p.evaluate(() => document.getElementById('st-vc-share-on').getAttribute('aria-checked') === 'false'
+            && document.getElementById('st-vc-share-peers-row').hidden
+            && document.getElementById('st-vc-share-risk').dataset.tone === 'crit'));
+        await p.click('#st-vc-share-on');
+        step('switched on: the devices that may fetch, the save bar',
+          await until(p, () => !document.getElementById('st-vc-share-peers-row').hidden
+            && document.querySelectorAll('#st-vc-share-peers input[type=checkbox]').length === 1
+            && !document.getElementById('st-savebar').hidden
+            && document.getElementById('card-vpn-cert').dataset.view === 'active'));
+        await p.check('#st-vc-share-peers input[type=checkbox]');
+        await cardShot(p, 'vpncert-share');
+        await p.click('#st-save');
+        step('saving asks once more about the key', await visible(p, '.gcd-dialog .gcd-ok'));
+        await p.click('.gcd-dialog .gcd-ok');
+        await until(p, () => document.getElementById('st-savebar').hidden);
+        const sh = (await api('GET', '/api/v1/settings/vpn-cert')).body.data.share;
+        step('saved: passing on is on for the chosen gateway, the answer has no key',
+          sh.enabled === true && sh.allowed.length === 1 && !JSON.stringify(sh).includes('PRIVATE KEY'), JSON.stringify({ enabled: sh.enabled, allowed: sh.allowed }));
+        await p.click('#st-vc-share-on');
+        await p.click('#st-save');
+        await until(p, () => document.getElementById('st-savebar').hidden);
+        step('switched off again', (await api('GET', '/api/v1/settings/vpn-cert')).body.data.share.enabled === false);
+
         // ── "Neuer Host" under the zone: internal only, no access choice ──
         const domId = db(app, (d) => d.prepare("SELECT id FROM domains WHERE domain = 'example.com'").get().id);
         await p.goto(B + '/routes');

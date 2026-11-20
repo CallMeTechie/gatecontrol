@@ -225,6 +225,51 @@ Die Karte hat die Ansichten `locked`, `nozone`, `off`, `setup`, `pending`,
 `active`, `error`; die Felder der Einrichtung gehen über die Speicherleiste,
 „Testen“ wirkt sofort.
 
+### Weitergabe an Geräte und Gateways
+
+Zertifikat und privater Schlüssel des Wildcards für ausgewählte Peers, für
+Dienste, die direkt auf einem Gerät oder Gateway laufen. Standard aus, nur
+Admin-Sitzung; Handbuch 2.12 „Zertifikat an Geräte weitergeben“.
+
+| Teil | Wo |
+|---|---|
+| Schalter, Liste, Abruf, neuer Schlüssel | `vpnCert.setShare`, `fetchFor`, `shareSummary`, `rotateKey`, `shareRefresh` |
+| Admin-API `PUT /api/v1/settings/vpn-cert/share` `{ enabled, peers: [peerId…], accept_risk }`, `POST …/rotate-key` | `src/routes/api/settings/vpnCert.js` |
+| Gateway `GET /api/v1/gateway/vpn-cert` (Gateway-Token) | `src/routes/api/gateway.js` |
+| App `GET /api/v1/client/vpn-cert` (Token mit Scope `client`, an das Gerät gebunden, Maschinenbindung) | `src/routes/api/client/vpnCert.js` |
+
+**Einstellungen:** `vpn_cert.share_enabled`, `vpn_cert.share_peers` (JSON-Liste
+der Peer-IDs), `vpn_cert.share_used` (ein Schlüssel wurde abgeholt),
+`vpn_cert.share_fingerprint`. Einschalten nur mit `accept_risk: true`
+(sonst `risk_not_accepted`) und bekannten Peers (sonst `peers_invalid`);
+„Zertifikat ausschalten“ beendet die Weitergabe.
+
+**Abruf** (Gateway und App gleich):
+
+```
+200 { ok, wildcard, zone, cert_pem, key_pem, not_after, fingerprint }
+403 { ok: false, error: 'not_allowed' | 'not_from_vpn' }   (App zusätzlich token_required, scope_required, not_registered)
+404 { ok: false, error: 'not_shared' | 'no_certificate' }
+```
+
+`Cache-Control: no-store`. Die Quelladresse muss die VPN-Adresse des Peers sein
+(`allowed_ips`), sonst `not_from_vpn`. `fingerprint` ist SHA-256 des
+Zertifikats (DER, hex, klein). Jeder erfolgreiche Abruf schreibt
+`tls_vpn_cert_key_fetched` ins Protokoll (Peer, Weg, Fingerabdruck – nie
+den Schlüssel); Schalter und Liste schreiben `tls_vpn_cert_share_on|off|peers`.
+
+**Bekanntgabe:** Erlaubte Gateways bekommen in der Konfiguration
+(`GET /api/v1/gateway/config`) `vpn_cert: { wildcard, fingerprint, not_after }`;
+andere nicht. Apps lesen in `GET /api/v1/client/permissions` das Feld
+`vpnCert` (dasselbe Objekt oder `null`). Ändert sich der Fingerabdruck
+(Erneuerung, neuer Schlüssel), meldet der Server die Änderung an die Gateways
+und `config_changed` an die Apps; sie holen dann neu.
+
+**Neuer Schlüssel** (`POST …/rotate-key`): nur bei ausgeschalteter Weitergabe
+(`share_on`) und nur, wenn ein Schlüssel abgeholt wurde (`rotate_not_needed`).
+Löscht das Zertifikat im Caddy-Speicher, setzt die Zeile auf `pending` und
+lässt Caddy neu ausstellen (neuer Schlüssel).
+
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 
 `GET /api/v1/settings/vpn-names/status`:
