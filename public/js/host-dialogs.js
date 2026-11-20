@@ -68,7 +68,7 @@
     HOST_EXISTS: 'host.err_exists', HOST_HAS_HTTP: 'entry.err_http_taken', TYPE_DOMAIN_REQUIRED: 'entry.err_no_domain',
     TYPE_LISTEN_PORT_REQUIRED: 'entry.err_listen_port', LAN_HOST_REQUIRED: 'host.err_lan_required',
     DOMAIN_CONFLICT: 'host.err_domain_conflict', DOMAIN_UNVERIFIED: 'host.err_domain_unverified', LABEL_INVALID: 'entry.err_label',
-    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name',
+    DEVICE_ZONE: 'host.err_device_zone', DEVICE_ZONE_LEVEL: 'host.err_device_zone_level', DEVICE_NAME: 'host.err_device_name',
   };
   function serverText(err) {
     const code = err && err.data && err.data.code;
@@ -874,7 +874,10 @@
   function stepAddress(zone) {
     const sub = el('input', { type: 'text', class: 'rt-input rt-mono', value: nh.sub, placeholder: t('host.subdomain_ph'), maxLength: 190, autocomplete: 'off', spellcheck: 'false', dataset: { rtKey: 'nh-sub' } });
     sub.addEventListener('input', () => {
+      const inZone = !!vpnZoneOf(zone);
       nh.sub = sub.value.trim(); nh.fieldError = null;
+      // in or out of the VPN zone: the access step changes (fixed "internal only")
+      if (inZone !== !!vpnZoneOf(zone)) { if (!vpnZoneOf(zone)) nh.external = !!zone.default_external_enabled; renderNew(); return; }
       const wasApex = !!wwwBox; renderWwwSlot();
       if (wasApex !== !!wwwBox) { /* slot already updated */ }
       refreshNewAside();
@@ -1041,8 +1044,26 @@
     ]);
   }
 
+  // The new host below the zone of the device names ("Namen im VPN")? →
+  // { zone, served } | null. Served: the wildcard of the zone is in use, the
+  // host is internal only; otherwise the server refuses it (DEVICE_ZONE).
+  function vpnZoneOf(zone) {
+    const vz = (ctx().getData() || {}).vpn_zone;
+    if (!vz || !vz.zone || !zone || !zone.domain) return null;
+    const fqdn = String(V.previewFqdn(nh.sub, zone.domain) || '').toLowerCase();
+    return fqdn.endsWith('.' + vz.zone) ? vz : null;
+  }
+
   function stepAccess(zone) {
     const accId = 'rt-nh-acc';
+    const vz = vpnZoneOf(zone);
+    if (vz) {
+      if (vz.served) nh.external = false;
+      return el('section', { class: 'rt-sec', 'aria-labelledby': 'rt-nh-s4' }, [
+        stepHead(4, 'rt-nh-s4', t('host.step_access')),
+        el('div', { class: 'rt-hint', dataset: { vpnZone: vz.served ? 'internal' : 'needs-cert' }, text: t(vz.served ? 'host.vpn_zone_internal' : 'host.vpn_zone_needs_cert', { zone: vz.zone }) }),
+      ]);
+    }
     return el('section', { class: 'rt-sec', 'aria-labelledby': 'rt-nh-s4' }, [
       stepHead(4, 'rt-nh-s4', t('host.step_access')),
       el('div', { class: 'rt-sr', id: accId, text: t('zones.default_access') }),

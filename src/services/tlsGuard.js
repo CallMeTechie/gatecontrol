@@ -197,6 +197,14 @@ async function preflight(hostIn) {
   const host = normHost(hostIn);
   // the wildcard of the VPN zone: no A record by design, CAA (issuewild) only
   if (host.startsWith('*.')) return require('./vpnCert').preflight(host.slice(2));
+  // names below the zone of the device names exist only in the VPN: no public check
+  if (insideDeviceZone(host)) {
+    return {
+      ok: true, code: 'not_public', detail: null,
+      records: { a: [], aaaa: [], caa: [] }, server: { v4: null, v6: null }, checked_at: nowIso(),
+      caa_status: null, caa_suggestion: null,
+    };
+  }
   if (!isPublicDomain(host)) {
     return {
       ok: true, code: 'not_public', detail: null,
@@ -365,6 +373,9 @@ async function pauseHost(hostIn, reason = 'attempts') {
  */
 async function retryHost(hostIn) {
   const host = normHost(hostIn);
+  // a name covered by the wildcard of the VPN zone: retry the wildcard
+  const covering = coveringWildcard(host);
+  if (covering) return retryHost(covering);
   // The wildcard of the VPN zone has no A record by design: its own pre-check
   // (CAA issuewild) and reset live in services/vpnCert.js.
   if (host.startsWith('*.')) {
@@ -770,18 +781,46 @@ function daysLeft(notAfter) {
 }
 
 /** Certificate kind of ONE route row: 'acme' | 'internal' | 'none'. */
+// The wildcard *.<zone> that covers a host right now (services/vpnCert.js:
+// served, one level below the zone), or null.
+function coveringWildcard(hostIn) {
+  try {
+    const zone = require('./vpnCert').servedZone();
+    if (!zone) return null;
+    const h = normHost(hostIn);
+    if (!h.endsWith('.' + zone)) return null;
+    const label = h.slice(0, -(zone.length + 1));
+    return label && !label.includes('.') && label !== '*' ? `*.${zone}` : null;
+  } catch { return null; }
+}
+function insideDeviceZone(host) {
+  try { return require('./vpnNames').insideDeviceZone(host); } catch { return false; }
+}
+
+/** Certificate kind of ONE route row: 'acme' | 'wildcard' | 'internal' | 'none'. */
 function kindOfRoute(r, { forcedInternal = new Set() } = {}) {
   if (!r || !r.domain) return 'none';
   const tls = r.route_type === 'l4' ? (!!r.l4_tls_mode && r.l4_tls_mode !== 'none') : !!r.https_enabled;
   if (!tls) return 'none';
   const host = normHost(r.domain);
+  // below the zone of the device names: the wildcard of the zone, else the internal CA
+  if (coveringWildcard(host)) return 'wildcard';
+  if (insideDeviceZone(host)) return 'internal';
   return isPublicDomain(host) && !forcedInternal.has(host) ? 'acme' : 'internal';
 }
 
 function combineKinds(kinds) {
   if (kinds.includes('acme')) return 'acme';
+  if (kinds.includes('wildcard')) return 'wildcard';
   if (kinds.includes('internal')) return 'internal';
   return 'none';
+}
+
+// The status row that holds the certificate of a host: its own, or the one of
+// the wildcard that covers it.
+function rowFor(host, kind, rows) {
+  if (kind === 'wildcard') { const w = coveringWildcard(host); return w ? rows.get(w) || null : null; }
+  return rows.get(normHost(host)) || null;
 }
 
 /** Effective state of a host given its status row and kind. */
@@ -820,6 +859,8 @@ function toTlsHost(host, meta, row, kind, limit) {
     // Host aliases (docs/feature-security-options.md §A): the primary fqdn
     // for alias rows, null otherwise.
     alias_of: meta.alias_of || null,
+    // the certificate comes from the wildcard of the VPN zone (services/vpnCert.js)
+    wildcard: kind === 'wildcard' ? coveringWildcard(host) : null,
   };
 }
 
@@ -901,7 +942,8 @@ function statusFor(hosts) {
   const limit = maxAttempts();
   return hosts.map(normHost).map(h => {
     const meta = universe.get(h) || { kinds: [], route_id: null, host_id: null, domain_id: null };
-    return toTlsHost(h, meta, rows.get(h) || null, combineKinds(meta.kinds), limit);
+    const kind = combineKinds(meta.kinds);
+    return toTlsHost(h, meta, rowFor(h, kind, rows), kind, limit);
   });
 }
 
@@ -911,7 +953,7 @@ function listStatus() {
   const rows = loadRows();
   const limit = maxAttempts();
   const hosts = [...universe.entries()]
-    .map(([h, meta]) => toTlsHost(h, meta, rows.get(h) || null, combineKinds(meta.kinds), limit))
+    .map(([h, meta]) => { const kind = combineKinds(meta.kinds); return toTlsHost(h, meta, rowFor(h, kind, rows), kind, limit); })
     .sort((a, b) => a.host.localeCompare(b.host));
   const summary = {
     total: hosts.length,
@@ -931,7 +973,7 @@ function listStatus() {
  */
 function entryTls(routeRow, rows, opts) {
   const kind = routeRow.enabled ? kindOfRoute(routeRow, opts) : 'none';
-  const row = routeRow.domain ? rows.get(normHost(routeRow.domain)) || null : null;
+  const row = routeRow.domain ? rowFor(routeRow.domain, kind, rows) : null;
   return {
     state: deriveState(row, kind),
     last_error_code: row ? row.last_error_code || null : null,
@@ -963,7 +1005,7 @@ module.exports = {
   pauseHost, retryHost, pausedHosts, forgetHosts,
   startWatcher, stopWatcher, pollOnce, parseTlsLogLine, classifyError, parseDurationSeconds, applyLogEvent,
   inventory, inventoryHost, scanCertificates, startInventory, stopInventory,
-  statusFor, listStatus, entryTls, kindOfRoute, deriveState, loadRows,
+  statusFor, listStatus, entryTls, kindOfRoute, deriveState, loadRows, coveringWildcard,
   EXPIRING_DAYS,
   maxAttempts, setMaxAttempts, acmeEmailMissing,
   start, stop,

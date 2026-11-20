@@ -70,9 +70,21 @@ Bindestriche). Er wird abgelehnt, wenn unter `<sub>.<domain>` schon etwas liegt:
 | `collision_domain` | eine andere unter „Domains / Routen“ eingetragene Domain |
 
 Umgekehrt lassen sich unter `<sub>.<domain>` keine Routen und Hosts anlegen
-(`routeDomainPolicy`: `device_zone`; in der Host-API Code `DEVICE_ZONE`). Eine
-Route, deren Adresse in der alten Zone dem Namen eines Geräts gleicht, wird
-ebenfalls abgelehnt (`device_name` / `DEVICE_NAME`).
+(`routeDomainPolicy`: `device_zone`; in der Host-API Code `DEVICE_ZONE`) –
+außer solange das Wildcard-Zertifikat der Zone in Gebrauch ist
+(`vpnCert.servedZone()`, Abschnitt „Zertifikat für die Namen“): dann ein Name
+eine Ebene unter der Zone (sonst `device_zone_level` / `DEVICE_ZONE_LEVEL`),
+kein reservierter Name (`home`, `server`, `gateway` … → `domain_collision`),
+kein Gerätename (`device_name`). Solche Routen sind immer nur intern:
+`routes.create`/`update`/Massenänderung setzen `external_enabled = 0`
+(`routeDomainPolicy.internalOnlyDomain`), die API liefert `vpn_internal`, der
+Eintrags-Editor sperrt den Schalter, der Dialog „Neuer Host“ zeigt statt der
+Zugriffswahl den Hinweis. TLS: der Wildcard per SNI (`skip_certificates`),
+ohne ihn die interne CA; der TLS-Wächter prüft sie nicht öffentlich und
+zeigt den Zustand des Wildcards (`kind: 'wildcard'`). Eine Route, deren
+Adresse in einer Zone dem Namen eines Geräts gleicht, wird abgelehnt
+(`device_name` / `DEVICE_NAME`), und ein Gerät bekommt keinen Namen, den
+schon eine Route hat (`deviceNameCollision`).
 
 ## Gerätenamen
 

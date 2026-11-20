@@ -324,7 +324,9 @@ unter „Dienste“ → „Domains / Routen“ eine Route an: Als Ziel wählst d
 Gateway oder seinen Pool und trägst die Adresse des Geräts im Heimnetz und den
 Port ein (zum Beispiel `192.168.1.20` und `5000`). Der Host der Route darf
 nicht unter dem Bereich der Gerätenamen liegen: `nas.example.com` geht,
-`nas.vpn.example.com` nicht.
+`nas.vpn.example.com` nicht. Ausnahme: Mit gültigem „Zertifikat für die
+Namen“ gehen interne Routen mit eigenem Namen unter der Zone, etwa
+`nas-web.vpn.example.com` (siehe [2.12](#212-gültiges-zertifikat-für-die-namen-im-vpn)).
 
 Namen unter der eigenen Domain gibt es ab Server **1.271.0**. Die Windows-Apps
 lösen sie ab GateControl Pro **1.85.0** und Community **1.49.0** auf – sie
@@ -435,6 +437,17 @@ laufen, zum Beispiel die Oberfläche eines NAS unter
 deckt eine Ebene ab: `nas-web.vpn.example.com` ja, `a.b.vpn.example.com`
 nicht. Welche Namen der Server damit beantwortet, steht in der Karte unter
 „Genutzt von“.
+
+**Interne Routen unter der Zone:** Für einen Dienst auf einem Gerät oder hinter
+einem Gateway legst du unter „Dienste“ → „Domains / Routen“ einen Host mit
+eigenem Namen unter der Zone an, zum Beispiel `nas-web` unter `example.com`
+(also `nas-web.vpn.example.com`), Ziel das NAS. Das geht, solange das
+Zertifikat gültig ist, und nur eine Ebene tief. Solche Routen sind **immer nur
+im VPN** erreichbar – der Dialog zeigt das an, und der Schalter „Von extern
+erreichbar“ bleibt aus. Ein Name, den schon ein VPN-Gerät hat, und die festen
+Namen des Servers (`home`, `server`, `gateway` …) gehen nicht. Die Route
+bekommt das Wildcard-Zertifikat; endet es, bekommt sie ein internes Zertifikat
+des Servers.
 
 **Prüfen:** In der Karte „Zertifikat für die Namen“ steht „gültig“ mit dem
 Ablaufdatum, unter „Genutzt von“ stehen `home.vpn.example.com` (Portal) und

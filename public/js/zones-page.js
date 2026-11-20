@@ -74,6 +74,8 @@
             gateways: res.gateways || [],
             pools: res.pools || [],
             peers: res.peers || null,
+            // the zone of the device names and whether its wildcard is in use (new-host dialog)
+            vpn_zone: res.vpn_zone || null,
           };
           state.lastSync = new Date();
         } while (rerun);
