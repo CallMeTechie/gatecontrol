@@ -200,8 +200,9 @@ module.exports = (ctx) => {
         await p.reload();
         step('off: no provider, today\'s state, "Einrichten"',
           await until(p, () => document.getElementById('card-vpn-cert').dataset.view === 'off'
-            && /vpn\.example\.com/.test(document.getElementById('st-vc-desc').textContent)
-            && /home\.gc\.internal/.test(document.getElementById('st-vc-today').textContent)
+            // the names stand in their own monospace parts: compared exactly
+            && [...document.querySelectorAll('#st-vc-desc .st-mono')].map((n) => n.textContent).join() === 'vpn.example.com'
+            && [...document.querySelectorAll('#st-vc-today .st-mono')].map((n) => n.textContent).join() === 'home.gc.internal,vpn.example.com'
             && !document.getElementById('st-vc-pill').hidden && !document.getElementById('st-vc-setup').disabled
             && document.getElementById('st-savebar').hidden));
         await cardShot(p, 'vpncert-off');
@@ -223,20 +224,21 @@ module.exports = (ctx) => {
             && document.getElementById('st-vc-delay').value === '300'
             && document.getElementById('st-vc-f-api_key').type === 'password'));
         step('the test names the real challenge record',
-          /_acme-challenge\.vpn\.example\.com/.test(await p.textContent('#st-vc-test-hint')));
+          await p.evaluate(() => [...document.querySelectorAll('#st-vc-test-hint .st-mono')].map((n) => n.textContent).join()) === '_acme-challenge.vpn.example.com');
         await p.fill('#st-vc-f-customer_number', NETCUP.customer_number);
         await p.fill('#st-vc-f-api_key', NETCUP.api_key);
         await p.fill('#st-vc-f-api_password', NETCUP.api_password);
         await cardShot(p, 'vpncert-setup');
 
         // ── Testen ──
+        const zoneStep = await stText(p, 'st.vc.step.zone_named', { zone: 'example.com' });
         await p.click('#st-vc-test');
         step('"Testen": five steps, all ticked, with the measured time and a suggested waiting time',
-          await until(p, () => {
+          await until(p, (zoneLabel) => {
             const li = [...document.querySelectorAll('#st-vc-checks li')];
-            return li.length === 5 && li.every((x) => x.dataset.s === 'ok') && /42/.test(li[3].textContent) && /80/.test(li[3].textContent)
-              && /example\.com/.test(li[1].textContent);
-          }, null, 15000));
+            return li.length === 5 && li.every((x) => x.dataset.s === 'ok') && /\b42 s\b/.test(li[3].textContent) && /\b80 s\b/.test(li[3].textContent)
+              && li[1].lastElementChild.textContent === zoneLabel;
+          }, zoneStep, 15000));
         const req = JSON.parse(fs.readFileSync(app.stub + '.request.json', 'utf8'));
         step('the test request: _acme-challenge.<zone>, a unique test value, values only as file placeholders',
           req.record === '_acme-challenge.vpn.example.com' && /^gc-test-[0-9a-f]{24}$/.test(req.value)
