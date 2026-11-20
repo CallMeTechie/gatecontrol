@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.306.0] — 2026-11-20
+
+### Features
+- Portal unter home.<zone> für fähige Apps, Verwaltung zusätzlich unter server./gc-server.<zone> (#547)
+
+---
+
 ## [1.305.0] — 2026-11-20
 
 ### Features
