@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.309.0] — 2026-11-20
+
+### Features
+- Schalter „Links auf die neue Adresse“ für Einladungs-, Kiosk-, Menü-Links und Cloud-Rücksprung (#550)
+
+---
+
 ## [1.308.0] — 2026-11-20
 
 ### Features
