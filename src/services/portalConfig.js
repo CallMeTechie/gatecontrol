@@ -35,24 +35,32 @@ const { getDb } = require('../db/connection');
  *   the portal answers under both names, home.<legacy> stays for good
  *   otherwise → { host: home.<legacy> }
  * `hosts` lists every name the portal answers; `compatHost` is the one every
- * device resolves (for links opened anywhere, and for apps that do not know
- * the zone of the device names).
+ * device resolves (for apps that do not know the zone of the device names).
+ * `linkHost` is where links opened anywhere point (invitations, kiosk pairing,
+ * the member menu, the way back of the cloud accounts): `compatHost`, or
+ * home.<zone> while the admin switched "Links auf die neue Adresse" on
+ * (services/vpnCert.js linksNew) and the wildcard is in use.
  */
 function effectivePortalHost() {
   const base = String(settings.get('portal.base_domain', '') || '').trim().toLowerCase();
   const prefix = String(settings.get('portal.prefix', 'home') || '').trim().toLowerCase();
   if (base) {
     const host = prefix ? `${prefix}.${base}` : base;
-    return { host, public: true, vpn: false, legacyHost: null, compatHost: host, hosts: [host] };
+    return { host, public: true, vpn: false, legacyHost: null, compatHost: host, linkHost: host, hosts: [host] };
   }
   const legacy = `home.${config.dns.domain}`;
   let zone = null;
-  try { zone = require('./vpnCert').servedZone(); } catch { zone = null; }
+  let linksNew = false;
+  try {
+    const vpnCert = require('./vpnCert');
+    zone = vpnCert.servedZone();
+    linksNew = !!zone && vpnCert.linksNew();
+  } catch { zone = null; }
   if (zone) {
     const host = `home.${zone}`;
-    return { host, public: false, vpn: true, legacyHost: legacy, compatHost: legacy, hosts: [host, legacy] };
+    return { host, public: false, vpn: true, legacyHost: legacy, compatHost: legacy, linkHost: linksNew ? host : legacy, hosts: [host, legacy] };
   }
-  return { host: legacy, public: false, vpn: false, legacyHost: null, compatHost: legacy, hosts: [legacy] };
+  return { host: legacy, public: false, vpn: false, legacyHost: null, compatHost: legacy, linkHost: legacy, hosts: [legacy] };
 }
 function isPublicPortalHost() { return effectivePortalHost().public; }
 

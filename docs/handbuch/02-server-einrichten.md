@@ -374,6 +374,8 @@ Sobald das Zertifikat gültig ist, stellt der Server von selbst um:
   Android-App, GateControl Pro ab **1.85.0** und Community ab **1.49.0**.
   Ältere Windows-Apps, Einladungs- und Kiosk-Links und der Link im Menü
   nutzen weiter `home.gc.internal` – diese Adresse funktioniert dauerhaft.
+  Mit dem Schalter „Links auf die neue Adresse“ (siehe unten) zeigen auch
+  die Links auf `home.vpn.example.com`.
   Ist unter „Portal“ eine öffentliche Portal-Domain eingetragen, bleibt das
   Portal dort.
 - **Verwaltung:** Im VPN erreichst du die Verwaltung zusätzlich unter
@@ -454,6 +456,32 @@ Ablaufdatum, unter „Genutzt von“ stehen `home.vpn.example.com` (Portal) und
 `server.vpn.example.com` (Verwaltung), und unter „Domains & Zertifikate“
 erscheint `*.vpn.example.com` mit Let's Encrypt als Aussteller. Auf einem
 Gerät im VPN öffnet `https://home.vpn.example.com` das Portal ohne Warnung.
+
+### Links auf die neue Adresse
+
+Einladungs-Links (Gruppen), Kiosk-Kopplung, der Portal-Link im Menü und der
+Rücksprung ins Portal nach dem Verbinden eines Cloud-Kontos zeigen
+standardmäßig auf `home.gc.internal`, weil jedes Gerät im VPN diesen Namen
+auflöst. Schaltest du in der Karte „Zertifikat für die Namen“ **„Links auf
+die neue Adresse“** ein (Standard aus, nur Admins), zeigen sie auf
+`home.vpn.example.com` – mit gültigem Zertifikat, ohne Warnung im Browser.
+
+- Ältere Windows-Apps (Pro unter **1.85.0**, Community unter **1.49.0**) und
+  Geräte ohne die Namen im VPN öffnen solche Links nicht. Schalte ihn erst
+  ein, wenn alle Geräte so weit sind.
+- Hält der Server das Zertifikat an oder läuft es ab, zeigen die Links von
+  selbst wieder auf `home.gc.internal`. Schaltest du das Zertifikat aus,
+  geht auch der Schalter aus.
+- Bei Google und Microsoft änderst du nichts: Dort ist nur die
+  Rückruf-Adresse `<GC_BASE_URL>/oauth/cloud/callback` hinterlegt, und die
+  bleibt. Erst danach leitet der Server ins Portal weiter.
+- Die Anmeldung am Portal gilt je Adresse: Wer das Portal bisher unter
+  `home.gc.internal` offen hatte, meldet sich unter der neuen Adresse einmal
+  neu an.
+- Ist unter „Portal“ eine öffentliche Portal-Domain eingetragen, zeigen die
+  Links auf sie; der Schalter wirkt dann nicht.
+- Der Schalter ist Teil der Sicherung und kommt bei einer Wiederherstellung
+  zurück.
 
 ### Zertifikat an Geräte weitergeben
 

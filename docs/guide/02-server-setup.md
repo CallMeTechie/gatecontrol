@@ -370,8 +370,10 @@ As soon as the certificate is valid, the server switches over by itself:
   certificate. This address goes to the apps that resolve the zone: the
   Android app, GateControl Pro from **1.85.0** and Community from **1.49.0**.
   Older Windows apps, invitation and kiosk links and the link in the menu keep
-  using `home.gc.internal` – that address works for good. If a public portal
-  domain is entered under “Portal”, the portal stays there.
+  using `home.gc.internal` – that address works for good. With the switch
+  “Links on the new address” (see below) the links point to
+  `home.vpn.example.com` too. If a public portal domain is entered under
+  “Portal”, the portal stays there.
 - **Management:** In the VPN you also reach the management under
   `https://server.vpn.example.com` and `https://gc-server.vpn.example.com`.
   The main address (`GC_BASE_URL`) stays. Under the new names you sign in
@@ -445,6 +447,30 @@ date, “Used by” lists `home.vpn.example.com` (portal) and
 `server.vpn.example.com` (management), and `*.vpn.example.com` appears under
 “Domains & certificates” with Let's Encrypt as issuer. On a device in the VPN,
 `https://home.vpn.example.com` opens the portal without a warning.
+
+### Links on the new address
+
+Invitation links (groups), kiosk pairing, the portal link in the menu and the
+way back into the portal after connecting a cloud account point to
+`home.gc.internal` by default, because every device in the VPN resolves that
+name. If you switch on **“Links on the new address”** in the card
+“Certificate for the names” (off by default, admins only), they point to
+`home.vpn.example.com` – with a valid certificate, no browser warning.
+
+- Older Windows apps (Pro below **1.85.0**, Community below **1.49.0**) and
+  devices without the names in the VPN do not open such links. Switch it on
+  only once all devices are that far.
+- If the server stops the certificate or it expires, the links point to
+  `home.gc.internal` again by themselves. Switching the certificate off also
+  switches this off.
+- Nothing changes at Google and Microsoft: only the callback address
+  `<GC_BASE_URL>/oauth/cloud/callback` is registered there, and it stays.
+  Only after it does the server forward into the portal.
+- The sign-in to the portal applies per address: whoever had the portal open
+  under `home.gc.internal` signs in once more under the new address.
+- If a public portal domain is entered under “Portal”, the links point to it;
+  the switch has no effect then.
+- The switch is part of the backup and comes back with a restore.
 
 ### Passing the certificate on to devices
 

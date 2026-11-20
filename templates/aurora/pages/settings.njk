@@ -519,6 +519,10 @@
       <p class="stx-box vc-box" id="st-vc-routes" data-vc-show="active"></p>
       {#- Passing certificate and key on (services/vpnCert.js setShare): off by default,
           a list of the devices / gateways allowed to fetch, a plain risk note. -#}
+      <div id="st-vc-links" data-vc-show="active">
+        {{ switchRow('st-vc-links-on', 'vc-links', t('st.vc.links'), t('st.vc.links_hint')) }}
+        <p class="stx-box vc-box" data-tone="warn" id="st-vc-links-note"></p>
+      </div>
       <div id="st-vc-share" data-vc-show="active">
         {{ switchRow('st-vc-share-on', 'vc-share', t('st.vc.share'), t('st.vc.share_hint')) }}
         <p class="stx-box vc-box" data-tone="crit" id="st-vc-share-risk"></p>

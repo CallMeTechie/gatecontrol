@@ -208,7 +208,14 @@ nur Apps, die die Zone auflösen (`portalConfig.resolvesZone`: Kopfzeilen
 `X-Client-Platform: android`, `X-Client-Type` `pro` ab 1.85.0 / `community`
 ab 1.49.0 mit `X-Client-Version`) — in `GET /api/v1/client/permissions`
 (`portalUrl`) und `POST /api/v1/client/portal-link`; Einladungs-, Kiosk- und
-Menü-Links und die Rücksprung-Adresse der Cloud-Konten nutzen `compatHost`.
+Menü-Links und die Rücksprung-Adresse der Cloud-Konten nutzen `linkHost`:
+`compatHost`, oder `home.<zone>`, solange der Schalter „Links auf die neue
+Adresse“ an ist (`vpn_cert.links_new`, `PUT /api/v1/settings/vpn-cert/links
+{ enabled }`, nur Admin, Standard aus; Protokoll `tls_vpn_cert_links_on|off`;
+„Zertifikat ausschalten“ setzt ihn zurück) und das Wildcard in Gebrauch ist.
+Die bei Google/Microsoft hinterlegte `redirect_uri`
+(`<GC_BASE_URL>/oauth/cloud/callback`) bleibt; nur die Weiterleitung danach
+folgt `linkHost`.
 Die Verwaltung antwortet zusätzlich unter `server.<zone>` und
 `gc-server.<zone>` (`vpnCert.managementHosts()`), nur aus dem VPN
 (`remote_ip`, sonst 404), nur über HTTPS; `GC_BASE_URL` bleibt die
