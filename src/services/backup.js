@@ -905,6 +905,8 @@ const ENCRYPTED_SETTINGS_KEYS = new Set([
   // OAuth apps of the cloud accounts (docs/cloud-accounts.md)
   'cloud.google.client_secret_encrypted',
   'cloud.microsoft.client_secret_encrypted',
+  // DNS provider of the wildcard certificate of the VPN zone (services/vpnCert.js)
+  'vpn_cert.credentials_encrypted',
 ]);
 
 function validateEncryptedFields(data) {
@@ -1438,6 +1440,14 @@ async function restoreBackup(backup) {
     require('./vpnNames').apply();
   } catch (err) {
     logger.warn({ error: err.message }, 'Could not apply the zone of the device names after restore');
+  }
+
+  // The credential files of the wildcard certificate come from the restored
+  // settings (or go, when the backup has none) before Caddy reads them.
+  try {
+    require('./vpnCert').applyAfterRestore();
+  } catch (err) {
+    logger.warn({ error: err.message }, 'Could not rewrite the files of the wildcard certificate after restore');
   }
 
   try {

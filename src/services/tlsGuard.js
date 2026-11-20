@@ -487,7 +487,10 @@ async function applyLogEvent(evt) {
     last_attempt_at: evt.at,
   };
   if (evt.error) {
-    patch.last_error = String(evt.error).slice(0, MAX_ERROR_LEN);
+    // a DNS provider's answer may repeat a credential (wildcard of the VPN zone)
+    let text = String(evt.error);
+    try { text = require('./vpnCert').redact(text); } catch { /* module unavailable */ }
+    patch.last_error = text.slice(0, MAX_ERROR_LEN);
     patch.last_error_code = classifyError(evt.error);
   }
   if (evt.retrying_in != null) {
@@ -843,6 +846,17 @@ function loadUniverse() {
   for (const h of extra.map(normHost).filter(Boolean)) {
     if (!isPublicDomain(h) || map.has(h)) continue;
     map.set(h, { kinds: ['acme'], route_id: null, host_id: null, domain_id: null });
+  }
+  // The wildcard of the VPN zone (services/vpnCert.js) while it is set up for
+  // the zone in effect: listed under "Zertifikate", in the problems of the
+  // dashboard (failed / paused / expiring) like any ACME host.
+  try {
+    const st = require('./vpnCert').state();
+    if (st.wildcard && ['pending', 'active', 'failed', 'paused', 'suspended'].includes(st.state) && !map.has(st.wildcard)) {
+      map.set(st.wildcard, { kinds: ['acme'], route_id: null, host_id: null, domain_id: null, vpn_cert: true });
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'tls: vpn cert state unavailable');
   }
   return map;
 }
