@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Stage 1: Caddy with L4 + ratelimit + mirror + WAF plugins
+# Stage 1: Caddy with L4 + ratelimit + mirror + WAF + DNS provider plugins
 #
 # WAF (docs/feature-waf.md): coraza-caddy registers http.handlers.waf and pulls
 # the OWASP CRS in as the embedded Go module corazawaf/coraza-coreruleset/v4
@@ -16,6 +16,17 @@
 # tidy` there would drop it), so its minimum is pinned via --with below.
 # coraza-caddy v2.6.1 (latest) still requires v3.7.0 — CVE-2026-41510
 # (ArgumentLimit silently drops args → ARGS rule bypass) is fixed in v3.8.1.
+#
+# DNS providers (dns.providers.*) for the ACME DNS-01 challenge of the
+# wildcard certificate of the VPN zone (Einstellungen › VPN & Netzwerk ›
+# Zertifikat für die Namen): Hetzner (Cloud-DNS-API), IONOS, netcup, INWX,
+# All-Inkl, OVHcloud, deSEC, Cloudflare, RFC 2136 and acme-dns, each pinned to
+# a release tag. They only act when GateControl puts a DNS challenge into the
+# TLS automation; without a provider configured they are inert. The mirror
+# plugin adds `caddy gc-dnstest`, which writes, checks and deletes a TXT
+# record with the same modules (button "Testen", no ACME request).
+# Not included: route53 (pulls the AWS SDK, +6 MB) and digitalocean (no
+# release tag).
 #
 # Up to three attempts: a transient error of the module proxy or the checksum
 # database (sum.golang.org "stream error … INTERNAL_ERROR") failed the 1.167.0
@@ -34,6 +45,16 @@ RUN for attempt in 1 2 3; do \
          --with github.com/greenpau/caddy-trace \
          --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
          --with github.com/corazawaf/coraza/v3@v3.8.1 \
+         --with github.com/caddy-dns/hetzner/v2@v2.0.1 \
+         --with github.com/caddy-dns/ionos@v1.3.0 \
+         --with github.com/caddy-dns/netcup@v1.0.0 \
+         --with github.com/caddy-dns/inwx@v0.4.1 \
+         --with github.com/caddy-dns/all-inkl@v0.2.5 \
+         --with github.com/caddy-dns/ovh@v1.1.0 \
+         --with github.com/caddy-dns/desec@v1.1.0 \
+         --with github.com/caddy-dns/cloudflare@v0.2.4 \
+         --with github.com/caddy-dns/rfc2136@v1.0.0 \
+         --with github.com/caddy-dns/acmedns@v0.7.0 \
          --with github.com/custom/caddy-mirror=/tmp/caddy-mirror; then \
         exit 0; \
       fi; \
@@ -41,6 +62,10 @@ RUN for attempt in 1 2 3; do \
       sleep $((attempt * 15)); \
     done; \
     exit 1
+# Go tests of the mirror plugin (IP block, mirror, gc-dnstest with a fake DNS
+# provider and a local DNS server on 127.0.0.1 — no network, no credentials).
+# The module cache of the build above already holds every dependency.
+RUN cd /tmp/caddy-mirror && go vet ./... && go test -count=1 ./...
 
 # Stage 2: Node dependencies
 #
