@@ -963,4 +963,25 @@ After an update of the gateway it takes effect.
 network: switched on, the page shows “Connected”; switched off, nothing answers
 there.
 
+### Status page in the VPN
+
+On request, the same status page is also available from the VPN, read-only and
+over HTTPS: `https://<name of the gateway>.<device area>:8643`, for example
+`https://gw-keller.geraete.vpn.example.com:8643`. Default: off.
+
+**Requirements:** gateway version 1.42.0 or later, and the device certificate
+for this gateway (Settings › VPN & network › Certificate for the names › pass
+on to devices, tick this gateway). The gateway also needs a name in the VPN.
+
+**Switching it on:** tab “Features” → “System” → “Status page in the VPN
+(HTTPS)”. Once it runs, the row has the button **Open in the VPN**. It opens
+the page in a new tab. You do not sign in there: the button brings a one-time,
+short-lived ticket, and your sign-in to GateControl is the login. Without the
+button the page only shows a hint. The session ends 30 minutes after the last
+request, after 8 hours at the latest, or with “Sign out”.
+
+From the VPN the page only shows the state. Setting up and entering a new code
+still only work in the home network. The page in the home network stays as it
+is.
+
 Continue with [chapter 6: Updating an existing gateway](06-updating-a-gateway.md).

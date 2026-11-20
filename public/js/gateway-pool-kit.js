@@ -339,8 +339,9 @@
     { key: 'wide', features: ['dns', 'vpnnames', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
-    // setuppage: "Statusseite im Heimnetz" (the status page of the gateway in its LAN)
-    { key: 'system', features: ['timezone', 'setuppage'] },
+    // setuppage: "Statusseite im Heimnetz" (the status page of the gateway in its LAN);
+    // setuppagevpn: the same page over HTTPS from the VPN (off by default)
+    { key: 'system', features: ['timezone', 'setuppage', 'setuppagevpn'] },
   ];
   function groupOf(feature) {
     const g = FEATURE_GROUPS.find((x) => x.features.indexOf(feature) >= 0);

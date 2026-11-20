@@ -1214,6 +1214,52 @@
     return featRow(name, t('gwn.feat.vpnnames_d'), sw, extra, 'vpnnames');
   }
 
+  /**
+   * The row "Statusseite im VPN (HTTPS)": switch (greyed out for a gateway before 1.42.0), hints why it
+   * does not run, and "Im VPN öffnen" — only with the device wildcard passed on to this gateway. The
+   * button asks this server for a one-time ticket and opens the gateway's page with it in a new tab.
+   */
+  function setupPageVpnRow(id, d) {
+    const v = d.setupPageVpn;
+    const name = t('gwn.feat.setuppagevpn');
+    const sw = U.switchBtn(!!v.enabled, name, 'gwn-f-setuppagevpn',
+      () => toggle(sw, id, (on) => ({ setupPageVpn: { enabled: on } }), (on) => t(on ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name })), !v.supported && !v.enabled);
+    const hint = (key, ico, text) => h('span', { class: 'gwn-hint', 'data-setuppagevpn': key }, [U.icon(ico, 14), text]);
+    const extra = [];
+    if (!v.supported) {
+      extra.push(hint('old', 'info', t('gwn.feat.setuppagevpn_old', { min: v.minGateway || '1.42.0', version: (d.support && d.support.version) || '—' })));
+    } else if (!v.shared) {
+      extra.push(hint('noshare', 'info', t('gwn.feat.setuppagevpn_noshare')));
+    } else if (!v.host) {
+      extra.push(hint('noname', 'info', t('gwn.feat.setuppagevpn_noname')));
+    } else if (v.enabled && v.state && v.state !== 'listening' && v.state !== 'off') {
+      const k = ['no_name', 'no_cert', 'port_in_use', 'error'].indexOf(v.state) >= 0 ? v.state : 'pending';
+      extra.push(hint('state', 'warn', t('gwn.feat.setuppagevpn_state_' + k, { port: v.port || 8643 })));
+    }
+    if (v.canOpen) {
+      const btn = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-setuppagevpn-open', text: t('gwn.feat.setuppagevpn_open') });
+      btn.addEventListener('click', () => {
+        // open the tab right away (no popup blocker), then point it to the page with the ticket
+        const w = window.open('about:blank', '_blank');
+        if (w) w.opener = null;
+        btn.disabled = true;
+        U.api('POST', url(id, '/setup-page/vpn-open'), {}).then((j) => {
+          btn.disabled = false;
+          if (!j || typeof j.url !== 'string' || !/^https:\/\//.test(j.url)) throw new Error('no url');
+          if (w) w.location.href = j.url; else window.location.href = j.url;
+        }).catch((e) => {
+          btn.disabled = false;
+          if (w) w.close();
+          const reason = e && e.body && e.body.reason;
+          D.alert({ message: e && e.code === 'gateway_refused' && reason ? t('gwn.feat.setuppagevpn_refused', { reason }) : errText(e), danger: true });
+        });
+      });
+      extra.push(h('span', { class: 'gwe-d', 'data-setuppagevpn-url': '' }, [t('gwn.feat.setuppagevpn_url'), ' ', h('code', { text: 'https://' + v.host + ':' + (v.port || 8643) })]));
+      extra.push(btn);
+    }
+    return featRow(name, t('gwn.feat.setuppagevpn_d'), sw, extra, 'setuppagevpn');
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -1302,6 +1348,8 @@
       }
       rows.set('setuppage', featRow(t('gwn.feat.setuppage'), t('gwn.feat.setuppage_d'), swPage, extra, 'setuppage'));
     }
+    // "Statusseite im VPN (HTTPS)" (gateway docs/setup-page.md „Aus dem VPN per HTTPS“): off by default
+    if (d.setupPageVpn) rows.set('setuppagevpn', setupPageVpnRow(id, d));
     // "VPN-Namen im Heimnetz auflösen": the DNS filter of the gateway asks the server for the names of the VPN
     // devices (features.internal_dns). Hints, never a ban: the switch stays usable when something is missing.
     if (d.vpnNames) rows.set('vpnnames', vpnNamesRow(id, d));

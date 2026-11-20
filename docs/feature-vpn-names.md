@@ -378,6 +378,55 @@ Protokoll `tls_vpn_cert_main_key_renewed`, Hinweis in der Karte 30 Tage
 (`share.main_key_renewed_at`). Bis das neue da ist (meist 1–3 Minuten), gehen
 Portal und Verwaltung auf ihre bisherigen Adressen.
 
+### Statusseite eines Gateways im VPN (HTTPS)
+
+Ein Gateway ab **gatecontrol-gateway 1.42.0** (Capability `setup-page-vpn`)
+kann seine Statusseite zusätzlich aus dem VPN zeigen, nur lesbar, per HTTPS mit
+dem weitergegebenen Geräte-Wildcard. Standardmäßig ist das aus. Eingeschaltet
+wird es je Gateway: Reiter „Funktionen“ › „System“ › „Statusseite im VPN
+(HTTPS)“. Gespeichert ist das in `gateway_features.settings.setupPageVpn.enabled`,
+geändert mit `PUT /api/v1/gateways/:id/features { setupPageVpn: { enabled } }`.
+
+**Name:** `vpn_cert.host` (oben) = `<hostname>.<device_zone>`. Er löst im VPN
+auf die Tunnel-Adresse des Gateways auf; der Port ist 8643. Ohne weitergegebenes
+Zertifikat oder ohne Namen im Bereich (kein Gerätename, freigehaltener Name)
+gibt es keine Seite.
+
+**Konfiguration:** eingeschaltet `features.setup_page: { status, vpn_https:
+true, vpn_name }`. `vpn_name` ist das erste Label von `vpn_cert.host` und fehlt,
+wenn es keinen Namen gibt. Ausgeschaltet fehlen beide Felder, der Hash der
+anderen Gateways ändert sich nicht. Das Gateway bildet den Namen selbst aus
+`vpn_name` und dem Bereich von `vpn_cert.wildcard` und lauscht nur damit.
+
+**Öffnen** (`POST /api/v1/gateways/:id/setup-page/vpn-open`, nur Admin-Sitzung,
+kein API-Token; `services/gatewayStatusVpn.js`):
+
+1. Prüfung: eingeschaltet, Capability da, Zertifikat an dieses Gateway
+   weitergegeben, `vpn_cert.host` vorhanden – sonst `409 unavailable`.
+2. Zufälliges Einmal-Ticket (32 Byte, base64url); nur sein SHA-256 geht über
+   die Management-API ans Gateway: `POST /api/status-page/ticket
+   { ticket_sha256, ttl_s: 60 }` (Tunnel, Gateway-Token).
+3. Antwort des Gateways `{ ok, host, port, expires_in_s }`. `host` muss
+   `vpn_cert.host` sein, sonst `502 gateway_error`. `409`/`404` des Gateways
+   ergeben `409 gateway_refused` mit `reason` (`not_enabled`, `no_name`,
+   `no_cert`, `port_in_use`, `not_available`). Ohne Antwort kommt
+   `502 gateway_unreachable`.
+4. Antwort `{ ok, url, host, port, expiresInS }` mit
+   `url = https://<host>:<port>/login?t=<ticket>` und `Cache-Control: no-store`.
+   Die Oberfläche öffnet die URL in einem neuen Tab. Das Gateway löst das Ticket
+   einmal ein und setzt ein eigenes Sitzungs-Cookie (Leerlauf 30 min, höchstens
+   8 h).
+
+Das Ticket steht nie im Log. Das Protokoll nennt
+`gateway_status_page_vpn_opened` (Gateway, Name, Admin).
+
+`GET /api/v1/gateways/:id/features` liefert dafür `setupPageVpn: { enabled,
+supported, shared, host, port, state, canOpen, minGateway }`. `state` kommt
+aus dem Heartbeat (`telemetry.setup_page.vpn_https.state`: `off`, `no_name`,
+`no_cert`, `port_in_use`, `listening`, `error`) oder ist `null`. Den Knopf „Im
+VPN öffnen“ gibt es nur mit `canOpen`. Bei einem älteren Gateway ist der
+Schalter ausgegraut, mit dem Hinweis „ab Gateway 1.42.0“.
+
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 
 `GET /api/v1/settings/vpn-names/status`:

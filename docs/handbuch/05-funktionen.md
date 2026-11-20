@@ -998,4 +998,25 @@ noch nicht. Nach einem Update des Gateways wirkt er.
 **Prüfen:** Im Browser im Heimnetz `http://<Adresse des Gateways>:8642` öffnen:
 eingeschaltet zeigt die Seite „Verbunden“, ausgeschaltet antwortet dort nichts.
 
+### Statusseite im VPN
+
+Dieselbe Statusseite gibt es auf Wunsch auch aus dem VPN, nur lesbar und per
+HTTPS: `https://<Name des Gateways>.<Geräte-Bereich>:8643`, zum Beispiel
+`https://gw-keller.geraete.vpn.example.com:8643`. Standard: aus.
+
+**Voraussetzungen:** Gateway ab Version 1.42.0 und das Geräte-Zertifikat für
+dieses Gateway (Einstellungen › VPN & Netzwerk › Zertifikat für die Namen › an
+Geräte weitergeben, dieses Gateway anhaken). Das Gateway braucht außerdem einen
+Namen im VPN.
+
+**Einschalten:** Reiter „Funktionen“ → „System“ → „Statusseite im VPN (HTTPS)“.
+Läuft sie, steht dort der Knopf **Im VPN öffnen**. Er öffnet die Seite in einem
+neuen Tab. Anmelden musst du dich dort nicht: Der Knopf bringt ein einmaliges,
+kurz gültiges Ticket mit. Die Anmeldung ist deine Anmeldung bei GateControl. Ohne
+diesen Knopf zeigt die Seite nur einen Hinweis. Die Sitzung endet 30 Minuten
+nach dem letzten Abruf, spätestens nach 8 Stunden, oder mit „Abmelden“.
+
+Aus dem VPN zeigt die Seite nur den Zustand. Einrichten und einen neuen Code
+eingeben geht weiter nur im Heimnetz. Die Seite im Heimnetz bleibt, wie sie ist.
+
 Weiter mit [Kapitel 6: Bestehendes Gateway aktualisieren](06-gateway-aktualisieren.md).
