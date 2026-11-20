@@ -47,6 +47,7 @@
     'feat.ai': { de: '05-funktionen.md#lokale-ki', en: '05-features.md#local-ai' },
     'feat.cameras': { de: '05-funktionen.md#kameras', en: '05-features.md#cameras' },
     'feat.setuppage': { de: '05-funktionen.md#statusseite-im-heimnetz', en: '05-features.md#status-page-in-the-home-network' },
+    'feat.setuppagevpn': { de: '05-funktionen.md#statusseite-im-vpn', en: '05-features.md#status-page-in-the-vpn' },
     'feat.edge': { de: '04-edge-und-smart-home.md', en: '04-edge-and-smart-home.md' },
     'feat.zigbee': { de: '04-edge-und-smart-home.md#zigbee-mit-deconz-raspberry-pi', en: '04-edge-and-smart-home.md#zigbee-with-deconz-raspberry-pi' },
     // chapter 6: updating a gateway (the complete compose file)

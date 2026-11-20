@@ -15,6 +15,8 @@
 //   GET    /:id/inetq?range=24h|7d|30d      now, speed, UPS, history, outages
 //   POST   /:id/inetq/speedtest             "Jetzt messen" (gateway management API)
 //   POST   /:id/print/discover              "Neu suchen" of Drucken & Scannen (gateway management API)
+//   POST   /:id/setup-page/vpn-open         "Im VPN öffnen": one-time ticket for the gateway's status page over
+//                                           HTTPS from the VPN → { url } (services/gatewayStatusVpn.js)
 
 const { Router } = require('express');
 const { requireAdminSession } = require('../../middleware/auth');
@@ -26,12 +28,13 @@ const router = Router();
 const STATUS = {
   not_found: 404, invalid: 400, invalid_host: 400, ups_host_ipv6: 400, invalid_owner: 400, ups_host_required: 400, ERR_INVALID: 400,
   gateway_unreachable: 502, gateway_error: 502, gateway_unsupported: 409, not_licensed: 403, unavailable: 409,
+  gateway_refused: 409,
 };
 
 function fail(res, err) {
   const code = (err && err.code) || 'internal';
   if (!STATUS[code]) logger.error({ err: err && err.message }, 'gateway phase 3a admin API failed');
-  return res.status(STATUS[code] || 500).json({ ok: false, code, error: STATUS[code] ? err.message : 'internal error' });
+  return res.status(STATUS[code] || 500).json({ ok: false, code, error: STATUS[code] ? err.message : 'internal error', ...(err && typeof err.reason === 'string' ? { reason: err.reason } : {}) });
 }
 
 function who(req) {
@@ -109,6 +112,12 @@ router.post('/:id/print/discover', requireAdminSession, handle(async (req) => {
     });
   } catch { /* best-effort */ }
   return r;
+}));
+
+// "Im VPN öffnen": admin session only (no API token); the answer carries a one-time ticket → never cached
+router.post('/:id/setup-page/vpn-open', requireAdminSession, handle(async (req) => {
+  const g = gw(req);
+  return require('../../services/gatewayStatusVpn').open(g.id, { ip: req.ip, user: who(req) });
 }));
 
 router.get('/:id/inetq', requireAdminSession, handle((req) => {

@@ -49,6 +49,9 @@ const MIN_GATEWAY_RADIO = '1.25.0';
 const MIN_GATEWAY_AI = '1.26.0';
 // phase 3c, step 4 (Kameras): only by the capability `cameras`
 const MIN_GATEWAY_CAMERAS = '1.28.0';
+// Statusseite per HTTPS aus dem VPN (gateway docs/setup-page.md „Aus dem VPN per HTTPS“): only by the
+// capability `setup-page-vpn` — the version is the hint
+const MIN_GATEWAY_SETUP_PAGE_VPN = '1.42.0';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -67,6 +70,10 @@ const DEFAULTS = Object.freeze({
   // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md);
   // the setup itself and "Zugang ungültig" stay reachable there either way
   setupPage: { status: true },
+  // "Statusseite im VPN (HTTPS)": the same status page, read-only, under <hostname>.<device area>:8643 from the
+  // VPN — off by default; only with the device wildcard passed on to this gateway, login through this server
+  // (services/gatewayStatusVpn.js)
+  setupPageVpn: { enabled: false },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -117,6 +124,7 @@ function normalize(raw) {
     ai: require('./ai/local').normalizeSettings(r.ai),
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
     setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
+    setupPageVpn: { enabled: bool((r.setupPageVpn || {}).enabled, DEFAULTS.setupPageVpn.enabled) },
   };
 }
 
@@ -157,7 +165,7 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -233,7 +241,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage', 'setupPageVpn']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -258,6 +266,7 @@ function notifyGateway(peerId) {
  */
 function configPayload(peerId) {
   const s = get(peerId);
+  const share = vpnCertShare(peerId);
   let macs = [];
   if (s.netwatch.enabled && s.presence.enabled) {
     try { macs = require('./homePresence').macsFor(peerId); } catch (e) { logger.warn({ err: e.message, peerId }, 'presence macs unavailable'); macs = []; }
@@ -282,15 +291,30 @@ function configPayload(peerId) {
     ai: part(peerId, 'ai', () => require('./ai/local').configPayload(peerId)),
     // phase 3c, step 4: Kameras (an older gateway ignores it; never a password — the gateway fetches those)
     cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
-    // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it)
-    setup_page: { status: s.setupPage.status },
+    // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it);
+    // switched on, also over HTTPS from the VPN (capability `setup-page-vpn`): vpn_https and vpn_name — absent
+    // while off, so no other gateway's hash changes
+    setup_page: { status: s.setupPage.status, ...setupPageVpnPayload(s, share.vpn_cert) },
     // "Namen im VPN": the zones of the device names (capability `dns-vpn-names`; an older gateway ignores it)
     internal_dns: internalDns(peerId),
     // "Zertifikat für die Namen" passed on to this gateway (off by default; only when allowed):
     // { wildcard, fingerprint, not_after } — the gateway fetches certificate and key itself
     // (GET /api/v1/gateway/vpn-cert). Absent otherwise, so no other gateway's hash changes.
-    ...vpnCertShare(peerId),
+    ...share,
   };
+}
+
+/**
+ * `vpn_https` and `vpn_name` of `features.setup_page`: the gateway serves its status page under
+ * `<vpn_name>.<area of vpn_cert.wildcard>` (gateway src/setup/vpnHttps.js). vpn_name is the first
+ * label of `vpn_cert.host` (the gateway's device name in the device area) — without a shared
+ * certificate or a name there is none, and the gateway keeps the port closed (no_name / no_cert).
+ */
+function setupPageVpnPayload(s, cert) {
+  if (!s.setupPageVpn.enabled) return {};
+  const host = cert && typeof cert.host === 'string' && cert.device_zone && cert.host.endsWith('.' + cert.device_zone) ? cert.host : null;
+  const name = host ? host.slice(0, -(cert.device_zone.length + 1)) : null;
+  return { vpn_https: true, ...(name && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name) ? { vpn_name: name } : {}) };
 }
 
 function vpnCertShare(peerId) {
@@ -395,6 +419,9 @@ function support(tel) {
     setupPage: !!(caps && caps.includes('setup-page')),
     // "Namen im VPN" in the home network: the DNS filter of the gateway knows the zones (gateway docs/dns-cache.md)
     vpnNames: !!(caps && caps.includes('dns-vpn-names')),
+    // the status page over HTTPS from the VPN (gateway docs/setup-page.md „Aus dem VPN per HTTPS“)
+    setupPageVpn: !!(caps && caps.includes('setup-page-vpn')),
+    minGatewaySetupPageVpn: MIN_GATEWAY_SETUP_PAGE_VPN,
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
@@ -679,12 +706,40 @@ function overview(peerId) {
     cameras: camerasPart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
     vpnNames: vpnNamesPart(g),
+    setupPageVpn: setupPageVpnPart(g, tel, s),
     home,
   };
 }
 
+/**
+ * The row "Statusseite im VPN (HTTPS)": switch, the name it answers under, whether the device wildcard is
+ * passed on to this gateway, and what the gateway reports (telemetry.setup_page.vpn_https.state:
+ * off | no_name | no_cert | port_in_use | listening | error; null before the gateway reported).
+ * `canOpen`: the button "Im VPN öffnen" — switched on, wildcard passed on, gateway with the capability.
+ */
+function setupPageVpnPart(g, tel, s) {
+  let cert = null;
+  try { cert = require('./vpnCert').shareSummary(g.id); } catch { cert = null; }
+  const sp = tel.setup_page && typeof tel.setup_page === 'object' ? tel.setup_page : {};
+  const v = sp.vpn_https && typeof sp.vpn_https === 'object' ? sp.vpn_https : null;
+  const STATES = ['off', 'no_name', 'no_cert', 'starting', 'port_in_use', 'listening', 'error'];
+  const state = v && STATES.includes(v.state) ? v.state : null;
+  const supported = support(tel).setupPageVpn;
+  const host = cert && typeof cert.host === 'string' ? cert.host : null;
+  return {
+    enabled: s.setupPageVpn.enabled,
+    supported,
+    shared: !!cert,
+    host,
+    port: v && Number.isInteger(v.port) && v.port > 0 && v.port < 65536 ? v.port : null,
+    state,
+    canOpen: s.setupPageVpn.enabled && supported && !!cert && !!host,
+    minGateway: MIN_GATEWAY_SETUP_PAGE_VPN,
+  };
+}
+
 module.exports = {
-  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, MIN_GATEWAY_SETUP_PAGE_VPN, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, vpnNamesProblem, publicIpv4,
 };
