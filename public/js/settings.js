@@ -1193,8 +1193,8 @@
     const card = $('card-vpn-cert');
     if (!card || !d) return;
     const v = valuesOf('netzwerk');
-    // the setup fields (not those of "An Geräte weitergeben")
-    const dirty = dirtyOf('netzwerk').some((f) => f.startsWith('vc-') && !f.startsWith('vc-share'));
+    // the setup fields (not those of "An Geräte weitergeben" and "Links auf die neue Adresse")
+    const dirty = dirtyOf('netzwerk').some((f) => f.startsWith('vc-') && !f.startsWith('vc-share') && f !== 'vc-links');
     if (dirty) vc.setup = true;
     const view = vcView();
     card.dataset.view = view;
@@ -1254,6 +1254,7 @@
     rb.appendChild(document.createTextNode(' '));
     rb.appendChild(el('a', { href: '/routes', class: 'vn-link', text: t('st.vc.routes_link') }));
     vcErrorBox();
+    vcRenderLinks();
     vcRenderShare();
     $('st-vc-renew').hidden = !(view === 'active' && d.renew_possible);
     $('st-vc-retry').hidden = !(view === 'error' && d.renew_possible);
@@ -1279,7 +1280,7 @@
     if (d.test && d.test.running) vcPollTest();
     vcRenderSharePeers();
     const sh = d.share || {};
-    return { 'vc-share': !!sh.enabled, 'vc-share-peers': (sh.allowed || []).slice().sort((a, b) => a - b), 'vc-provider': d.provider || '', 'vc-delay': d.propagation_delay, 'vc-cname': !!(d.delegate && d.provider !== 'desec_delegated'), 'vc-delegate': d.delegate || '' };
+    return { 'vc-links': !!(d.links && d.links.enabled), 'vc-share': !!sh.enabled, 'vc-share-peers': (sh.allowed || []).slice().sort((a, b) => a - b), 'vc-provider': d.provider || '', 'vc-delay': d.propagation_delay, 'vc-cname': !!(d.delegate && d.provider !== 'desec_delegated'), 'vc-delegate': d.delegate || '' };
   }
   // "An Geräte weitergeben": the allowed devices as a list of checkboxes (one field)
   CUSTOM['vc-share-peers'] = {
@@ -1301,6 +1302,12 @@
     });
     if (!sh.peers.length) box.appendChild(el('span', { class: 'st-hint', text: t('st.vc.share_no_peers') }));
     CUSTOM['vc-share-peers'].set(keep.length ? keep : sh.allowed);
+  }
+  // "Links auf die neue Adresse": which name the links get, and who cannot open it
+  function vcRenderLinks() {
+    const l = (vc.saved && vc.saved.links) || {};
+    if (l.public_portal) vcText($('st-vc-links-note'), 'st.vc.links_public', {});
+    else vcText($('st-vc-links-note'), 'st.vc.links_note', { new: '[[' + (l.new_host || '') + ']]', old: '[[' + (l.old_host || '') + ']]' });
   }
   function vcRenderShare() {
     const d = vc.saved || {};
@@ -1457,6 +1464,10 @@
         confirm: (v) => (!v['vc-provider'] && vc.saved && vc.saved.provider
           ? { title: t('st.vc.off_title'), message: t('st.vc.off_confirm'), okLabel: t('st.vc.off'), danger: true } : null),
         save: (v) => (v['vc-provider'] ? api.put('/api/v1/settings/vpn-cert', vcBody(v)) : api.del('/api/v1/settings/vpn-cert')),
+        after: async () => { fill('netzwerk', await loadCert()); renderCert(); } },
+      // "Links auf die neue Adresse" (off by default)
+      { fields: ['vc-links'], map: { enabled: 'vc-links' }, errorField: 'vc-links',
+        save: (v) => api.put('/api/v1/settings/vpn-cert/links', { enabled: v['vc-links'] === true }),
         after: async () => { fill('netzwerk', await loadCert()); renderCert(); } },
       // "An Geräte weitergeben": switching on asks once more (the key fits every name of the zone)
       { fields: ['vc-share', 'vc-share-peers'], map: { enabled: 'vc-share', peers: 'vc-share-peers' }, errorField: 'vc-share',

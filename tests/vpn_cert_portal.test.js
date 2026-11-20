@@ -222,7 +222,7 @@ describe('Zertifikat für die Namen: Portal und Verwaltung unter der Zone', () =
       await setUp();
       assert.equal(portalConfig.effectivePortalHost().compatHost, legacy());
       const users = fs.readFileSync(path.join(__dirname, '..', 'src/routes/api/users.js'), 'utf8');
-      assert.match(users, /effectivePortalHost\(\)\.compatHost/);
+      assert.match(users, /effectivePortalHost\(\)\.linkHost/);
     });
   });
 

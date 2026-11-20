@@ -61,6 +61,7 @@ const KEY = {
   sharePeers: 'vpn_cert.share_peers',
   shareUsed: 'vpn_cert.share_used',
   shareFp: 'vpn_cert.share_fingerprint',
+  links: 'vpn_cert.links_new',
 };
 
 const FEATURE = 'internal_dns';
@@ -422,6 +423,7 @@ function view() {
     renew_possible: canRenew(st, row),
     used_by: usedBy(st.zone),
     share: shareView(),
+    links: linksView(st),
     last_test: parseJson(get(KEY.lastTest, '')),
     resolvers: config.caddy.dnsResolvers,
     catalog: catalog(),
@@ -579,6 +581,42 @@ function shareView() {
 function notifyShare() {
   try { require('./gatewayFeatures').notifyAllGateways(); } catch { /* best effort */ }
   try { require('./notify/control').configChanged({ all: true }); } catch { /* best effort */ }
+}
+
+// ─── Links on the new address ─────────────────────────────
+//
+// Off by default. While on and the wildcard is in use (servedZone), the links
+// people open anywhere — invitations, kiosk pairing, the member menu, the way
+// back after connecting a cloud account — point to home.<zone> instead of
+// home.<legacy> (portalConfig.effectivePortalHost().linkHost).
+
+function linksNew() { return get(KEY.links, '') === '1'; }
+
+function linksView(st) {
+  let publicPortal = false;
+  try { publicPortal = !!require('./portalConfig').effectivePortalHost().public; } catch { publicPortal = false; }
+  return {
+    enabled: linksNew(),
+    new_host: st.zone ? `home.${st.zone}` : null,
+    old_host: `home.${config.dns.domain}`,
+    public_portal: publicPortal,
+  };
+}
+
+/** Switch the links on the new address. input: { enabled } */
+function setLinks(input = {}, { ip = null } = {}) {
+  if (!hasFeature(FEATURE)) { const err = new Error('feature_not_available'); err.code = 'feature_not_available'; err.statusCode = 403; throw err; }
+  if (typeof input.enabled !== 'boolean') throw validationError('links_invalid', 'enabled');
+  const enabled = input.enabled;
+  if (enabled && !providerId()) throw validationError('not_configured');
+  const was = linksNew();
+  settings.set(KEY.links, enabled ? '1' : '');
+  if (enabled !== was) {
+    activityLog(enabled ? 'tls_vpn_cert_links_on' : 'tls_vpn_cert_links_off',
+      enabled ? 'Links to the portal: new address under the VPN zone' : 'Links to the portal: previous address again',
+      'info', {}, ip);
+  }
+  return view();
 }
 
 /** Switch passing on, and who may fetch. input: { enabled, peers: [ids], accept_risk } */
@@ -953,7 +991,7 @@ async function save(input = {}, { ip = null } = {}) {
 async function disable({ ip = null } = {}) {
   const st = state();
   const zones = [st.zone, st.stored_zone].filter(Boolean);
-  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp]) settings.set(k, '');
+  for (const k of [KEY.provider, KEY.credentials, KEY.savedAt, KEY.zone, KEY.delegate, KEY.suspended, KEY.share, KEY.sharePeers, KEY.shareFp, KEY.links]) settings.set(k, '');
   removeSecretFiles();
   try { tlsGuard().forgetHosts(zones.map(wildcardOf)); } catch { /* none */ }
   if (st.provider) activityLog('tls_vpn_cert_disabled', 'Wildcard certificate of the VPN names switched off', 'info', { provider: st.provider, zone: st.zone }, ip);
@@ -1194,6 +1232,7 @@ module.exports = {
   save, disable, renew, applyAfterRestore,
   caddyTls, inConfig, suspend, unsuspend,
   servedZone, managementHosts, refreshServed, MANAGEMENT_LABELS,
+  setLinks, linksNew,
   setShare, shareSummary, fetchFor, rotateKey, shareRefresh, certMaterial,
   writeSecretFiles, removeSecretFiles, secretsDir,
   redact, preflight, detect, challengeNames, normDelegate,

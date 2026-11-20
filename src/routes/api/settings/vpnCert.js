@@ -14,7 +14,7 @@ const router = Router();
 const ERROR_CODES = new Set([
   'provider_unknown', 'field_required', 'field_invalid', 'delegate_required', 'delegate_invalid',
   'delay_invalid', 'no_zone', 'not_configured', 'renew_not_needed', 'preflight_failed', 'test_running',
-  'peers_invalid', 'risk_not_accepted', 'share_on', 'rotate_not_needed',
+  'peers_invalid', 'risk_not_accepted', 'links_invalid', 'share_on', 'rotate_not_needed',
 ]);
 
 function fail(req, res, err, what) {
@@ -109,6 +109,16 @@ router.put('/vpn-cert/share', (req, res) => {
     const b = req.body || {};
     res.json({ ok: true, data: vpnCert.setShare({ enabled: b.enabled === true, peers: b.peers, accept_risk: b.accept_risk === true }, { ip: req.ip }) });
   } catch (err) { fail(req, res, err, 'PUT /vpn-cert/share'); }
+});
+
+/**
+ * PUT /api/v1/settings/vpn-cert/links { enabled } — invitation, kiosk and menu
+ * links and the way back of the cloud accounts on home.<zone> (off by default)
+ */
+router.put('/vpn-cert/links', (req, res) => {
+  try {
+    res.json({ ok: true, data: vpnCert.setLinks(req.body || {}, { ip: req.ip }) });
+  } catch (err) { fail(req, res, err, 'PUT /vpn-cert/links'); }
 });
 
 /** POST /api/v1/settings/vpn-cert/rotate-key — a new key after passing it on (passing on must be off) */

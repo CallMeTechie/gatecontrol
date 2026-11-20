@@ -175,6 +175,11 @@ module.exports = (ctx) => {
         const r = await p.request.fetch(B + url, { method, data: body, headers });
         return { status: r.status(), body: await r.json().catch(() => null) };
       };
+      // the member menu's portal link, through /me (a redirect, not followed)
+      const menuLink = async () => {
+        const r = await p.request.fetch(B + '/me', { maxRedirects: 0 });
+        return { status: r.status(), location: r.headers().location || null };
+      };
       const leaked = async () => {
         const html = await p.content();
         return Object.values(NETCUP).filter((v) => v.length > 8).some((v) => html.includes(v) || bodies.some((b) => b.includes(v)));
@@ -313,6 +318,31 @@ module.exports = (ctx) => {
         await p.click('#st-save');
         await until(p, () => document.getElementById('st-savebar').hidden);
         step('switched off again', (await api('GET', '/api/v1/settings/vpn-cert')).body.data.share.enabled === false);
+
+        // ── Links auf die neue Adresse: off by default, note on older apps ──
+        step('links: off by default, the note names both addresses and the older apps',
+          await until(p, () => {
+            const note = document.getElementById('st-vc-links-note');
+            const mono = [...note.querySelectorAll('.st-mono')].map((n) => n.textContent).join();
+            return document.getElementById('st-vc-links-on').getAttribute('aria-checked') === 'false'
+              && mono === 'home.vpn.example.com,home.gc.internal' && /1\.85\.0/.test(note.textContent) && /1\.49\.0/.test(note.textContent);
+          }));
+        const meBefore = await menuLink();
+        step('links: the menu link keeps home.gc.internal', meBefore.status === 302 && meBefore.location === 'https://home.gc.internal',
+          JSON.stringify(meBefore));
+        await p.click('#st-vc-links-on');
+        await until(p, () => !document.getElementById('st-savebar').hidden && document.getElementById('card-vpn-cert').dataset.view === 'active');
+        await cardShot(p, 'vpncert-links');
+        await p.click('#st-save');
+        await until(p, () => document.getElementById('st-savebar').hidden);
+        const meAfter = await menuLink();
+        step('links on: the menu link points to home.<zone>',
+          (await api('GET', '/api/v1/settings/vpn-cert')).body.data.links.enabled === true && meAfter.location === 'https://home.vpn.example.com',
+          JSON.stringify(meAfter));
+        await p.click('#st-vc-links-on');
+        await p.click('#st-save');
+        await until(p, () => document.getElementById('st-savebar').hidden);
+        step('links switched off again', (await api('GET', '/api/v1/settings/vpn-cert')).body.data.links.enabled === false);
 
         // ── "Neuer Host" under the zone: internal only, no access choice ──
         const domId = db(app, (d) => d.prepare("SELECT id FROM domains WHERE domain = 'example.com'").get().id);
