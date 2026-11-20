@@ -463,7 +463,10 @@ router.get('/:id', (req, res) => {
   try {
     const route = routes.getById(req.params.id);
     if (!route) return res.status(404).json({ ok: false, error: req.t('error.routes.not_found') });
-    res.json({ ok: true, route: stripRoute(route) });
+    // gateway_udp like the list (routes.toApiRows): does the gateway/pool forward UDP?
+    const gatewayUdp = route.route_type === 'l4' && route.target_kind === 'gateway'
+      ? { gateway_udp: require('../../services/gatewayUdp').makeRowJudge()(route) } : {};
+    res.json({ ok: true, route: { ...stripRoute(route), ...gatewayUdp } });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get route');
     res.status(500).json({ ok: false, error: req.t('error.routes.get') });

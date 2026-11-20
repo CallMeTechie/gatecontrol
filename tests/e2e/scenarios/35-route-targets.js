@@ -7,9 +7,10 @@
 //     gateway → pool → gateway stores exactly one of the two;
 //   * an entry whose gateway was deleted: hint at the select, the 400
 //     TARGET_REQUIRED of a save lands as a field error there, a new gateway saves;
-//   * UDP behind a gateway: UDP button locked in the editor, UDP locked in
+//   * UDP behind a gateway that cannot forward UDP (no capability udp-routes):
+//     the editor offers UDP (the server decides), UDP locked in
 //     "Weiterleitung hinzufügen" and "Neuer Host", the API answers 400
-//     UDP_VIA_GATEWAY; an older UDP entry behind a gateway carries "wirkt nicht"
+//     UDP_VIA_GATEWAY; an older UDP entry behind it carries "wirkt noch nicht"
 //     (row note) and the editor says so;
 //   * "Weiterleitung hinzufügen" / "Neuer Host" whose answer is lost after the
 //     server created the entry/host (page.route): the page reloads, the form
@@ -207,8 +208,8 @@ module.exports = (ctx) => {
               && !!groups[1].querySelector('option[value="pool:' + pool + '"]')
               && groups[0].label !== '' && groups[1].label !== '' && sel.value === String(a);
           }, [S.a, S.pool]));
-        step('routetargets: UDP cannot be chosen for a gateway target',
-          await p.locator('#ee-kind-group [data-value="udp"]').isDisabled());
+        step('routetargets: the editor offers UDP for a gateway target (the server decides whether the gateway can)',
+          !(await p.locator('#ee-kind-group [data-value="udp"]').isDisabled()));
         await p.selectOption('#edit-route-gateway-peer', 'pool:' + S.pool);
         await shot(p, 'routetargets-pool');
         let res = await saveEditor();

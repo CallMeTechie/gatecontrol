@@ -167,6 +167,8 @@ describe('config pull: udp_routes only for a gateway that can', () => {
     assert.equal(cfg.l4_routes.some((r) => r.id === tcp.id), false, 'and no TCP listener for a UDP entry');
     const row = routes.toApiRows([routes.getById(tcp.id)])[0];
     assert.equal(row.gateway_udp, false);
+    const detail = await agent.get('/api/v1/routes/' + tcp.id);
+    assert.equal(detail.body.route.gateway_udp, false, 'GET /routes/:id (the editor) says so too');
     const before = gateways.computeConfigHash(oldGw);
 
     setCaps(oldGw, ['dns', 'udp-routes']); // its heartbeat after the update
