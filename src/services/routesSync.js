@@ -40,4 +40,15 @@ async function withCaddySync(syncFn, rollback, label = 'route mutation') {
   }
 }
 
-module.exports = { withCaddySync };
+// Answer budget of a delete (config.caddy.answerBudgetMs): resolves true when
+// `job` settles within `ms` (rejects with its error), false when it is still
+// running then — the API answers 202 { pending } and the job finishes in the
+// background. ms <= 0: wait for the job.
+function settledWithin(job, ms) {
+  if (!(ms > 0)) return job.then(() => true);
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); });
+  return Promise.race([job.then(() => true), late]).finally(() => clearTimeout(timer));
+}
+
+module.exports = { withCaddySync, settledWithin };

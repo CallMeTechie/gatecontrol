@@ -360,8 +360,16 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   `{ ok: true, pending: true }` („gelöscht – wird noch übernommen“); der Sync
   läuft mit demselben Rollback weiter. Scheitert er, ist die Zeile wieder da,
   und das Routen-Ereignis trägt `sync: 'failed'` + `route_id` → Hinweis
-  „Löschen konnte nicht übernommen werden“. Jeder Sync schreibt seine Phasen
-  ins Log (`ms: { queue, read, build, load, verify, tls, total }`, ab 2 s als
+  „Löschen konnte nicht übernommen werden“. „Host löschen“
+  (`DELETE /api/v1/hosts/:id`, alle Einträge in einem Batch-Sync) hält dasselbe
+  Budget ein: 202 `{ ok: true, pending: true }`, scheitert der Sync danach,
+  sind alle Einträge (und der Host) wieder da und das Routen-Ereignis trägt je
+  Eintrag `sync: 'failed'` + `route_id` + `host_id` → ein Hinweis pro Host.
+  Bis zum Routen-Ereignis des Hosts (höchstens 60 s) bleibt er auf der Seite
+  ausgeblendet – solange der Sync läuft, steht die Host-Zeile noch ohne
+  Einträge in den Daten. `POST /api/routes/batch` mit `action: 'delete'`
+  antwortet ebenso (202 `{ ok, pending, affected }`). Jeder Sync schreibt
+  seine Phasen ins Log (`ms: { queue, read, build, load, verify, tls, total }`, ab 2 s als
   Warnung „Caddy config sync slow“).
 - Zeilenmenü (`.rt-more`, `openMenu`): wandert beim Scrollen mit seinem Knopf
   mit und schließt erst, wenn der Knopf aus dem sichtbaren Bereich gescrollt

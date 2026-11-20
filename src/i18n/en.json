@@ -3249,6 +3249,8 @@
   "host.confirm_delete": "Delete host “{{host}}” and all {{count}} entries?",
   "host.confirm_delete_rdp": "Remote Desktop entries are not deleted; they are managed under Remote Desktop.",
   "host.deleted": "{{host}} deleted.",
+  "host.delete_pending": "{{host}} deleted – the change is still being applied.",
+  "host.delete_failed_restored": "Deleting {{host}} could not be applied – the host and its forwardings are back.",
   "host.new": "New host",
   "host.subdomain": "Subdomain",
   "host.subdomain_ph": "name",

@@ -14,6 +14,8 @@
 const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
+const config = require('../../../config/default');
+const { settledWithin } = require('../../services/routesSync');
 const domainZones = require('../../services/domainZones');
 const hosts = require('../../services/hosts');
 const hostTemplates = require('../../services/hostTemplates');
@@ -240,7 +242,16 @@ router.put('/hosts/:id', async (req, res) => {
 router.delete('/hosts/:id', async (req, res) => {
   try {
     if (!hostRow(req.params.id)) return notFound(res, 'Host');
-    await hosts.remove(req.params.id);
+    // Like DELETE /api/routes/:id: the entries go at once, the answer waits
+    // for the Caddy sync only up to config.caddy.answerBudgetMs. Later: 202
+    // { pending }, the sync completes in the background; a failure restores
+    // the entries and announces each on the routes event (`sync: 'failed'`,
+    // `route_id`).
+    const job = hosts.remove(req.params.id);
+    if (!(await settledWithin(job, config.caddy.answerBudgetMs))) {
+      job.catch((err) => logger.error({ hostId: req.params.id, error: err.message }, 'Host delete: Caddy sync failed after the answer — entries restored'));
+      return res.status(202).json({ ok: true, pending: true });
+    }
     res.json({ ok: true });
   } catch (err) {
     handleError(req, res, err);
