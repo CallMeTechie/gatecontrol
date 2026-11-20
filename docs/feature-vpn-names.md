@@ -33,8 +33,8 @@ Warum ein Unterbereich und nicht die Domain selbst:
   nicht kennt.
 
 Die Namen gelten nur im VPN. Beim Anbieter der Domain wird nichts eingetragen,
-von außen sind sie nicht auflösbar, und es wird kein Zertifikat dafür
-angefordert. Nur A-Einträge (kein AAAA).
+von außen sind sie nicht auflösbar, und ohne „Zertifikat für die Namen“
+(unten) wird kein Zertifikat dafür angefordert. Nur A-Einträge (kein AAAA).
 
 ## Einstellung (Einstellungen → VPN & Netzwerk → „Namen im VPN“)
 
@@ -129,6 +129,67 @@ liegen (`DEVICE_ZONE`).
 Lizenz: Gerätenamen und die eigene Domain gehören zum Merkmal `internal_dns`.
 Ohne das Merkmal ist die Karte sichtbar gesperrt; die festen Namen des Servers
 und die Adressen der Routen lösen weiter auf.
+
+## Zertifikat für die Namen (Einstellungen → VPN & Netzwerk)
+
+Ein Wildcard-Zertifikat `*.<zone>` für die primäre Zone, von Let's Encrypt über
+ACME DNS-01: Für jeden Abruf schreibt Caddy einen TXT-Eintrag
+`_acme-challenge.<zone>` beim DNS-Anbieter des Admins (oder am Ziel einer
+Weiterleitung per CNAME) und löscht ihn danach. Kein Name der Zone braucht
+einen öffentlichen Eintrag, in den CT-Logs steht nur `*.<zone>`. Für die alte
+Zone (`gc.internal`) gibt es kein Zertifikat einer Zertifizierungsstelle.
+Handbuch: Kapitel 2.12. Lizenz: Merkmal `internal_dns`.
+
+| Teil | Wo |
+|---|---|
+| Anbieter-Katalog, Zustände, Test, Speichern, Erneuern | `src/services/vpnCert.js` |
+| API `GET/PUT/DELETE /api/v1/settings/vpn-cert`, `POST …/test`, `GET …/test`, `POST …/renew` (nur Admin-Sitzung) | `src/routes/api/settings/vpnCert.js` |
+| Policy im Caddy-Abgleich | `applyVpnCertTls` in `src/services/caddyConfig.js` |
+| Status, Sperre nach Fehlversuchen, Zertifikatsliste | `src/services/tlsGuard.js` (Zeile `*.<zone>` in `tls_status`) |
+| DNS-Module, Test-Unterbefehl `caddy gc-dnstest` | `Dockerfile`, `caddy-plugins/mirror/dnstest.go` |
+| Karte | `templates/aurora/pages/settings.njk` (`#card-vpn-cert`), `public/js/settings.js` |
+
+**Anbieter** (erste Fassung): Weiterleitung über deSEC (empfohlen, oben in der
+Liste), Hetzner (Cloud-DNS-API), IONOS, netcup, INWX, All-Inkl, OVHcloud,
+deSEC, Cloudflare, RFC 2136, acme-dns. Bei IONOS, netcup, INWX und All-Inkl
+darf der Zugang mehr als die Zone ändern: Die Karte rät dort zur
+Weiterleitung. Vorschlag des Anbieters über die Nameserver der Basis-Domain.
+
+**Zugangsdaten:** `vpn_cert.credentials_encrypted` (AES-256-GCM mit
+`GC_ENCRYPTION_KEY`, in `ENCRYPTED_SETTINGS_KEYS` der Sicherung). Für Caddy je
+Feld eine Datei unter `<caddy-daten>/secrets/dns/` (Ordner 0700, Datei 0600);
+die Caddy-Konfiguration nennt nur `{file.…}`. Die API gibt nie Werte zurück,
+nur `fields_set` und `saved_at`; ein leeres Feld behält beim „Ändern“ den
+gespeicherten Wert. Fehlertexte (Test, `tls.log`, Caddy) werden gegen die
+Werte geschwärzt.
+
+**Caddy:** eine eigene Policy `*.<zone>` an erster Stelle mit DNS-Challenge
+(öffentliche Resolver `GC_VPN_CERT_RESOLVERS`, Standard `9.9.9.9`/`1.1.1.1`;
+`propagation_delay` aus der Karte, `propagation_timeout` 15 Minuten;
+`override_domain` bei Weiterleitung), `tls.certificates.automate`. Namen der
+Zone, die Caddy bedient, verlassen die übrigen Policies und stehen in
+`automatic_https.skip_certificates` – sie bekommen per SNI das Wildcard-
+Zertifikat. Lehnt Caddy die Anbieter-Konfiguration beim Laden ab, lädt der
+Server ohne sie und hält das Zertifikat an (`suspended`).
+
+**Zustände** (`state`): `locked`, `no_zone`, `off`, `zone_changed` (die Zone
+unter „Namen im VPN“ wurde gewechselt – die Policy fällt weg, die Karte fragt
+nach einer neuen Einrichtung), `unreadable`, `suspended`, `paused` (TLS-Wächter:
+Fehlversuche oder CAA ohne `issuewild` für Let's Encrypt), `failed`,
+`pending`, `active`. „Jetzt erneuern“ nur bei Fehler, Anhalten oder weniger als
+30 Tagen Restlaufzeit.
+
+**Testen** (`caddy gc-dnstest` mit demselben Modul): schreibt unter
+`_acme-challenge.<zone>` (bei Weiterleitung am CNAME-Ziel, bei acme-dns an
+dessen `fulldomain`) einen TXT-Eintrag mit eindeutigem Wert `gc-test-…`, prüft
+bei Weiterleitung den CNAME, wartet, bis alle autoritativen Nameserver ihn
+ausliefern, und löscht ihn. Schritte `login`, `zone`, `write`, `visible`,
+`delete`; Vorschlag der Wartezeit aus der gemessenen Verbreitung. Let's Encrypt
+wird nicht gefragt; gespeichert wird nur das Ergebnis ohne Werte.
+
+Die Karte hat die Ansichten `locked`, `nozone`, `off`, `setup`, `pending`,
+`active`, `error`; die Felder der Einrichtung gehen über die Speicherleiste,
+„Testen“ wirkt sofort.
 
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 

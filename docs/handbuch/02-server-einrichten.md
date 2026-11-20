@@ -335,3 +335,88 @@ Android-App braucht kein Update.
 **Prüfen:** Unter „Einstellungen“ → „VPN & Netzwerk“ → „Zustand der Namen“
 steht bei „Dienst“ das Wort „läuft“. Auf einem Gerät im VPN antwortet
 `ping laptop-buero.vpn.example.com` (mit dem Namen eines deiner Geräte).
+
+## 2.12 Gültiges Zertifikat für die Namen im VPN
+
+Die Namen unter deiner VPN-Zone können ein Zertifikat bekommen, dem jeder
+Browser vertraut – ohne Warnung und ohne dass du auf jedem Gerät etwas
+bestätigst. Die Namen bleiben dabei im VPN: Bei deinem Domain-Anbieter
+erscheint nur für einen Moment ein Prüfeintrag, sonst nichts. In den
+öffentlichen Zertifikats-Listen steht nur `*.vpn.example.com`, kein Geräte-
+oder Dienstname.
+
+**Voraussetzung:** Unter „Namen im VPN“ ist eine eigene Domain gewählt (siehe
+[2.11](#211-namen-im-vpn)), und dein Domain-Anbieter bietet eine
+DNS-Schnittstelle an. Wenn nicht, nimm den Weg „Weiterleitung über deSEC“
+weiter unten. Die Funktion gehört zum Lizenz-Merkmal „Internes DNS“.
+
+1. Öffne „Einstellungen“ → „VPN & Netzwerk“ → „Zertifikat für die Namen“ und
+   klick auf „Einrichten“.
+2. Wähle bei „DNS-Anbieter“ deinen Anbieter. Steht dort schon ein Vorschlag
+   („Erkannt über die Nameserver …“), passt er meistens.
+3. Leg beim Anbieter einen Zugang für die Schnittstelle an (Tabelle unten) und
+   trag ihn ein. Gib dem Zugang so wenig Rechte wie möglich.
+4. Klick auf „Testen“. Alle fünf Punkte sollten einen Haken bekommen. Der Test
+   schreibt einen Prüfeintrag mit einem eindeutigen Testwert unter
+   `_acme-challenge.vpn.example.com` (bei einer Weiterleitung unter deren
+   Ziel), wartet, bis ihn die zuständigen DNS-Server ausliefern, und löscht ihn
+   wieder. Let's Encrypt wird dabei nicht gefragt. Unter „Öffentlich sichtbar“
+   schlägt er eine Wartezeit vor; „Übernehmen“ trägt sie unter „Erweitert“ ein.
+5. Klick unten auf „Speichern“. Nach ein bis drei Minuten steht in der Karte
+   „gültig“.
+
+Das Zertifikat erneuert sich 30 Tage vor Ablauf von selbst. Klappt das
+mehrmals nicht, hält der Server weitere Versuche an, damit Let's Encrypt die
+Domain nicht sperrt, und die Karte sagt, was der Anbieter gemeldet hat. Läuft
+das Zertifikat in weniger als 14 Tagen ab, erscheint es auf dem Dashboard
+unter den Problemen und unter „Domains & Zertifikate“.
+
+**Weiterleitung über deSEC (sicherster Weg):** Leg bei deSEC kostenlos eine
+Zone an, zum Beispiel `vpn-example.dedyn.io`, und dort ein Token, das nur
+TXT-Einträge unter `_acme-challenge` ändern darf. Trag bei deinem
+Domain-Anbieter einmal von Hand ein:
+
+```
+_acme-challenge.vpn.example.com.  CNAME  _acme-challenge.vpn-example.dedyn.io.
+```
+
+In GateControl wählst du „Weiterleitung über deSEC“, trägst das Ziel und das
+Token ein und klickst auf „Testen“. Der Zugang zu deiner eigentlichen Domain
+bleibt so ganz aus GateControl heraus. Mit einem anderen Anbieter für die
+Zielzone geht das genauso: Schalte unter „Erweitert“ „Weiterleitung nutzen
+(CNAME)“ ein.
+
+### Wo du den Zugang bekommst und welche Rechte reichen
+
+| Anbieter | Was du einträgst | Wo | Rechte begrenzen |
+|---|---|---|---|
+| Hetzner | API-Token | Hetzner Console › Projekt › Sicherheit › API-Tokens („Lesen & Schreiben“) | ganzes Projekt – Zone in ein eigenes Projekt legen; Zonen aus der alten DNS-Konsole erst umziehen |
+| IONOS | API-Schlüssel (`Präfix.Geheimnis`) | IONOS Developer-Portal › API-Schlüssel | alle Zonen – besser Weiterleitung |
+| netcup | Kundennummer, API-Key, API-Passwort | Kundencontrolpanel › Stammdaten › API | alle Domains – besser Weiterleitung |
+| INWX | Benutzername, Passwort, ggf. 2FA-Geheimnis | INWX-Konto; wenn möglich eigener Benutzer nur für DNS | Konto/Benutzer – besser Weiterleitung |
+| All-Inkl.com | KAS-Login, KAS-Passwort | KAS | ganzes Konto – dringend Weiterleitung |
+| OVHcloud | Endpunkt, Application Key/Secret, Consumer Key | OVH-API: Token mit Regeln nur für `/domain/zone/example.com/*` | eine Zone |
+| Cloudflare | API-Token | Profil › API-Tokens › „Zone · DNS · Bearbeiten“, nur diese Zone | eine Zone |
+| deSEC | Token | deSEC › Token mit Richtlinie: Domain, Unterbereich `_acme-challenge.vpn`, Typ TXT | nur TXT |
+| RFC 2136 | Server, Schlüsselname, Algorithmus, Schlüssel | eigener DNS-Server (BIND: `update-policy { grant … name _acme-challenge.vpn.example.com TXT; };`) | nur TXT |
+| acme-dns | Server-URL, Benutzer, Passwort, Unterbereich, Ziel des CNAME | eigener acme-dns-Dienst + einmal CNAME beim Anbieter | nur TXT |
+
+Strato und andere Anbieter ohne DNS-Schnittstelle: nimm die Weiterleitung über
+deSEC.
+
+Die Zugangsdaten liegen verschlüsselt in der Datenbank und in Sicherungen. Die
+Oberfläche zeigt sie nie wieder an, nur „gespeichert am …“; beim „Ändern“
+bleibt ein leeres Feld beim gespeicherten Wert. „Ausschalten“ löscht sie.
+Stellst du unter „Namen im VPN“ eine andere Zone ein, fragt die Karte nach
+einer neuen Einrichtung.
+
+**Was das Zertifikat nicht abdeckt:** Dienste, die direkt auf einem Gerät
+laufen, zum Beispiel die Oberfläche eines NAS unter
+`nas.vpn.example.com:5001`: Ihr TLS endet auf dem Gerät. Und ein Zertifikat
+deckt eine Ebene ab: `nas-web.vpn.example.com` ja, `a.b.vpn.example.com`
+nicht. Welche Namen der Server damit beantwortet, steht in der Karte unter
+„Genutzt von“.
+
+**Prüfen:** In der Karte „Zertifikat für die Namen“ steht „gültig“ mit dem
+Ablaufdatum, und unter „Domains & Zertifikate“ erscheint `*.vpn.example.com`
+mit Let's Encrypt als Aussteller.

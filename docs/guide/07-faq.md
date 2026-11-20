@@ -423,6 +423,39 @@ More:
 
 **Check:** On a device in the VPN, `ping` answers for the copied name.
 
+### The browser warns at `home.gc.internal`
+
+No certificate authority issues certificates for names like
+`home.gc.internal`. The server therefore uses a certificate of its own, which
+the browser only trusts once you confirm it on the device. That is harmless in
+the VPN, but annoying.
+
+Remedy: Choose an own domain under “Names in the VPN” and set up a certificate
+for the zone under “Settings” → “VPN & network” → “Certificate for the names”.
+The names under your zone that the server answers then get a certificate every
+browser trusts. Which ones these are is listed in the card under “Used by”.
+More:
+[2.12 A valid certificate for the names in the VPN](02-server-setup.md#212-a-valid-certificate-for-the-names-in-the-vpn).
+
+### “Test” of the certificate for the names fails
+
+The card shows what the provider reported at the failed item.
+
+1. **Signing in at the provider:** The credentials were refused. Check them in
+   the customer portal of the provider; with INWX and 2FA the 2FA secret is
+   part of it.
+2. **Zone found:** The public DNS servers do not know the domain, or with a
+   forwarding the CNAME record `_acme-challenge.vpn.example.com` is still
+   missing. New records often take a few minutes at the provider.
+3. **Test record written:** The access may not create the record. Limited
+   tokens must allow `_acme-challenge…` with type TXT.
+4. **Publicly visible:** The record did not reach all name servers within 10
+   minutes. Try again and set a longer waiting time under “Advanced”.
+5. **Test record deleted:** Delete the record with the test value `gc-test-…`
+   at the provider by hand.
+
+**Check:** All five items have a tick.
+
 ## Setting up a gateway
 
 ### The assistant is still waiting after 10 minutes

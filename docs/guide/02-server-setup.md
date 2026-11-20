@@ -332,3 +332,83 @@ app needs no update.
 **Check:** Under “Settings” → “VPN & network” → “State of the names” the row
 “Service” says “running”. On a device in the VPN,
 `ping laptop-buero.vpn.example.com` answers (with the name of one of your devices).
+
+## 2.12 A valid certificate for the names in the VPN
+
+The names under your VPN zone can get a certificate that every browser trusts
+– without a warning and without confirming anything on each device. The names
+stay in the VPN: at your domain provider a check record appears for a moment
+only, nothing else. The public certificate logs only show
+`*.vpn.example.com`, no device or service name.
+
+**Requirement:** An own domain is chosen under “Names in the VPN” (see
+[2.11](#211-names-in-the-vpn)), and your domain provider offers a DNS
+interface. If not, take the way “Forwarding via deSEC” further below. The
+function belongs to the licence feature “Internal DNS”.
+
+1. Open “Settings” → “VPN & network” → “Certificate for the names” and click
+   “Set up”.
+2. Choose your provider under “DNS provider”. If there already is a suggestion
+   (“Detected from the name servers …”), it usually fits.
+3. Create an access for the interface at the provider (table below) and enter
+   it. Give the access as few rights as possible.
+4. Click “Test”. All five items should get a tick. The test writes a check
+   record with a unique test value under `_acme-challenge.vpn.example.com`
+   (with a forwarding under its target), waits until the responsible DNS
+   servers serve it and deletes it again. Let's Encrypt is not asked. Under
+   “Publicly visible” it suggests a waiting time; “Use” enters it under
+   “Advanced”.
+5. Click “Save” at the bottom. After one to three minutes the card says
+   “valid”.
+
+The certificate renews itself 30 days before it expires. If that fails
+several times, the server stops further attempts so that Let's Encrypt does
+not block the domain, and the card says what the provider reported. If the
+certificate expires in less than 14 days, it shows up among the problems on
+the dashboard and under “Domains & certificates”.
+
+**Forwarding via deSEC (safest way):** Create a free zone at deSEC, for example
+`vpn-example.dedyn.io`, and a token there that may only change TXT records
+under `_acme-challenge`. Add once by hand at your domain provider:
+
+```
+_acme-challenge.vpn.example.com.  CNAME  _acme-challenge.vpn-example.dedyn.io.
+```
+
+In GateControl choose “Forwarding via deSEC”, enter the target and the token
+and click “Test”. The access to your actual domain stays out of GateControl
+entirely. With another provider for the target zone it works the same way:
+switch on “Use forwarding (CNAME)” under “Advanced”.
+
+### Where you get the access and which rights are enough
+
+| Provider | What you enter | Where | Limit the rights |
+|---|---|---|---|
+| Hetzner | API token | Hetzner Console › project › security › API tokens (“Read & Write”) | whole project – put the zone into a project of its own; move zones from the old DNS console first |
+| IONOS | API key (`prefix.secret`) | IONOS developer portal › API keys | all zones – forwarding is better |
+| netcup | customer number, API key, API password | customer control panel › master data › API | all domains – forwarding is better |
+| INWX | user name, password, 2FA secret if active | INWX account; if possible a user for DNS only | account/user – forwarding is better |
+| All-Inkl.com | KAS login, KAS password | KAS | whole account – forwarding strongly recommended |
+| OVHcloud | endpoint, application key/secret, consumer key | OVH API: token with rules for `/domain/zone/example.com/*` only | one zone |
+| Cloudflare | API token | profile › API tokens › “Zone · DNS · Edit”, this zone only | one zone |
+| deSEC | token | deSEC › token with a policy: domain, subname `_acme-challenge.vpn`, type TXT | TXT only |
+| RFC 2136 | server, key name, algorithm, key | own DNS server (BIND: `update-policy { grant … name _acme-challenge.vpn.example.com TXT; };`) | TXT only |
+| acme-dns | server URL, user, password, subdomain, CNAME target | own acme-dns service + one CNAME at the provider | TXT only |
+
+Strato and other providers without a DNS interface: use the forwarding via
+deSEC.
+
+The credentials are stored encrypted in the database and in backups. The
+interface never shows them again, only “stored on …”; with “Change” an empty
+field keeps the stored value. “Switch off” deletes them. If you choose another
+zone under “Names in the VPN”, the card asks for a new setup.
+
+**What the certificate does not cover:** services that run directly on a
+device, for example the interface of a NAS under `nas.vpn.example.com:5001`:
+their TLS ends on the device. And a certificate covers one level:
+`nas-web.vpn.example.com` yes, `a.b.vpn.example.com` no. Which names the
+server answers with it is listed in the card under “Used by”.
+
+**Check:** The card “Certificate for the names” says “valid” with the expiry
+date, and `*.vpn.example.com` appears under “Domains & certificates” with
+Let's Encrypt as issuer.

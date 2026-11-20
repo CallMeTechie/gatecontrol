@@ -971,26 +971,414 @@
     }
     return { 'vn-domain': d.base_domain || '', 'vn-sub': d.custom ? d.sub : d.default_sub };
   }
+  // "Zertifikat für die Namen": the wildcard certificate *.<zone> via ACME
+  // DNS-01 (GET/PUT/DELETE /api/v1/settings/vpn-cert, POST …/test, …/renew;
+  // services/vpnCert.js). The card has one view at a time (data-view):
+  // locked, nozone, off, setup, pending, active, error. The setup fields
+  // (vc-*) are saved with the save bar like every setting; "Testen" acts at
+  // once and saves nothing. Credential values never come back from the
+  // server — a stored secret shows as "gespeichert", left empty it stays.
+  const VC_TONE = { desec_delegated: 'good', hetzner: 'warn', ionos: 'warn', netcup: 'warn', inwx: 'warn', allinkl: 'crit', ovh: 'good', desec: 'good', cloudflare: 'good', rfc2136: 'good', acmedns: 'good' };
+  const VC_PH = {
+    ionos: { api_token: 'präfix.geheimnis' },
+    netcup: { customer_number: '12345' },
+    allinkl: { kas_username: 'w0123456' },
+    rfc2136: { server: 'ns1.example.com:53', key_name: 'gatecontrol' },
+    acmedns: { server_url: 'https://acme-dns.example.com', fulldomain: '…​.auth.acme-dns.io' },
+  };
+  const VC_DELAY = { netcup: 300, hetzner: 30 };
+  const VC_STEPS = ['login', 'zone', 'write', 'visible', 'delete'];
+  const vc = { saved: null, setup: false, poll: null, testPoll: null, catalog: [] };
+  const vcEye = 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z';
+  function vcMeta(id) { return vc.catalog.find((p) => p.id === id) || null; }
+  function vcHas(key) { return window.GC.t[key] != null; }
+  function vcDate(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleDateString(lang, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  // every credential field of the catalog, as save-bar field name
+  function vcCredFields() {
+    const out = new Set();
+    vc.catalog.forEach((p) => p.fields.forEach((f) => out.add('vc-f-' + f.key)));
+    return Array.from(out);
+  }
+  function vcFieldMap() {
+    const m = { provider: 'vc-provider', delegate: 'vc-delegate', propagation_delay: 'vc-delay' };
+    vc.catalog.forEach((p) => p.fields.forEach((f) => { m[f.key] = 'vc-f-' + f.key; }));
+    return m;
+  }
+  function vcUsesDelegate(v) {
+    const id = v['vc-provider'];
+    const m = vcMeta(id);
+    if (!m || m.own_cname) return false;
+    return m.delegated || v['vc-cname'] === true;
+  }
+  /** The request body of the setup (save and test): only filled credential fields. */
+  function vcBody(v) {
+    const m = vcMeta(v['vc-provider']);
+    const credentials = {};
+    if (m) m.fields.forEach((f) => { const x = String(v['vc-f-' + f.key] || '').trim(); if (x) credentials[f.key] = x; });
+    return {
+      provider: v['vc-provider'],
+      credentials,
+      delegate: vcUsesDelegate(v) ? String(v['vc-delegate'] || '').trim() : '',
+      propagation_delay: v['vc-delay'] === '' ? undefined : int(v['vc-delay']),
+    };
+  }
+  function vcText(node, key, params) {
+    clear(node);
+    // {code} parts of the text (names, records) in monospace
+    const s = t(key, params);
+    s.split(/(\[\[[^\]]*\]\])/).forEach((part) => {
+      const m = /^\[\[(.*)\]\]$/.exec(part);
+      node.appendChild(m ? el('span', { class: 'st-mono', text: m[1] }) : document.createTextNode(part));
+    });
+    return node;
+  }
+  function vcBox(node, bold, rest) {
+    clear(node);
+    if (bold) node.appendChild(el('b', { text: bold }));
+    if (rest) node.appendChild(document.createTextNode((bold ? ' ' : '') + rest));
+    node.hidden = !bold && !rest;
+  }
+  function vcView() {
+    const d = vc.saved;
+    if (!d) return 'nozone';
+    if (!d.licensed) return 'locked';
+    if (d.state === 'no_zone') return 'nozone';
+    if (vc.setup) return 'setup';
+    if (d.state === 'off' || d.state === 'zone_changed') return 'off';
+    if (d.state === 'pending') return 'pending';
+    if (d.state === 'active') return 'active';
+    return 'error';
+  }
+  /** The input rows of the chosen provider (rebuilt on a provider change). */
+  function vcRenderFields(id, keep) {
+    const box = $('st-vc-fields');
+    clear(box);
+    const d = vc.saved || {};
+    const m = vcMeta(id);
+    const rights = $('st-vc-rights');
+    if (!m) { rights.hidden = true; return; }
+    const same = id === d.provider;
+    rights.dataset.tone = VC_TONE[id] || 'warn';
+    const base = (d.detected && d.detected.base) || '';
+    const words = { zone: d.zone || '', base, sub: base && d.zone && d.zone.endsWith('.' + base) ? d.zone.slice(0, -(base.length + 1)) : '' };
+    vcBox(rights, t('st.vc.r.' + id + '_b'), t('st.vc.r.' + id, words));
+    const fresh = {};
+    m.fields.forEach((f) => {
+      const name = 'vc-f-' + f.key;
+      const fid = 'st-vc-f-' + f.key;
+      const labelKey = 'st.vc.f.' + id + '.' + f.key;
+      const label = vcHas(labelKey) ? t(labelKey) : t('st.vc.f.' + f.key);
+      const hintKey = labelKey + '_hint';
+      const stored = same && (d.fields_set || []).includes(f.key);
+      const hint = [vcHas(hintKey) ? t(hintKey, words) : '', !f.required ? t('st.vc.optional') : ''].filter(Boolean).join(' ');
+      const text = el('div', { class: 'st-row-text' }, [
+        el('label', { class: 'st-label', for: fid, id: fid + '-label', text: label }),
+        hint ? el('span', { class: 'st-hint', id: fid + '-hint', text: hint }) : null,
+        el('span', { class: 'st-err', id: fid + '-err', role: 'alert', hidden: true })]);
+      let ctl;
+      if (f.kind === 'select') {
+        ctl = el('select', { class: 'st-select', id: fid, 'data-st-field': name, 'aria-describedby': fid + '-err' },
+          (f.options || []).map((o) => el('option', { value: o, text: o })));
+      } else {
+        ctl = el('input', {
+          type: f.kind === 'secret' ? 'password' : 'text', class: 'st-input st-mono', id: fid, 'data-st-field': name,
+          maxlength: '4096', autocomplete: f.kind === 'secret' ? 'new-password' : 'off', spellcheck: 'false', autocapitalize: 'none',
+          placeholder: stored && f.kind === 'secret' ? t('st.vc.stored') : ((VC_PH[id] && VC_PH[id][f.key]) || ''),
+          'aria-describedby': (hint ? fid + '-hint ' : '') + fid + '-err',
+        });
+      }
+      const ctlBox = el('div', { class: 'st-row-ctl' }, ctl);
+      if (f.kind === 'secret') {
+        const eye = el('button', { type: 'button', class: 'st-icon-btn', 'aria-label': t('st.vc.show'), title: t('st.vc.show'), 'aria-pressed': 'false' }, icon(vcEye, 15));
+        eye.addEventListener('click', () => {
+          const shown = ctl.type === 'text';
+          ctl.type = shown ? 'password' : 'text';
+          eye.setAttribute('aria-pressed', shown ? 'false' : 'true');
+        });
+        ctlBox.appendChild(eye);
+      }
+      box.appendChild(el('div', { class: 'st-row', 'data-st-row': name }, [text, ctlBox]));
+      const plain = same && d.fields_plain ? d.fields_plain[f.key] : undefined;
+      fresh[name] = keep && keep[name] != null ? keep[name] : (plain != null ? plain : (f.kind === 'select' ? (f.options || [])[0] : ''));
+    });
+    // a new row starts "saved" with its first value; only typing makes it dirty
+    fill('netzwerk', fresh);
+  }
+  function vcRenderChecks(test) {
+    const list = $('st-vc-checks');
+    clear(list);
+    list.hidden = !test;
+    if (!test) return;
+    const steps = test.steps || [];
+    let runningShown = false;
+    steps.forEach((s, i) => {
+      let state = s.status === 'ok' ? 'ok' : s.status === 'fail' ? 'bad' : s.status === 'skip' ? 'skip' : '';
+      if (!state && test.running && !runningShown) { state = 'run'; runningShown = true; }
+      const zone = (steps[1] && steps[1].detail) || (test.result && test.result.zone) || '';
+      const label = s.step === 'zone' && zone ? t('st.vc.step.zone_named', { zone }) : t('st.vc.step.' + s.step);
+      const body = el('span', {}, label);
+      if (s.step === 'visible' && state === 'ok' && test.result && test.result.ok) {
+        const secs = Math.round((test.result.propagation_ms || 0) / 1000);
+        const small = el('small', { text: t('st.vc.step.visible_done', { s: secs, ns: (test.result.nameservers || []).join(', '), d: test.result.suggested_delay }) + ' ' });
+        const take = el('button', { type: 'button', class: 'vn-link', text: t('st.vc.take') });
+        take.addEventListener('click', () => {
+          const n = fieldEl('netzwerk', 'vc-delay');
+          if (n) { n.value = String(test.result.suggested_delay); n.dispatchEvent(new Event('input', { bubbles: true })); }
+          $('st-vc-adv').open = true;
+        });
+        small.appendChild(take);
+        body.appendChild(small);
+      }
+      if (state === 'bad') {
+        const code = s.code || (test.result && test.result.code) || '';
+        const why = vcHas('st.vc.code.' + code) ? t('st.vc.code.' + code) : '';
+        const said = s.error ? t('st.vc.said', { error: s.error }) : '';
+        body.appendChild(el('small', { text: [why, said].filter(Boolean).join(' ') }));
+      }
+      list.appendChild(el('li', { 'data-s': state }, [el('span', { class: 'vc-ic', 'aria-hidden': 'true', text: state === 'ok' ? '✓' : state === 'bad' ? '✕' : state === 'run' ? '…' : state === 'skip' ? '–' : String(i + 1) }), body]));
+    });
+    if (!test.running && test.result && !test.result.ok && !steps.some((s) => s.status === 'fail')) {
+      const code = test.result.code || '';
+      list.appendChild(el('li', { 'data-s': 'bad' }, [el('span', { class: 'vc-ic', 'aria-hidden': 'true', text: '✕' }),
+        el('span', { text: [vcHas('st.vc.code.' + code) ? t('st.vc.code.' + code) : t('st.err.generic'), test.result.error ? t('st.vc.said', { error: test.result.error }) : ''].filter(Boolean).join(' ') })]));
+    }
+  }
+  function vcPill(view, dirty) {
+    const d = vc.saved || {};
+    const p = $('st-vc-pill');
+    let key = null; let state = '';
+    if (view === 'setup' && !dirty) { const was = vc.setup; vc.setup = false; view = vcView(); vc.setup = was; }
+    if (view === 'setup') { key = 'st.vc.pill.unsaved'; state = 'info'; }
+    else if (view === 'off') { key = d.state === 'zone_changed' ? 'st.vc.pill.zone_changed' : 'st.vc.pill.off'; state = d.state === 'zone_changed' ? 'warn' : ''; }
+    else if (view === 'pending') { key = 'st.vc.pill.pending'; state = 'info'; }
+    else if (view === 'active') {
+      const soon = d.certificate && d.certificate.days_left != null && d.certificate.days_left < 14;
+      key = soon ? 'st.vc.pill.expiring' : 'st.vc.pill.active'; state = soon ? 'warn' : 'good';
+    } else if (view === 'error') { key = 'st.vc.pill.' + d.state; state = d.state === 'failed' ? 'warn' : 'crit'; }
+    p.hidden = !key;
+    if (key) { p.textContent = t(key); p.dataset.state = state; }
+  }
+  function vcErrorBox() {
+    const d = vc.saved || {};
+    const c = d.certificate || {};
+    const name = d.provider ? t('st.vc.p.' + d.provider) : '';
+    const err = (d.suspended && d.suspended.error) || c.last_error || '';
+    const said = err ? t('st.vc.said_by', { provider: name, error: err }) : '';
+    const still = c.days_left != null && c.days_left > 0 && c.not_after ? t('st.vc.err.still', { date: vcDate(c.not_after) }) : '';
+    let bold = ''; let rest = '';
+    if (d.state === 'paused' && c.paused_reason === 'preflight') {
+      bold = t('st.vc.err.caa_b');
+      const pf = c.preflight || {};
+      rest = t('st.vc.err.caa', { zone: d.zone || '', suggestion: pf.caa_suggestion || '' });
+    } else if (d.state === 'paused') {
+      bold = t('st.vc.err.paused_b', { n: c.attempts || c.max_attempts || 0 });
+      rest = [said, t('st.vc.err.paused'), still, t('st.vc.err.fix')].filter(Boolean).join(' ');
+    } else if (d.state === 'failed') {
+      bold = t('st.vc.err.failed_b');
+      rest = [said, t('st.vc.err.failed', { n: c.attempts || 1, max: c.max_attempts || '' }), still].filter(Boolean).join(' ');
+    } else if (d.state === 'suspended') {
+      bold = t('st.vc.err.suspended_b');
+      rest = [said, t('st.vc.err.suspended'), still].filter(Boolean).join(' ');
+    } else if (d.state === 'unreadable') {
+      bold = t('st.vc.err.unreadable_b');
+      rest = t('st.vc.err.unreadable');
+    }
+    vcBox($('st-vc-error'), bold, rest);
+  }
+  function renderCert() {
+    const d = vc.saved;
+    const card = $('card-vpn-cert');
+    if (!card || !d) return;
+    const v = valuesOf('netzwerk');
+    const dirty = dirtyOf('netzwerk').some((f) => f.startsWith('vc-'));
+    if (dirty) vc.setup = true;
+    const view = vcView();
+    card.dataset.view = view;
+    card.querySelectorAll('[data-vc-show]').forEach((n) => { n.hidden = !n.dataset.vcShow.split(' ').includes(view); });
+    // the card's actions in its head, by view
+    $('st-vc-cancel').hidden = view !== 'setup' || dirty || !(d.provider || d.state === 'zone_changed');
+    vcPill(view, dirty);
+    const zone = d.zone || '';
+    if (zone) vcText($('st-vc-desc'), 'st.vc.desc', { zone: '[[' + zone + ']]' }); else $('st-vc-desc').textContent = t('st.vc.desc_nozone');
+    $('st-vc-wildcard').textContent = d.wildcard || '';
+    vcText($('st-vc-covers-hint'), 'st.vc.covers_hint', { a: '[[nas-web.' + zone + ']]', b: '[[a.b.' + zone + ']]' });
+    // off
+    const home = 'home.' + (d.legacy || '');
+    vcText($('st-vc-today'), 'st.vc.today', { portal: '[[' + home + ']]', zone: '[[' + zone + ']]' });
+    const zc = $('st-vc-zonechanged');
+    zc.hidden = d.state !== 'zone_changed';
+    if (d.state === 'zone_changed') vcText(zc, 'st.vc.zone_changed', { old: '[[' + (d.stored_zone || '') + ']]', zone: '[[' + zone + ']]' });
+    const det = d.detected && d.detected.provider ? d.detected : null;
+    $('st-vc-detected-off').textContent = det ? t('st.vc.detected', { base: det.base, provider: t('st.vc.p.' + det.provider) }) : '';
+    // setup
+    $('st-vc-provider-hint').textContent = det ? t('st.vc.detected', { base: det.base, provider: t('st.vc.p.' + det.provider) }) + '.' : t('st.vc.provider_hint');
+    const m = vcMeta(v['vc-provider']);
+    $('st-vc-cname-wrap').hidden = !m || m.delegated || m.own_cname;
+    $('st-vc-delegate-row').hidden = !vcUsesDelegate(v);
+    vcText($('st-vc-delegate-hint'), 'st.vc.delegate_hint', { name: '[[_acme-challenge.' + zone + ']]' });
+    // where the test record lands: the challenge name, or the CNAME target as typed
+    let target = '_acme-challenge.' + zone;
+    if (m && m.own_cname) target = String(v['vc-f-fulldomain'] || '').trim().toLowerCase();
+    else if (vcUsesDelegate(v)) {
+      const dl = String(v['vc-delegate'] || '').trim().toLowerCase().replace(/\.$/, '');
+      target = dl ? (dl.startsWith('_acme-challenge.') ? dl : '_acme-challenge.' + dl) : '';
+    }
+    const plain = m && m.own_cname ? t('st.vc.test_target_acmedns') : t('st.vc.test_target_delegate');
+    vcText($('st-vc-test-hint'), 'st.vc.test_hint', { name: target ? '[[' + target + ']]' : plain });
+    $('st-vc-test').disabled = !m;
+    // active / error
+    const c = d.certificate || {};
+    const valid = c.not_after && c.days_left != null && c.days_left > 0;
+    $('st-vc-cert-row').hidden = !valid;
+    if (valid) {
+      const node = $('st-vc-valid');
+      clear(node);
+      node.appendChild(document.createTextNode(t('st.vc.valid_until', { date: vcDate(c.not_after) }) + ' '));
+      node.appendChild(el('span', { class: 'st-hint', text: tp('st.vc.days_left', c.days_left) }));
+    }
+    $('st-vc-provider-name').textContent = d.provider ? t('st.vc.p.' + d.provider) : '';
+    $('st-vc-saved').textContent = d.saved_at ? t('st.vc.saved_at', { date: vcDate(d.saved_at) }) : '';
+    const used = d.used_by || [];
+    $('st-vc-used-row').hidden = !used.length;
+    vcText($('st-vc-used-hint'), 'st.vc.used_hint', { zone: '[[' + zone + ']]' });
+    const ub = $('st-vc-used');
+    clear(ub);
+    used.forEach((u) => ub.appendChild(el('span', { class: 'vn-name' }, [el('code', { text: u.host }), el('small', { text: t('st.vc.used_' + u.kind) })])));
+    vcErrorBox();
+    $('st-vc-renew').hidden = !(view === 'active' && d.renew_possible);
+    $('st-vc-retry').hidden = !(view === 'error' && d.renew_possible);
+    // poll while Caddy fetches (pending, or failed and retrying)
+    const wantPoll = view === 'pending' || (view === 'error' && d.state === 'failed');
+    if (wantPoll && !vc.poll) {
+      vc.poll = setInterval(async () => {
+        if (current !== 'netzwerk' || vc.setup) return;
+        const r = await get('/api/v1/settings/vpn-cert');
+        if (r.ok) { vc.saved = r.data; renderCert(); }
+      }, 10000);
+    } else if (!wantPoll && vc.poll) { clearInterval(vc.poll); vc.poll = null; }
+  }
+  async function loadCert() {
+    const r = await get('/api/v1/settings/vpn-cert');
+    if (!r.ok) return {};
+    const d = r.data;
+    vc.saved = d;
+    vc.catalog = d.catalog || [];
+    vc.setup = false;
+    vcRenderFields(d.provider || '');
+    vcRenderChecks(d.test && (d.test.running || d.test.result) ? d.test : null);
+    if (d.test && d.test.running) vcPollTest();
+    return { 'vc-provider': d.provider || '', 'vc-delay': d.propagation_delay, 'vc-cname': !!(d.delegate && d.provider !== 'desec_delegated'), 'vc-delegate': d.delegate || '' };
+  }
+  function vcPollTest() {
+    if (vc.testPoll) return;
+    vc.testPoll = setInterval(async () => {
+      const r = await get('/api/v1/settings/vpn-cert/test');
+      if (!r.ok || !r.data) return;
+      vcRenderChecks(r.data);
+      if (!r.data.running) {
+        clearInterval(vc.testPoll); vc.testPoll = null;
+        busy($('st-vc-test'), false);
+        const g = await get('/api/v1/settings/vpn-cert');
+        if (g.ok) { vc.saved = Object.assign({}, vc.saved, { last_test: g.data.last_test }); }
+      }
+    }, 1500);
+  }
+  function vcStartSetup(provider) {
+    vc.setup = true;
+    const sel = $('st-vc-provider');
+    if (provider != null && sel.value !== provider) {
+      sel.value = provider;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    renderCert();
+    sel.focus();
+  }
+  $('st-vc-setup').addEventListener('click', () => {
+    const d = vc.saved || {};
+    vcStartSetup(d.provider || (d.detected && d.detected.provider) || 'desec_delegated');
+  });
+  $('st-vc-change').addEventListener('click', () => vcStartSetup(null));
+  $('st-vc-cancel').addEventListener('click', () => { vc.setup = false; vcRenderChecks(null); renderCert(); });
+  $('st-vc-fix').addEventListener('click', () => vcStartSetup(null));
+  $('st-vc-test').addEventListener('click', async (e) => {
+    const v = valuesOf('netzwerk');
+    const body = vcBody(v);
+    delete body.propagation_delay;
+    busy(e.currentTarget, true);
+    const r = await post('/api/v1/settings/vpn-cert/test', body);
+    if (!r.ok) {
+      busy(e.currentTarget, false);
+      if (r.fields) { const map = vcFieldMap(); for (const [k, msg] of Object.entries(r.fields)) showFieldError('netzwerk', map[k] || k, msg); }
+      else toast(errText(r), 'error');
+      return;
+    }
+    vcRenderChecks(r.data);
+    vcPollTest();
+  });
+  async function vcAction(btn, fn, doneKey) {
+    busy(btn, true);
+    const r = await fn();
+    busy(btn, false);
+    if (!r.ok) { toast(errText(r), 'error'); if (r.code === 'preflight_failed') { const g = await get('/api/v1/settings/vpn-cert'); if (g.ok) { vc.saved = g.data; renderCert(); } } return; }
+    vc.saved = r.data;
+    vc.setup = false;
+    if (doneKey) toast(t(doneKey));
+    fill('netzwerk', { 'vc-provider': r.data.provider || '', 'vc-delegate': r.data.delegate || '', 'vc-delay': r.data.propagation_delay });
+    vcRenderFields(r.data.provider || '');
+    renderCert();
+    updateBar();
+  }
+  $('st-vc-renew').addEventListener('click', (e) => vcAction(e.currentTarget, () => post('/api/v1/settings/vpn-cert/renew'), 'st.vc.renew_done'));
+  $('st-vc-retry').addEventListener('click', (e) => vcAction(e.currentTarget, () => post('/api/v1/settings/vpn-cert/renew'), 'st.vc.renew_done'));
+  $('st-vc-off').addEventListener('click', async (e) => {
+    const ok = await D.confirm({ title: t('st.vc.off_title'), message: t('st.vc.off_confirm'), okLabel: t('st.vc.off'), danger: true });
+    if (!ok) return;
+    vcAction(e.currentTarget, () => del('/api/v1/settings/vpn-cert'), 'st.vc.off_done');
+  });
   SECTIONS.netzwerk = {
     async load() {
-      const [dns, data, rb, names] = await Promise.all([get('/api/v1/settings/dns'), get('/api/v1/settings/data'), get('/api/v1/settings/route-block-default'), loadNames()]);
-      const vals = Object.assign({}, names);
+      const [dns, data, rb, names, cert] = await Promise.all([get('/api/v1/settings/dns'), get('/api/v1/settings/data'), get('/api/v1/settings/route-block-default'), loadNames(), loadCert()]);
+      const vals = Object.assign({}, names, cert);
       if (dns.ok) vals.dns = dns.data.dns || '';
       if (data.ok) vals['peer-timeout'] = data.data.peer_online_timeout;
       if (rb.ok) { vals['rb-action'] = rb.data.action || 'not_found'; vals['rb-url'] = rb.data.redirect_url || ''; vals['rb-body'] = rb.data.body || ''; }
       fill('netzwerk', vals);
       renderNames();
+      renderCert();
       loadNameState();
     },
     onChange(e) {
       const f = e.target.closest && e.target.closest('[data-st-field]');
+      if (f && /^vc-/.test(f.dataset.stField)) {
+        if (f.dataset.stField === 'vc-provider') {
+          // a provider of its own: fresh fields, its usual waiting time
+          vcRenderFields(f.value);
+          const d = vc.saved || {};
+          if (f.value && f.value !== d.provider) {
+            const n = fieldEl('netzwerk', 'vc-delay');
+            if (n) n.value = String(VC_DELAY[f.value] || 60);
+          }
+          vcRenderChecks(null);
+        }
+        renderCert();
+        return;
+      }
       if (!f || !/^vn-/.test(f.dataset.stField)) return;
       // a new domain starts with the suggested subdomain again
       if (f.dataset.stField === 'vn-domain' && !$('st-vn-sub').value.trim()) $('st-vn-sub').value = vn.saved ? vn.saved.default_sub : 'vpn';
       scheduleNameCheck();
       renderNames();
     },
-    onDiscard() { vn.check = null; vn.checkKey = ''; renderNames(); },
+    onDiscard() {
+      vn.check = null; vn.checkKey = ''; renderNames();
+      vc.setup = false;
+      vcRenderFields((vc.saved && vc.saved.provider) || '');
+      vcRenderChecks(null);
+      renderCert();
+    },
     validate(v, dirty) {
       const errs = {};
       if (dirty.some((d) => d.startsWith('rb-'))) {
@@ -1011,7 +1399,18 @@
         save: (v) => api.put('/api/v1/settings/route-block-default', { action: v['rb-action'], body: v['rb-body'], redirect_url: v['rb-url'].trim() }) },
       { fields: ['vn-domain', 'vn-sub'], map: { base_domain: 'vn-domain', sub: 'vn-sub' }, errorField: 'vn-sub',
         save: (v) => api.put('/api/v1/settings/vpn-names', { base_domain: v['vn-domain'], sub: String(v['vn-sub'] || '').trim().toLowerCase() }),
-        after: async () => { fill('netzwerk', await loadNames()); renderNames(); loadNameState(); } },
+        after: async () => {
+          fill('netzwerk', await loadNames()); renderNames(); loadNameState();
+          // the zone of the certificate follows "Namen im VPN"
+          fill('netzwerk', await loadCert()); renderCert();
+        } },
+      { get fields() { return ['vc-provider', 'vc-delegate', 'vc-delay', 'vc-cname'].concat(vcCredFields()); },
+        get map() { return vcFieldMap(); },
+        errorField: 'vc-provider',
+        confirm: (v) => (!v['vc-provider'] && vc.saved && vc.saved.provider
+          ? { title: t('st.vc.off_title'), message: t('st.vc.off_confirm'), okLabel: t('st.vc.off'), danger: true } : null),
+        save: (v) => (v['vc-provider'] ? api.put('/api/v1/settings/vpn-cert', vcBody(v)) : api.del('/api/v1/settings/vpn-cert')),
+        after: async () => { fill('netzwerk', await loadCert()); renderCert(); } },
     ],
   };
   $('st-vn-preview-copy').addEventListener('click', () => copyText($('st-vn-preview').dataset.copy || ''));

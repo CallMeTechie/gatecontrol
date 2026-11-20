@@ -175,6 +175,16 @@ scenarios/31-vpn-names.js „Namen im VPN“ (docs/feature-vpn-names.md): /dns l
                         Ablehnung des Servers am Feld), Filter „veraltet“, Gateway
                         (Karte, Kopfzeile, „Mehr“), Hinweis in „Domain entfernen“,
                         390 px, dunkel
+scenarios/36-vpn-cert.js „Zertifikat für die Namen“ (docs/feature-vpn-names.md): Karte
+                        zwischen „Namen im VPN“ und „Zustand der Namen“, ohne Lizenz
+                        gesperrt. Mit Lizenz in einer EIGENEN App mit einem Stub von
+                        `caddy gc-dnstest` (GC_CADDY_BIN): ohne Domain, aus,
+                        Einrichten (deSEC-Weiterleitung zuerst, netcup mit Hinweis),
+                        Testen (fünf Schritte, Wartezeit übernehmen, Prüfeintrag
+                        _acme-challenge.<zone>), Speichern, wird geholt, gültig,
+                        Ändern/Abbrechen, Erneuern angehalten (geschwärzt), Erneut
+                        versuchen, Ausschalten; kein Wert in Seite oder Antworten;
+                        390 px, dunkel
 scenarios/30-gateway-docs.js Gateway-Detail › „Mehr“ › „Versionen“ und „Handbuch“
                         (#gw/<id>/versions, …/handbook): Menü-Links, „Was ist neu?“ im Zustand
                         und in „zu alt“-Hinweisen, echte /releases ohne GitHub („nicht

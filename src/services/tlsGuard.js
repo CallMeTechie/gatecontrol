@@ -195,6 +195,8 @@ function preflightActive() {
 /** DNS/CAA preflight of one hostname; no side effect. */
 async function preflight(hostIn) {
   const host = normHost(hostIn);
+  // the wildcard of the VPN zone: no A record by design, CAA (issuewild) only
+  if (host.startsWith('*.')) return require('./vpnCert').preflight(host.slice(2));
   if (!isPublicDomain(host)) {
     return {
       ok: true, code: 'not_public', detail: null,
@@ -362,6 +364,16 @@ async function pauseHost(hostIn, reason = 'attempts') {
  */
 async function retryHost(hostIn) {
   const host = normHost(hostIn);
+  // The wildcard of the VPN zone has no A record by design: its own pre-check
+  // (CAA issuewild) and reset live in services/vpnCert.js.
+  if (host.startsWith('*.')) {
+    try { await require('./vpnCert').renew(); }
+    catch (err) {
+      if (err.code === 'preflight_failed') { const e = new Error('Preflight failed: ' + ((err.result && err.result.code) || 'caa_blocked')); e.code = 'PREFLIGHT_FAILED'; e.statusCode = 409; e.result = err.result; throw e; }
+      throw err;
+    }
+    return statusFor([host])[0];
+  }
   const result = await preflight(host);
   if (!result.ok) {
     recordPreflight(host, result);
