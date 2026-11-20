@@ -410,11 +410,12 @@ function usableZoneTarget(zone) {
   return t;
 }
 
-// A gateway forwards TCP only (routes.js, UDP_VIA_GATEWAY): no UDP entry on
-// a gateway or pool target.
+// A UDP entry on a gateway or pool target needs a gateway that forwards UDP
+// (services/gatewayUdp.js; on a pool at least one member) — else 400
+// UDP_VIA_GATEWAY with the hint "update the gateway".
 function assertNoUdpEntry(target, protocols) {
   if (!target || target.kind === 'peer' || !protocols.includes('udp')) return;
-  throw httpError(400, 'udp_via_gateway: a gateway forwards TCP only — a UDP entry needs a VPN peer as its target', 'UDP_VIA_GATEWAY');
+  require('./gatewayUdp').assertUdpTarget(target.kind === 'pool' ? { poolId: target.pool_id } : { peerId: target.peer_id });
 }
 
 function resolveEntries(input) {

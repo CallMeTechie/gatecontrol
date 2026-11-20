@@ -44,12 +44,15 @@
   }
   // New entries of this host go through a gateway or pool (server:
   // hosts.entryTarget): the zone's target unless the host deviates, else the
-  // host's own entries. A gateway forwards TCP only — no UDP there
-  // (UDP_VIA_GATEWAY).
-  function viaGateway(host, zone) {
-    if (zone && zone.gateway && zone.gateway.kind && !(host && host.gateway_override)) return zone.gateway.kind !== 'peer';
+  // host's own entries. UDP there only if that gateway forwards UDP (on a
+  // pool: one member) — zone.gateway.udp / entry gateway_udp from the server,
+  // else 400 UDP_VIA_GATEWAY with the hint to update the gateway.
+  function udpBlockedByGateway(host, zone) {
+    if (zone && zone.gateway && zone.gateway.kind && !(host && host.gateway_override)) {
+      return zone.gateway.kind !== 'peer' && zone.gateway.udp !== true;
+    }
     const e = host && (host.entries || []).find((x) => !x.rdp_owned);
-    return !!e && e.target_kind === 'gateway';
+    return !!e && e.target_kind === 'gateway' && e.gateway_udp !== true;
   }
   function blockedPorts() {
     const root = document.getElementById('zn-zones');
@@ -65,7 +68,7 @@
     HOST_EXISTS: 'host.err_exists', HOST_HAS_HTTP: 'entry.err_http_taken', TYPE_DOMAIN_REQUIRED: 'entry.err_no_domain',
     TYPE_LISTEN_PORT_REQUIRED: 'entry.err_listen_port', LAN_HOST_REQUIRED: 'host.err_lan_required',
     DOMAIN_CONFLICT: 'host.err_domain_conflict', DOMAIN_UNVERIFIED: 'host.err_domain_unverified', LABEL_INVALID: 'entry.err_label',
-    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name', UDP_VIA_GATEWAY: 'entry.udp_locked_gateway',
+    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name',
   };
   function serverText(err) {
     const code = err && err.data && err.data.code;
@@ -414,7 +417,7 @@
   function addForm(host, zone) {
     const a = hs.adding;
     const hasHttp = (host.entries || []).some((x) => !V.isL4(x));
-    const viaGw = viaGateway(host, zone);
+    const viaGw = udpBlockedByGateway(host, zone);
     const typeSel = el('select', { class: 'rt-select', dataset: { rtKey: 'add-type' } }, [
       el('option', { value: 'http', text: 'HTTPS', disabled: hasHttp }),
       el('option', { value: 'tcp', text: 'TCP', disabled: !l4Allowed(zone) }),
@@ -980,7 +983,7 @@
 
   function stepEntries(zone) {
     const l4ok = l4Allowed(zone);
-    const viaGw = viaGateway(null, zone);
+    const viaGw = udpBlockedByGateway(null, zone);
     const rows = nh.entries.map((e, i) => {
       const otherHttp = nh.entries.some((x, j) => j !== i && x.type === 'http');
       const typeSeg = UI.seg([

@@ -72,7 +72,9 @@ function handleError(req, res, err) {
     return res.status(409).json({ ok: false, error: msg, code: err.code || 'BUNDLE_PORT_CONFLICT', conflict: c });
   }
   if (err.statusCode && TRANSLATED_CODES[err.code]) {
-    return res.status(err.statusCode).json({ ok: false, error: req.t(TRANSLATED_CODES[err.code]), code: err.code });
+    // err.i18nKey: the pool variant of UDP_VIA_GATEWAY (services/gatewayUdp.js); {{version}} for its hint
+    const key = err.i18nKey || TRANSLATED_CODES[err.code];
+    return res.status(err.statusCode).json({ ok: false, error: req.t(key, { version: err.minVersion || '' }), code: err.code });
   }
   if (err.statusCode) {
     return res.status(err.statusCode).json({ ok: false, error: err.message, ...(err.code ? { code: err.code } : {}) });

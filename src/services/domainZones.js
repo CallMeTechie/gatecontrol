@@ -248,16 +248,23 @@ function assertLanHosts(rows, target) {
   }
 }
 
-// UDP entries cannot move behind a gateway or pool: the gateway forwards TCP
-// only (routes.js, UDP_VIA_GATEWAY). Entries that already sit behind one
-// (from before that rule) do not block the move — they had no effect before
-// and have none after.
+// UDP entries move behind a gateway or pool only if it forwards UDP
+// (services/gatewayUdp.js; a pool: at least one member) — else 400
+// UDP_VIA_GATEWAY with the hint "update the gateway". Entries that already sit
+// behind a gateway that cannot (no effect before) do not block the move —
+// they have no effect after it either, until the gateway is updated.
 function assertNoUdpBehindGateway(rows, target) {
   if (target.kind === 'peer') return;
-  const udp = rows.filter((r) => r.route_type === 'l4' && r.l4_protocol === 'udp' && r.target_kind !== 'gateway');
-  if (udp.length > 0) {
-    throw httpError(400, 'udp_via_gateway: a gateway forwards TCP only — UDP entries cannot move behind it (routes '
-      + udp.map((r) => r.id).join(', ') + ')', 'UDP_VIA_GATEWAY');
+  const gatewayUdp = require('./gatewayUdp');
+  const toTarget = target.kind === 'pool' ? { poolId: target.pool_id } : { peerId: target.peer_id };
+  const udp = rows.filter((r) => r.route_type === 'l4' && r.l4_protocol === 'udp');
+  if (udp.length === 0 || gatewayUdp.targetSupportsUdp(toTarget)) return;
+  const judge = gatewayUdp.makeRowJudge();
+  const losing = udp.filter((r) => r.target_kind !== 'gateway' || judge(r) !== false);
+  if (losing.length > 0) {
+    const err = gatewayUdp.udpRefusal({ pool: target.kind === 'pool' });
+    err.message += ' (routes ' + losing.map((r) => r.id).join(', ') + ')';
+    throw err;
   }
 }
 
@@ -360,6 +367,11 @@ function entryHealth(e, ctx) {
 function describeTarget(t, ctx) {
   const out = { kind: t ? t.kind : null, peer_id: t ? t.peer_id : null, pool_id: t ? t.pool_id : null, name: null, ip: null, online: null };
   if (!t) return out;
+  // Does the gateway (a pool: one of its members) forward UDP? null for a peer
+  // target. The page offers UDP for new entries only then (services/gatewayUdp.js).
+  if (t.kind === 'pool' || t.kind === 'gateway') {
+    out.udp = require('./gatewayUdp').targetSupportsUdp(t.kind === 'pool' ? { poolId: t.pool_id } : { peerId: t.peer_id });
+  }
   if (t.kind === 'pool') {
     const pool = ctx.poolById.get(t.pool_id);
     out.name = pool ? pool.name : null;

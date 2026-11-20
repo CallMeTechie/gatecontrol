@@ -641,10 +641,13 @@ IPv6-Netz aus – die Internetqualität würde sonst einen Dauerausfall melden.
 
 ### Eine UDP-Route über ein Gateway kommt nicht an
 
-Das Gateway leitet nur TCP weiter – eine UDP-Route hinter einem Gateway oder
-Pool wirkt nicht. Neue lassen sich so nicht mehr anlegen; ältere stehen in der
-Liste mit „wirkt nicht“. Stelle sie auf TCP um oder nimm einen VPN-Peer als
-Ziel ([Kapitel 5](05-funktionen.md#routen-über-ein-gateway-oder-einen-pool)).
+Steht am Eintrag „wirkt noch nicht“, kann das Gateway (bzw. kein Gateway des
+Pools) noch kein UDP – UDP leitet das Gateway erst ab Version 1.40.0 weiter.
+Aktualisiere das Gateway; danach wirkt der Eintrag ohne weiteren Schritt
+([Kapitel 5](05-funktionen.md#routen-über-ein-gateway-oder-einen-pool)).
+Kommt trotzdem nichts an: Antwortet der Dienst im Heimnetz wirklich auf UDP am
+Zielport? Broadcast und Multicast (LAN-Suche, mDNS, SSDP) gehen über eine
+UDP-Route nicht.
 
 ## DNS-Schutz
 

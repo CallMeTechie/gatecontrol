@@ -50,11 +50,19 @@ no longer exists …” and the field is empty. Choose a new gateway or a pool �
 without a target the entry cannot be saved; the message then shows right at
 the field.
 
-**UDP does not go through a gateway.** The gateway forwards TCP only. For an
-entry behind a gateway or pool “UDP” can therefore not be chosen, and the
-server refuses the combination. For UDP (e.g. a game server) use a VPN peer as
-the target. Older UDP entries behind a gateway stay, but the list marks them
-“no effect”: switch them to TCP or choose a VPN peer.
+**UDP through a gateway.** From gateway version 1.40.0 on the gateway
+forwards UDP too – e.g. for a DNS server, a game server or VoIP at home.
+GateControl detects that by itself: the gateway reports the capability with
+every heartbeat. In a pool only the gateways that can do UDP take a UDP entry;
+on failover a UDP entry only moves to such a gateway.
+
+If the chosen gateway cannot do UDP yet (or no gateway of the pool can),
+GateControl refuses the save: “update the gateway (version 1.40.0 or later)”.
+For new entries of a host “UDP” is then not available. Older UDP entries
+behind such a gateway stay and show “no effect yet” in the list. Update the
+gateway ([chapter 6](06-updating-a-gateway.md)) – they then work without another
+step, the gateway picks them up on its next sync. Broadcast and multicast
+(e.g. LAN game or device discovery, mDNS, SSDP) do not work over a UDP route.
 
 When you delete an entry – or a whole host with all its entries via “Delete
 host” – its row goes at once. If Caddy needs more than a few seconds to apply

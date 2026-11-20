@@ -43,9 +43,11 @@
 
   // ── Entries ────────────────────────────────────────────────────────────
   function isL4(e) { return !!e && e.route_type === 'l4'; }
-  // UDP entry behind a gateway or pool: the gateway forwards TCP only, so the
-  // entry has no effect (the server refuses new ones, UDP_VIA_GATEWAY).
+  // UDP entry behind a gateway or pool. It has no effect while that gateway
+  // (on a pool: every member) cannot forward UDP yet — the server says so in
+  // gateway_udp: false; after the gateway update it works without a change.
   function isUdpViaGateway(e) { return isL4(e) && e.l4_protocol === 'udp' && e.target_kind === 'gateway'; }
+  function isUdpWithoutEffect(e) { return isUdpViaGateway(e) && e.gateway_udp === false; }
 
   // HTTP before L4, then by listen port (ranges sort by their first port).
   function sortEntries(entries) {
@@ -619,7 +621,7 @@
 
   return {
     UNASSIGNED_KEY,
-    isApex, hostLabel, sortHosts, sortEntries, isL4, isUdpViaGateway,
+    isApex, hostLabel, sortHosts, sortEntries, isL4, isUdpViaGateway, isUdpWithoutEffect,
     entryTargetHost, entryTargetPort, entryListenPort, entryChip, entryName, isOnDemand, hstsActive, wafState, entryPortLabel, entryHealth,
     worstHealth, hostHealth, hostEnabled, hostAccess,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
@@ -763,9 +765,9 @@
       const pl = V.entryPortLabel(e);
       if (pl && !e.rdp_owned) out.push({ id: 'port_label', value: pl });
       if (e.l4_tls_mode && e.l4_tls_mode !== 'none') out.push({ id: 'tls_sni' });
-      // UDP behind a gateway or pool: the gateway forwards TCP only — the
-      // entry has no effect (new ones are refused, UDP_VIA_GATEWAY).
-      if (V.isUdpViaGateway(e)) out.push({ id: 'udp_gateway' });
+      // UDP behind a gateway or pool that does not forward UDP yet: no effect
+      // until the gateway is updated (new ones are refused, UDP_VIA_GATEWAY).
+      if (V.isUdpWithoutEffect(e)) out.push({ id: 'udp_gateway' });
     } else {
       if (on(e.backend_https)) out.push({ id: 'backend_https' });
       if (V.hstsActive(e)) out.push({ id: 'hsts' });

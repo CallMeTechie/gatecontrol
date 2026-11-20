@@ -1,12 +1,15 @@
 'use strict';
 
 // UDP behind a gateway or pool (docs/feature-domain-zones.md, "UDP hinter
-// Gateway/Pool"): the gateway forwards TCP only, so the server refuses every
-// way INTO that combination with 400 UDP_VIA_GATEWAY (translated text):
+// Gateway/Pool"): a gateway WITHOUT the capability `udp-routes` forwards TCP
+// only, so the server refuses every way INTO that combination with 400
+// UDP_VIA_GATEWAY (translated text, hint "update the gateway"):
 // POST/PUT /api/v1/routes, POST /domains/:id/hosts, POST /hosts/:id/entries,
 // PUT /domains/:id/gateway and clearing a host's gateway override. A row from
 // before the rule stays editable. And Caddy dials the upstream of a UDP entry
 // over UDP (`udp/host:port`) — without the prefix caddy-l4 dials TCP.
+// The gateways here never report capabilities; tests/udp_gateway_capability.test.js
+// covers a gateway that can.
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');

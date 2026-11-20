@@ -149,6 +149,7 @@ const VALIDATION_ERROR_MAP = {
   'target_pool_empty': 'error.routes.target_pool_empty',
   'target_required': 'error.routes.target_required',
   'udp_via_gateway': 'error.routes.udp_via_gateway',
+  'udp_via_pool': 'error.routes.udp_via_pool',
 };
 
 // Field error of the gateway target (services/routes.js assertGatewayTarget):
@@ -157,7 +158,8 @@ function translatedFields(req, fields) {
   const out = {};
   for (const [field, msg] of Object.entries(fields)) {
     const hit = Object.entries(VALIDATION_ERROR_MAP).find(([pattern]) => /^[a-z_]+$/.test(pattern) && String(msg).startsWith(pattern));
-    out[field] = hit ? req.t(hit[1]) : String(msg);
+    // {{version}}: the gateway version that forwards UDP (services/gatewayUdp.js)
+    out[field] = hit ? req.t(hit[1], { version: require('../../services/gatewayUdp').MIN_GATEWAY_UDP }) : String(msg);
   }
   return out;
 }
@@ -461,7 +463,10 @@ router.get('/:id', (req, res) => {
   try {
     const route = routes.getById(req.params.id);
     if (!route) return res.status(404).json({ ok: false, error: req.t('error.routes.not_found') });
-    res.json({ ok: true, route: stripRoute(route) });
+    // gateway_udp like the list (routes.toApiRows): does the gateway/pool forward UDP?
+    const gatewayUdp = route.route_type === 'l4' && route.target_kind === 'gateway'
+      ? { gateway_udp: require('../../services/gatewayUdp').makeRowJudge()(route) } : {};
+    res.json({ ok: true, route: { ...stripRoute(route), ...gatewayUdp } });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get route');
     res.status(500).json({ ok: false, error: req.t('error.routes.get') });
