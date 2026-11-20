@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.307.0] — 2026-11-20
+
+### Features
+- interne Routen unter der VPN-Zone, solange das Wildcard-Zertifikat in Gebrauch ist (#548)
+
+---
+
 ## [1.306.0] — 2026-11-20
 
 ### Features
