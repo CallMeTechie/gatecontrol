@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.314.1] — 2026-11-20
+
+### Fixes
+- Caddy 2.11.9 reproduzierbar gepinnt (#556)
+
+---
+
 ## [1.314.0] — 2026-11-20
 
 ### Features
