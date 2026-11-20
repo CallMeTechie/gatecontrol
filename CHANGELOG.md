@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.304.0] — 2026-11-20
+
+### Features
+- UDP über ein Gateway erlauben, wenn das Gateway UDP kann – sonst Hinweis „Gateway aktualisieren (ab 1.40.0)“ (#543)
+
+---
+
 ## [1.303.0] — 2026-11-20
 
 ### Features
