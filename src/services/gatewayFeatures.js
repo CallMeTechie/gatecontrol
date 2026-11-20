@@ -52,6 +52,12 @@ const MIN_GATEWAY_CAMERAS = '1.28.0';
 // Statusseite per HTTPS aus dem VPN (gateway docs/setup-page.md „Aus dem VPN per HTTPS“): only by the
 // capability `setup-page-vpn` — the version is the hint
 const MIN_GATEWAY_SETUP_PAGE_VPN = '1.42.0';
+// MQTT-TLS mit dem Gerätezertifikat (gateway docs/vpn-cert.md „MQTT mit dem Gerätezertifikat“): only by the
+// capability `mqtt-vpn-cert` — the version is the hint
+const MIN_GATEWAY_MQTT_VPN_CERT = '1.44.0';
+// the broker's name in the device area: one label, "mqtt-<gateway's name>" — one level below the device
+// area (the wildcard covers no deeper names), one per gateway ("mqtt" alone is kept free there)
+const MQTT_HOST_PREFIX = 'mqtt-';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -74,6 +80,10 @@ const DEFAULTS = Object.freeze({
   // VPN — off by default; only with the device wildcard passed on to this gateway, login through this server
   // (services/gatewayStatusVpn.js)
   setupPageVpn: { enabled: false },
+  // "Gerätezertifikat verwenden" (Edge › MQTT › TLS): port 8883 of the gateway's broker with the device
+  // wildcard under mqtt-<hostname>.<device area> instead of its self-made certificate — off by default;
+  // the name resolves in the VPN only while this is on (services/dns.js)
+  mqttVpnCert: { enabled: false },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -125,6 +135,7 @@ function normalize(raw) {
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
     setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
     setupPageVpn: { enabled: bool((r.setupPageVpn || {}).enabled, DEFAULTS.setupPageVpn.enabled) },
+    mqttVpnCert: { enabled: bool((r.mqttVpnCert || {}).enabled, DEFAULTS.mqttVpnCert.enabled) },
   };
 }
 
@@ -165,7 +176,7 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'], mqttVpnCert: ['enabled'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -241,7 +252,11 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage', 'setupPageVpn']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage', 'setupPageVpn', 'mqttVpnCert']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  // the name mqtt-<gateway>.<device area> exists in the VPN only while the switch is on
+  if (changed.includes('mqttVpnCert')) {
+    try { require('./dns').rebuildNow(); } catch (e) { logger.warn({ err: e.message }, 'hosts file not rebuilt after the MQTT device certificate switch'); }
+  }
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -295,6 +310,9 @@ function configPayload(peerId) {
     // switched on, also over HTTPS from the VPN (capability `setup-page-vpn`): vpn_https and vpn_name — absent
     // while off, so no other gateway's hash changes
     setup_page: { status: s.setupPage.status, ...setupPageVpnPayload(s, share.vpn_cert) },
+    // switched on only: port 8883 of the broker with the device wildcard (capability `mqtt-vpn-cert`; an older
+    // gateway ignores it) — { vpn_cert: true, vpn_name: mqtt-<gateway> }; absent while off, no other hash changes
+    ...mqttVpnCertPayload(peerId, s),
     // "Namen im VPN": the zones of the device names (capability `dns-vpn-names`; an older gateway ignores it)
     internal_dns: internalDns(peerId),
     // "Zertifikat für die Namen" passed on to this gateway (off by default; only when allowed):
@@ -315,6 +333,71 @@ function setupPageVpnPayload(s, cert) {
   const host = cert && typeof cert.host === 'string' && cert.device_zone && cert.host.endsWith('.' + cert.device_zone) ? cert.host : null;
   const name = host ? host.slice(0, -(cert.device_zone.length + 1)) : null;
   return { vpn_https: true, ...(name && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name) ? { vpn_name: name } : {}) };
+}
+
+/**
+ * The broker's name in the device area of a gateway with the hostname `hostname`:
+ * `mqtt-<hostname>.<device area>` → { label, host } | { problem }
+ *   no_zone     no device area (no own zone for the names)
+ *   no_name     the gateway has no name in the device area (no hostname, or one kept free there)
+ *   too_long    mqtt-<hostname> is longer than one DNS label
+ *   name_taken  a device already has the name mqtt-<hostname> (its own record wins)
+ */
+function mqttVpnName(hostname, { deviceZone } = {}) {
+  let dz = deviceZone;
+  let reserved = new Set();
+  try {
+    const vpnCert = require('./vpnCert');
+    reserved = vpnCert.DEVICE_AREA_RESERVED;
+    if (dz === undefined) {
+      const names = require('./vpnNames').current();
+      dz = names.custom ? vpnCert.deviceZone(names.primary) : null;
+    }
+  } catch { dz = dz || null; }
+  if (!dz) return { problem: 'no_zone' };
+  const h = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
+  if (!h || reserved.has(h) || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(h)) return { problem: 'no_name' };
+  const label = MQTT_HOST_PREFIX + h;
+  if (label.length > 63) return { problem: 'too_long' };
+  try {
+    if (db().prepare('SELECT 1 FROM peers WHERE hostname = ? COLLATE NOCASE LIMIT 1').get(label)) return { problem: 'name_taken' };
+  } catch { /* no db */ }
+  return { label, host: `${label}.${dz}` };
+}
+
+/**
+ * Hosts file lines (services/dns.js): every gateway with "Gerätezertifikat verwenden" switched on →
+ * [{ ip, host }] with host = mqtt-<hostname>.<device area>, ip = its tunnel address.
+ */
+function mqttVpnRecords(deviceZone) {
+  if (!deviceZone) return [];
+  let rows = [];
+  try {
+    rows = db().prepare(`SELECT p.id, p.hostname, p.allowed_ips, f.settings FROM peers p JOIN gateway_features f ON f.peer_id = p.id
+      WHERE p.peer_type = 'gateway' AND p.hostname IS NOT NULL AND p.hostname != ''`).all();
+  } catch { return []; }
+  const out = [];
+  for (const r of rows) {
+    let st = null;
+    try { st = normalize(JSON.parse(r.settings)); } catch { st = null; }
+    if (!st || !st.mqttVpnCert.enabled) continue;
+    const ip = String(r.allowed_ips || '').split(',')[0].trim().split('/')[0];
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) continue;
+    const n = mqttVpnName(r.hostname, { deviceZone });
+    if (n.host) out.push({ ip, host: n.host });
+  }
+  return out;
+}
+
+function hostnameOf(peerId) {
+  try { const r = db().prepare('SELECT hostname FROM peers WHERE id = ?').get(Number(peerId)); return r && r.hostname ? String(r.hostname) : null; } catch { return null; }
+}
+
+/** `features.mqtt_tls` of the config pull: only while switched on (the gateway builds <vpn_name>.<area of the wildcard>). */
+function mqttVpnCertPayload(peerId, s) {
+  if (!s.mqttVpnCert.enabled) return {};
+  const n = mqttVpnName(hostnameOf(peerId));
+  return { mqtt_tls: { vpn_cert: true, ...(n.label ? { vpn_name: n.label } : {}) } };
 }
 
 function vpnCertShare(peerId) {
@@ -422,6 +505,9 @@ function support(tel) {
     // the status page over HTTPS from the VPN (gateway docs/setup-page.md „Aus dem VPN per HTTPS“)
     setupPageVpn: !!(caps && caps.includes('setup-page-vpn')),
     minGatewaySetupPageVpn: MIN_GATEWAY_SETUP_PAGE_VPN,
+    // port 8883 of the MQTT broker with the device certificate (gateway docs/vpn-cert.md)
+    mqttVpnCert: !!(caps && caps.includes('mqtt-vpn-cert')),
+    minGatewayMqttVpnCert: MIN_GATEWAY_MQTT_VPN_CERT,
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
@@ -738,7 +824,42 @@ function setupPageVpnPart(g, tel, s) {
   };
 }
 
+/**
+ * "Gerätezertifikat verwenden" in the TLS card of the MQTT broker (Edge › MQTT): switch, the name it answers
+ * under and what the gateway reports (heartbeat telemetry.mqtt_tls.vpn_cert: { enabled, state, host, tunnel }).
+ *   supported  the gateway reports the capability `mqtt-vpn-cert` (the UI shows the switch only then,
+ *              or while it is on)
+ *   shared     the device wildcard is passed on to this gateway (else the self-made certificate stays)
+ *   host       mqtt-<hostname>.<device area> | null (problem says why)
+ *   state      off | broker_off | no_name | no_cert | active | null (gateway not reported yet)
+ *   tunnel     listening | no_address | port_in_use | null
+ */
+function mqttVpnCertPart(peerId) {
+  const g = needGateway(peerId);
+  const s = get(g.id);
+  const tel = telemetryOf(g);
+  let cert = null;
+  try { cert = require('./vpnCert').shareSummary(g.id); } catch { cert = null; }
+  const v = tel.mqtt_tls && typeof tel.mqtt_tls === 'object' && tel.mqtt_tls.vpn_cert && typeof tel.mqtt_tls.vpn_cert === 'object' ? tel.mqtt_tls.vpn_cert : null;
+  const STATES = ['off', 'broker_off', 'no_name', 'no_cert', 'active'];
+  const TUNNEL = ['listening', 'no_address', 'port_in_use'];
+  const n = mqttVpnName(hostnameOf(g.id));
+  return {
+    enabled: s.mqttVpnCert.enabled,
+    supported: support(tel).mqttVpnCert,
+    shared: !!cert,
+    wildcard: cert && typeof cert.wildcard === 'string' ? cert.wildcard : null,
+    notAfter: cert && typeof cert.not_after === 'string' ? cert.not_after : null,
+    host: n.host || null,
+    problem: n.problem || null,
+    state: v && STATES.includes(v.state) ? v.state : null,
+    tunnel: v && TUNNEL.includes(v.tunnel) ? v.tunnel : null,
+    minGateway: MIN_GATEWAY_MQTT_VPN_CERT,
+  };
+}
+
 module.exports = {
+  mqttVpnName, mqttVpnRecords, mqttVpnCertPart, MIN_GATEWAY_MQTT_VPN_CERT,
   DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, MIN_GATEWAY_SETUP_PAGE_VPN, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, vpnNamesProblem, publicIpv4,

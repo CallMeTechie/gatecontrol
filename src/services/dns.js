@@ -413,6 +413,14 @@ function renderHostsContent() {
     if (deviceZone && !deviceAreaReserved.has(hostname)) lines.push(`${ip}\t${hostname}.${deviceZone}`);
   }
 
+  // The MQTT broker of a gateway with "Gerätezertifikat verwenden" switched on: mqtt-<gateway>.<label>.<zone>
+  // → its tunnel address (services/gatewayFeatures.js mqttVpnName; a device of that name keeps its own record)
+  if (deviceZone) {
+    try {
+      for (const r of require('./gatewayFeatures').mqttVpnRecords(deviceZone)) lines.push(`${r.ip}\t${r.host}`);
+    } catch (err) { logger.warn({ err: err.message }, 'DNS: MQTT names of the gateways skipped'); }
+  }
+
   // Route domains resolve to the VPN gateway so VPN clients always reach
   // routes internally (split-tunnel-safe), never via the public IP. This
   // applies to ALL enabled routes with a domain (incl. L4), independent of

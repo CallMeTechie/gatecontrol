@@ -427,6 +427,46 @@ aus dem Heartbeat (`telemetry.setup_page.vpn_https.state`: `off`, `no_name`,
 VPN öffnen“ gibt es nur mit `canOpen`. Bei einem älteren Gateway ist der
 Schalter ausgegraut, mit dem Hinweis „ab Gateway 1.42.0“.
 
+### MQTT eines Gateways mit dem Gerätezertifikat
+
+Ein Gateway ab **gatecontrol-gateway 1.44.0** (Capability `mqtt-vpn-cert`) kann
+den TLS-Listener seines MQTT-Brokers (Port 8883) statt mit dem selbst erzeugten
+Zertifikat mit dem weitergegebenen Geräte-Wildcard betreiben. Standardmäßig ist
+das aus. Eingeschaltet wird es je Gateway im Reiter „MQTT“ › „Verschlüsselt
+verbinden (TLS)“ › „Gerätezertifikat verwenden“. Gespeichert ist das in
+`gateway_features.settings.mqttVpnCert.enabled`, geändert mit
+`PUT /api/v1/gateways/:id/features { mqttVpnCert: { enabled } }`. Den Schalter
+zeigt die Oberfläche nur bei einem Gateway mit der Capability (oder solange er an
+ist); ein älteres Gateway sieht keinen Unterschied.
+
+**Name:** `mqtt-<hostname>.<device_zone>` – ein Label, genau eine Ebene unter
+dem Geräte-Bereich (das Wildcard deckt keine tieferen Namen), je Gateway ein
+eigener (es kann mehrere Gateways geben; `mqtt` allein bleibt im Bereich
+freigehalten). Kein Name (`problem`): `no_zone` (keine eigene Zone der Namen),
+`no_name` (Gateway ohne Namen im Bereich oder freigehaltener Name), `too_long`
+(`mqtt-<hostname>` länger als 63 Zeichen), `name_taken` (ein Gerät heißt schon
+so – sein Eintrag gilt, der Broker bekommt keinen).
+
+**DNS:** nur bei eingeschaltetem Schalter schreibt `services/dns.js`
+`<Tunnel-Adresse des Gateways> mqtt-<hostname>.<device_zone>` in die Hosts-Datei
+(neu geschrieben beim Umschalten). Clients im VPN lösen den Namen über das DNS
+von GateControl auf; im Heimnetz muss ihn der DNS des Routers auf die
+LAN-Adresse des Gateways zeigen lassen.
+
+**Konfiguration:** eingeschaltet `features.mqtt_tls: { vpn_cert: true,
+vpn_name: "mqtt-<hostname>" }` (`vpn_name` fehlt ohne Namen). Ausgeschaltet
+fehlt das Feld, der Hash der anderen Gateways ändert sich nicht. Das Gateway
+bildet den Namen aus `vpn_name` und dem Bereich von `vpn_cert.wildcard` und
+nimmt das Zertifikat nur, solange es gültig ist; sonst das selbst erzeugte.
+
+**Rückmeldung:** Heartbeat `telemetry.mqtt_tls.vpn_cert: { enabled, state,
+host, tunnel }` (`state`: `off`, `broker_off`, `no_name`, `no_cert`, `active`;
+`tunnel`: `listening`, `no_address`, `port_in_use`) und im Edge-Status des
+Brokers `tlsSource` (`self` | `vpn-cert`) und `tlsHost`. Die Edge-Übersicht
+(`GET /api/v1/edge/gateways/:id`) liefert dafür `mqttVpnCert: { enabled,
+supported, shared, wildcard, notAfter, host, problem, state, tunnel,
+minGateway }` (`services/gatewayFeatures.js` `mqttVpnCertPart`).
+
 ## Diagnose (Einstellungen → VPN & Netzwerk → „Zustand der Namen“)
 
 `GET /api/v1/settings/vpn-names/status`:
