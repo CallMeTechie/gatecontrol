@@ -106,6 +106,13 @@ function str(v, max) { return typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g
  * SHA-256 is the reported fingerprint (what the page shows is what devices see);
  * a fingerprint alone is kept as it is. Nothing usable → {}.
  */
+function tlsSourceOf(m) {
+  if (m.tlsSource !== 'vpn-cert') return m.tlsSource === 'self' ? { tlsSource: 'self' } : {};
+  const host = typeof m.tlsHost === 'string' ? m.tlsHost.toLowerCase() : '';
+  const ok = host.length <= 253 && host.split('.').length >= 3 && host.split('.').every((l) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(l));
+  return { tlsSource: 'vpn-cert', ...(ok ? { tlsHost: host } : {}) };
+}
+
 function tlsCertOf(m) {
   const fp = typeof m.tlsSha256 === 'string' && /^[0-9a-f]{64}$/.test(m.tlsSha256) ? m.tlsSha256 : null;
   if (!fp) return {};
@@ -289,6 +296,9 @@ class Conn {
         tls,
         // the certificate the gateway made for port 8883: fingerprint, expiry and the PEM (public — never a key)
         ...(tls === 'on' ? tlsCertOf(m.mqtt) : {}),
+        // which certificate port 8883 has: self (made by the gateway) | vpn-cert (the device wildcard, then
+        // also the name it answers under — no PEM, clients check the name)
+        ...(tls === 'on' ? tlsSourceOf(m.mqtt) : {}),
         clients: Number.isSafeInteger(m.mqtt.clients) && m.mqtt.clients >= 0 ? m.mqtt.clients : 0,
         accounts: accounts.filter((x) => x && typeof x.user === 'string').map((x) => ({
           user: str(x.user, 64), connected: x.connected === true, lastSeen: str(x.lastSeen, 40),
@@ -581,5 +591,5 @@ function _resetForTest() {
 
 module.exports = {
   attach, handleUpgrade, call, configure, refresh, refreshSoon, online, connectionInfo, closeAll, EdgeError,
-  PATH, PROTOCOL, FRAME_MAX, LIMITS, _setForTest, _resetForTest,
+  PATH, PROTOCOL, FRAME_MAX, LIMITS, _setForTest, _resetForTest, tlsSourceOf,
 };

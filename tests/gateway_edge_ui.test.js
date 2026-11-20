@@ -280,23 +280,47 @@ describe('gateway-edge-kit: MQTT accounts as the server takes them', () => {
     for (const bad of [null, '', 'abc', fp + '00', 'zz'.repeat(32)]) assert.equal(K.fingerprintText(bad), null);
     const can = { mqttTlsSupported: true };
     const old = { mqttTlsSupported: false };
-    assert.deepEqual(K.tlsView({ mqttTls: false }, null, can), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null });
-    assert.deepEqual(K.tlsView({ mqttTls: false }, null, null), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null }, 'a gateway that never connected: nothing locked');
-    assert.deepEqual(K.tlsView({ mqttTls: false }, { tls: 'off' }, old), { key: 'update_needed', locked: true, fingerprint: null, cert: null, validTo: null });
+    assert.deepEqual(K.tlsView({ mqttTls: false }, null, can), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null, source: null, host: null });
+    assert.deepEqual(K.tlsView({ mqttTls: false }, null, null), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null, source: null, host: null }, 'a gateway that never connected: nothing locked');
+    assert.deepEqual(K.tlsView({ mqttTls: false }, { tls: 'off' }, old), { key: 'update_needed', locked: true, fingerprint: null, cert: null, validTo: null, source: null, host: null });
     assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, old).key, 'update_needed');
     assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, old).locked, false, 'switching it off again always works');
     assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, can).key, 'missing_cert');
     assert.equal(K.tlsView({ mqttTls: true }, null, can).key, 'pending');
     assert.equal(K.tlsView({ mqttTls: true }, { tls: 'off' }, can).key, 'pending');
     assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on', tlsSha256: fp, tlsCert: 'PEM', tlsValidTo: '2036-11-08T11:16:10.000Z' }, can),
-      { key: 'on', locked: false, fingerprint: K.fingerprintText(fp), cert: 'PEM', validTo: '2036-11-08T11:16:10.000Z' });
-    assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on' }, can), { key: 'on', locked: false, fingerprint: null, cert: null, validTo: null }, 'an older status without the fingerprint');
+      { key: 'on', locked: false, fingerprint: K.fingerprintText(fp), cert: 'PEM', validTo: '2036-11-08T11:16:10.000Z', source: 'self', host: null });
+    assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on' }, can), { key: 'on', locked: false, fingerprint: null, cert: null, validTo: null, source: 'self', host: null }, 'an older status without the fingerprint');
+    // the device certificate: no fingerprint to pin, the name instead
+    assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on', tlsSource: 'vpn-cert', tlsSha256: fp, tlsHost: 'mqtt-gw-keller.geraete.vpn.example.test' }, can),
+      { key: 'on', locked: false, fingerprint: null, cert: null, validTo: null, source: 'vpn-cert', host: 'mqtt-gw-keller.geraete.vpn.example.test' });
     for (const k of ['pending', 'update_needed', 'update_needed_d', 'k_fp', 'copy_fp', 'k_cert', 'cert_self', 'cert_self_until', 'copy_cert', 'fp_hint', 'text', 'cert_note', 'missing_cert_d']) {
       assert.ok(de['gwe.tls.' + k] && en['gwe.tls.' + k], 'gwe.tls.' + k);
     }
     assert.match(de['gwe.tls.text'], /Shelly.*Tasmota/);
     assert.match(de['gwe.tls.text'], /1883 bleibt/);
     assert.match(de['gwe.tls.update_needed'], /Gateway-Update nötig/);
+    // "Gerätezertifikat verwenden": only with the capability mqtt-vpn-cert (or while on)
+    const H = 'mqtt-gw-keller.geraete.vpn.example.test';
+    const part = (o) => ({ enabled: false, supported: true, shared: true, host: H, problem: null, state: null, tunnel: null, minGateway: '1.44.0', ...o });
+    assert.equal(K.vpnCertView(null, { mqttTls: true }), null);
+    assert.equal(K.vpnCertView(part({ supported: false }), { mqttTls: true }), null, 'an older gateway: no new row');
+    assert.deepEqual(K.vpnCertView(part({ supported: false, enabled: true }), { mqttTls: true }), { enabled: true, locked: false, hint: 'old', address: H + ':8883' }, 'switching it off again always works');
+    assert.deepEqual(K.vpnCertView(part(), { mqttTls: true }), { enabled: false, locked: false, hint: null, address: null });
+    assert.equal(K.vpnCertView(part({ shared: false }), { mqttTls: true }).hint, 'noshare');
+    assert.equal(K.vpnCertView(part({ host: null, problem: 'name_taken' }), { mqttTls: true }).hint, 'name_taken');
+    assert.equal(K.vpnCertView(part({ host: null, problem: 'weird' }), { mqttTls: true }).hint, 'no_name');
+    assert.equal(K.vpnCertView(part({ enabled: true }), { mqttTls: false }).hint, 'needs_tls');
+    assert.equal(K.vpnCertView(part({ enabled: true }), { mqttTls: true }).hint, 'pending');
+    assert.equal(K.vpnCertView(part({ enabled: true, state: 'no_cert' }), { mqttTls: true }).hint, 'state_no_cert');
+    assert.deepEqual(K.vpnCertView(part({ enabled: true, state: 'active', tunnel: 'listening' }), { mqttTls: true }), { enabled: true, locked: false, hint: null, address: H + ':8883' });
+    assert.equal(K.vpnCertView(part({ enabled: true, state: 'active', tunnel: 'port_in_use' }), { mqttTls: true }).hint, 'tunnel_port_in_use');
+    for (const k of ['switch', 'text', 'k_address', 'copy', 'dns', 'on_done', 'off_done', 'cert', 'cert_until', 'hint_old', 'hint_no_zone', 'hint_no_name', 'hint_too_long',
+      'hint_name_taken', 'hint_noshare', 'hint_needs_tls', 'hint_state_no_name', 'hint_state_no_cert', 'hint_tunnel_no_address', 'hint_tunnel_port_in_use', 'hint_pending']) {
+      assert.ok(de['gwe.tls.vpn.' + k] && en['gwe.tls.vpn.' + k], 'gwe.tls.vpn.' + k);
+    }
+    assert.match(de['gwe.tls.vpn.dns'], /DNS von GateControl/);
+    assert.match(de['gwe.tls.vpn.dns'], /Router/);
     assert.equal(K.brokerStatus({ mqttEnabled: false }).key, 'off');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: false }).key, 'waits_edge');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false).key, 'offline');

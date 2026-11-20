@@ -851,7 +851,16 @@
     c.body.appendChild(h('p', { class: 'gwe-d' }, [t('gwe.tls.text'), ' ', guide('mqtt.tls')]));
     if (v.key === 'update_needed') c.body.appendChild(note('warn', [h('strong', { text: t('gwe.tls.update_needed') }), ' ', t('gwe.tls.update_needed_d')]));
     else if (v.key === 'missing_cert') c.body.appendChild(note('warn', [h('strong', { text: t('gwe.tls.missing_cert') }), ' ', t('gwe.tls.missing_cert_d')]));
-    else if (v.key === 'on') {
+    else if (v.key === 'on' && v.source === 'vpn-cert') {
+      // the device certificate: clients check chain and name — the address to copy instead of a fingerprint
+      const vc = d.mqttVpnCert || {};
+      const addr = v.host ? v.host + ':8883' : null;
+      const rows = h('div', { class: 'gwe-kvs' }, [kv(t('gwe.tls.k_port'), [tag('green', t('gwe.tls.active'), true), addr ? ' ' : null,
+        addr ? h('code', { class: 'gwe-mono', 'data-tls-vpn-addr': '', text: addr }) : null, addr ? copyBtn(() => addr, t('gwe.tls.vpn.copy')) : null])]);
+      rows.appendChild(kv(t('gwe.tls.k_cert'), [h('span', { text: vc.notAfter
+        ? t('gwe.tls.vpn.cert_until', { wildcard: vc.wildcard || '', date: fmtDate(vc.notAfter) }) : t('gwe.tls.vpn.cert', { wildcard: vc.wildcard || '' }) })]));
+      c.body.appendChild(rows);
+    } else if (v.key === 'on') {
       const addr = K.brokerAddress(lanIp(g), true);
       const rows = h('div', { class: 'gwe-kvs' }, [kv(t('gwe.tls.k_port'), [tag('green', t('gwe.tls.active'), true), addr ? ' ' : null, addr ? h('code', { class: 'gwe-mono', text: addr }) : null])]);
       // the certificate the gateway made itself: what devices that check it are given
@@ -867,7 +876,42 @@
       c.body.appendChild(rows);
       if (v.fingerprint) c.body.appendChild(h('p', { class: 'gwe-d', text: t('gwe.tls.fp_hint') }));
     } else c.body.appendChild(note('info', [t(v.key === 'pending' ? 'gwe.tls.pending' : 'gwe.tls.cert_note')]));
+    const vrow = vpnCertRow(g, d);
+    if (vrow) c.body.appendChild(vrow);
     return c.card;
+  }
+
+  /**
+   * "Gerätezertifikat verwenden" (gateway docs/vpn-cert.md „MQTT mit dem Gerätezertifikat“): a switch row in the
+   * TLS card, only with a gateway that reports the capability mqtt-vpn-cert (or while it is on). Stored with
+   * the gateway's features: PUT /api/v1/gateways/:id/features { mqttVpnCert: { enabled } }.
+   */
+  function vpnCertRow(g, d) {
+    const v = K.vpnCertView(d.mqttVpnCert, d.settings);
+    if (!v) return null;
+    const name = t('gwe.tls.vpn.switch');
+    const sw = switchBtn(v.enabled, name, 'gwe-tls-vpn-sw', () => {
+      const next = sw.getAttribute('aria-checked') !== 'true';
+      sw.disabled = true;
+      sw.setAttribute('aria-checked', next ? 'true' : 'false');
+      api('PUT', '/api/v1/gateways/' + encodeURIComponent(String(g.peer_id)) + '/features', { mqttVpnCert: { enabled: next } })
+        .then(() => { toast(t(next ? 'gwe.tls.vpn.on_done' : 'gwe.tls.vpn.off_done')); return reload(g.peer_id); })
+        .catch((e) => {
+          sw.disabled = false;
+          sw.setAttribute('aria-checked', next ? 'false' : 'true');
+          D.alert({ message: errText(e), danger: true });
+        });
+    }, v.locked);
+    const box = h('div', { class: 'gwe-kvs', 'data-tls-vpn': '' }, [kv(name, [sw])]);
+    const wrap = h('div', null, [box, h('p', { class: 'gwe-d', text: t('gwe.tls.vpn.text') })]);
+    if (v.address) {
+      // while port 8883 already runs with it, the port row above shows the address with "Kopieren"
+      const shown = d.mqtt && d.mqtt.status && d.mqtt.status.tls === 'on' && d.mqtt.status.tlsSource === 'vpn-cert';
+      if (!shown) box.appendChild(kv(t('gwe.tls.vpn.k_address'), [h('code', { class: 'gwe-mono', 'data-tls-vpn-host': '', text: v.address }), copyBtn(() => v.address, t('gwe.tls.vpn.copy'))]));
+      wrap.appendChild(note('info', [t('gwe.tls.vpn.dns')]));
+    }
+    if (v.hint) wrap.appendChild(note(v.hint === 'pending' ? 'info' : 'warn', [t('gwe.tls.vpn.hint_' + v.hint, { min: (d.mqttVpnCert && d.mqttVpnCert.minGateway) || '1.44.0', port: 8883 })]));
+    return wrap;
   }
 
   function accountsCard(g, d) {

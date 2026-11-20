@@ -81,6 +81,36 @@ If it says **“Gateway update needed”**, the gateway is too old to create the
 certificate itself – the switch is greyed out. After the
 [update](06-updating-a-gateway.md) it can be switched on.
 
+#### With the device certificate
+
+If GateControl passes the device certificate on to this gateway (Settings ›
+VPN & network › Certificate for the names › pass on to devices, tick the
+gateway), port 8883 can take this certificate instead of the self-made one:
+switch **“Use the device certificate”** in the same card, per gateway, off by
+default. The switch exists from gateway 1.44.0.
+
+- The broker is then called `mqtt-<gateway name>.geraete.<zone>`, e.g.
+  `mqtt-gw-keller.geraete.vpn.example.com`. The card shows the address with port
+  8883 to copy. One name per gateway, exactly one level below the device area –
+  only that level is covered by the wildcard.
+- Clients check chain and name like for a website and need neither a
+  fingerprint nor a certificate of their own.
+- Reachable in the home network (LAN address) and in the VPN (the gateway’s
+  tunnel address). **Clients must be able to resolve the name:** in the VPN
+  through the GateControl DNS (the name points to the tunnel address only while
+  the switch is on), in the home network the router’s DNS must know it (an entry
+  pointing to the gateway’s LAN address).
+- The certificate is renewed automatically; the broker takes it without a
+  restart, connected devices stay connected. If it is missing, expires or is no
+  longer passed on, the gateway goes back to the self-made one (with the
+  previous fingerprint).
+- Devices that stored the fingerprint of the self-made certificate no longer
+  connect while the switch is on – they then need the name instead of the
+  fingerprint.
+- Hints in the card: not passed on, no name in the device area, a device is
+  already called `mqtt-<name>` (the device keeps its name), TLS off, or a TCP
+  route uses port 8883 at the tunnel address (then home network only).
+
 ## 4.3 Where do my devices show up?
 
 The devices show up **in the plugin**, on the left under “Home” →

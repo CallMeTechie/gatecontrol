@@ -505,6 +505,76 @@ module.exports = (ctx) => {
           && /Shelly/.test(c.textContent) && !!c.querySelector('a[data-guide="mqtt.tls"]');
       }, fp));
       await shot(page, 'gwe-mqtt-tls-dark');
+      // "Gerätezertifikat verwenden" (gateway capability mqtt-vpn-cert): a switch row in the TLS card, stored with
+      // the gateway's features; switched on, the address mqtt-<gateway>.<device area>:8883 to copy, no fingerprint
+      const VPN_HOST = 'mqtt-pi-keller.geraete.vpn.example.test';
+      const featureCalls = [];
+      const FEATURES_RE = new RegExp(`/api/v1/gateways/${PI}/features$`);
+      pi.mqttVpnCert = { enabled: false, supported: true, shared: true, wildcard: '*.geraete.vpn.example.test', notAfter: '2027-02-01T00:00:00.000Z',
+        host: VPN_HOST, problem: null, state: 'off', tunnel: null, minGateway: '1.44.0' };
+      await page.route(FEATURES_RE, (r) => {
+        const b = JSON.parse(r.request().postData() || '{}');
+        featureCalls.push({ method: r.request().method(), body: b });
+        const on = !!(b.mqttVpnCert && b.mqttVpnCert.enabled === true);
+        pi.mqttVpnCert = { ...pi.mqttVpnCert, enabled: on, state: on ? 'active' : 'off', tunnel: on ? 'listening' : null };
+        pi.mqtt.status = on ? { ...pi.mqtt.status, tlsSource: 'vpn-cert', tlsHost: VPN_HOST, tlsCert: undefined, tlsValidTo: undefined }
+          : { ...tlsBefore.status, tls: 'on', tlsSha256: fp, tlsSource: 'self' };
+        return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, gateway: {} }) });
+      });
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: gateway with mqtt-vpn-cert → switch "Gerätezertifikat verwenden" in the TLS card, off, no address yet', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const sw = c && c.querySelector('[data-fk="gwe-tls-vpn-sw"]');
+        return !!sw && sw.getAttribute('aria-checked') === 'false' && !sw.disabled && !c.querySelector('[data-tls-vpn-host]') && !!c.querySelector('[data-tls-fp]')
+          && /Gerätezertifikat verwenden|Use the device certificate/.test(c.textContent);
+      }));
+      await page.click('[data-fk="gwe-tls-vpn-sw"]');
+      step('mqtt mock: switched on → PUT /api/v1/gateways/:id/features { mqttVpnCert: { enabled: true } }, the address with "Kopieren", DNS hint, no fingerprint',
+        await until(page, (h) => {
+          const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+          const addr = c && c.querySelector('[data-tls-vpn-addr]');
+          // the address once, in the port row with "Kopieren" (not again in the switch row)
+          return !!addr && addr.textContent === h + ':8883' && !c.querySelector('[data-tls-vpn-host]') && !c.querySelector('[data-tls-fp]')
+            && c.textContent.split(h + ':8883').length === 2
+            && c.querySelector('[data-fk="gwe-tls-vpn-sw"]').getAttribute('aria-checked') === 'true'
+            && /DNS/.test(c.textContent) && !c.querySelector('.gwe-note-warn');
+        }, VPN_HOST) && featureCalls.length === 1 && featureCalls[0].method === 'PUT' && JSON.stringify(featureCalls[0].body) === '{"mqttVpnCert":{"enabled":true}}',
+        JSON.stringify(featureCalls));
+      await shot(page, 'gwe-mqtt-tls-vpn-dark');
+      // the tunnel listener is missing (a TCP route holds 8883 there) → a hint, the LAN listener stays
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, tunnel: 'port_in_use' };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: tunnel port taken → warning with port 8883', await page.evaluate(() => {
+        const n = document.querySelector('[aria-labelledby="gwe-h-tls"] .gwe-note-warn');
+        return !!n && /8883/.test(n.textContent);
+      }));
+      // switched on, but the gateway does not use it yet (certificate not fetched): the address in the switch row
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, state: 'no_cert', tunnel: null };
+      pi.mqtt.status = { ...pi.mqtt.status, tlsSource: 'self', tlsHost: undefined };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: on, certificate not there yet → address in the switch row with "Kopieren", hint, the self-made certificate stays', await page.evaluate((h) => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const host = c && c.querySelector('[data-tls-vpn-host]');
+        return !!host && host.textContent === h + ':8883' && !!host.parentElement.querySelector('.gwe-copy') && !!c.querySelector('.gwe-note-warn') && !!c.querySelector('[data-tls-fp]');
+      }, VPN_HOST));
+      await page.unroute(FEATURES_RE);
+      // a gateway without the capability (older than 1.44.0) and the switch off: no new row at all
+      pi.mqttVpnCert = { ...pi.mqttVpnCert, enabled: false, supported: false, state: null, tunnel: null };
+      pi.mqtt.status = { ...tlsBefore.status, tls: 'on', tlsSha256: fp, tlsValidTo: '2036-11-08T11:16:10.000Z', tlsCert: '-----BEGIN CERTIFICATE-----\nMIIBlDCCATmg\n-----END CERTIFICATE-----\n' };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: gateway without mqtt-vpn-cert → no switch "Gerätezertifikat verwenden", the card as before', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        return !!c && !c.querySelector('[data-tls-vpn]') && !c.querySelector('[data-fk="gwe-tls-vpn-sw"]') && !!c.querySelector('[data-tls-fp]');
+      }));
+      delete pi.mqttVpnCert;
       // an older gateway cannot make the certificate: the switch is locked, "Gateway-Update nötig"
       pi.gateway.mqttTlsSupported = false;
       pi.settings.mqttTls = false;

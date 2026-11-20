@@ -181,7 +181,14 @@ function overview(peerId, lang) {
   return {
     id: g.id, name: g.name, settings: settingsView(s), connection: conn, gateway: helloView(s), support: supportView(s, hb), plugins: pluginsList,
     mqtt: { status: s.mqttStatus, accounts: mqtt.list(g.id) },
+    // "Gerätezertifikat verwenden" in the TLS card (services/gatewayFeatures.js; switched there with
+    // PUT /api/v1/gateways/:id/features { mqttVpnCert: { enabled } })
+    mqttVpnCert: mqttVpnCertOf(g.id),
   };
+}
+
+function mqttVpnCertOf(peerId) {
+  try { return require('../gatewayFeatures').mqttVpnCertPart(peerId); } catch { return null; }
 }
 
 /** A plugin's edge part on every gateway (plugin area). */

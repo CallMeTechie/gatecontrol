@@ -84,6 +84,36 @@ Steht dort **„Gateway-Update nötig“**, ist das Gateway zu alt, um das Zerti
 selbst zu erzeugen – der Schalter ist dann ausgegraut. Nach dem
 [Update](06-gateway-aktualisieren.md) lässt er sich einschalten.
 
+#### Mit dem Gerätezertifikat
+
+Gibt GateControl das Gerätezertifikat an dieses Gateway weiter (Einstellungen ›
+VPN & Netzwerk › Zertifikat für die Namen › an Geräte weitergeben, Gateway
+anhaken), kann Port 8883 statt des selbst erzeugten dieses Zertifikat nehmen:
+Schalter **„Gerätezertifikat verwenden“** in derselben Karte, pro Gateway,
+Standard aus. Den Schalter gibt es ab Gateway 1.44.0.
+
+- Der Broker heißt dann `mqtt-<Name des Gateways>.geraete.<Zone>`, z. B.
+  `mqtt-gw-keller.geraete.vpn.example.com`. Die Karte zeigt die Adresse mit Port
+  8883 zum Kopieren. Pro Gateway ein eigener Name, genau eine Ebene unter dem
+  Geräte-Bereich – nur die deckt das Wildcard ab.
+- Clients prüfen Kette und Namen wie bei einer Website und brauchen weder
+  Fingerabdruck noch eigenes Zertifikat.
+- Erreichbar im Heimnetz (LAN-Adresse) und im VPN (Tunnel-Adresse des Gateways).
+  **Den Namen müssen die Clients auflösen können:** im VPN über das DNS von
+  GateControl (der Name zeigt nur bei eingeschaltetem Schalter auf die
+  Tunnel-Adresse), im Heimnetz muss ihn der DNS des Routers kennen (Eintrag auf
+  die LAN-Adresse des Gateways).
+- Das Zertifikat wird automatisch erneuert; der Broker übernimmt es ohne
+  Neustart, verbundene Geräte bleiben verbunden. Fehlt es, läuft es ab oder wird
+  die Weitergabe beendet, nimmt das Gateway wieder das selbst erzeugte (mit dem
+  bisherigen Fingerabdruck).
+- Geräte, die den Fingerabdruck des selbst erzeugten hinterlegt haben, verbinden
+  sich mit eingeschaltetem Schalter nicht mehr – sie brauchen dann den Namen statt
+  des Fingerabdrucks.
+- Hinweise in der Karte: Weitergabe fehlt, kein Name im Geräte-Bereich, ein Gerät
+  heißt schon `mqtt-<Name>` (das Gerät behält seinen Namen), TLS aus, oder eine
+  TCP-Route belegt Port 8883 an der Tunnel-Adresse (dann nur im Heimnetz).
+
 ## 4.3 Wo erscheinen meine Geräte?
 
 Die Geräte erscheinen **im Plugin**, also links unter „Zuhause“ →

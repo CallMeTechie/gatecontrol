@@ -319,16 +319,48 @@
     const on = !!(settings && settings.mqttTls);
     const old = !!gateway && gateway.mqttTlsSupported === false;
     const tls = status ? status.tls : null;
-    const out = { key: 'off', locked: old && !on, fingerprint: null, cert: null, validTo: null };
+    const out = { key: 'off', locked: old && !on, fingerprint: null, cert: null, validTo: null, source: null, host: null };
     if (old) out.key = 'update_needed';
     else if (!on) out.key = 'off';
     else if (tls === 'missing_cert') out.key = 'missing_cert';
     else if (tls === 'on') {
       out.key = 'on';
+      // the device certificate (*.geraete.<zone>): clients check the name — no fingerprint to pin, it changes
+      // with every renewal
+      out.source = status.tlsSource === 'vpn-cert' ? 'vpn-cert' : 'self';
+      if (out.source === 'vpn-cert') {
+        out.host = typeof status.tlsHost === 'string' && status.tlsHost ? status.tlsHost : null;
+        return out;
+      }
       out.fingerprint = fingerprintText(status.tlsSha256);
       out.cert = typeof status.tlsCert === 'string' && status.tlsCert ? status.tlsCert : null;
       out.validTo = typeof status.tlsValidTo === 'string' ? status.tlsValidTo : null;
     } else out.key = 'pending';
+    return out;
+  }
+
+  /**
+   * The row "Gerätezertifikat verwenden" in the TLS card: null while the gateway does not know it (no
+   * capability mqtt-vpn-cert) and it is off — an older gateway shows nothing new. Otherwise
+   * { enabled, locked, hint, address }:
+   *   hint     why it does not (yet) work — gwe.tls.vpn.hint_<hint> — or null
+   *   address  mqtt-<gateway>.<device area>:8883 to copy (only while switched on and the name exists)
+   * `v`: overview().mqttVpnCert (services/gatewayFeatures.js mqttVpnCertPart); `settings`: the edge settings.
+   */
+  function vpnCertView(v, settings) {
+    if (!v || (!v.supported && !v.enabled)) return null;
+    const out = { enabled: !!v.enabled, locked: !v.supported && !v.enabled, hint: null, address: null };
+    const PROBLEMS = ['no_zone', 'no_name', 'too_long', 'name_taken'];
+    if (!v.supported) out.hint = 'old';
+    else if (!v.host) out.hint = PROBLEMS.indexOf(v.problem) >= 0 ? v.problem : 'no_name';
+    else if (!v.shared) out.hint = 'noshare';
+    else if (v.enabled && !(settings && settings.mqttTls)) out.hint = 'needs_tls';
+    else if (v.enabled) {
+      if (v.state === 'no_name' || v.state === 'no_cert') out.hint = 'state_' + v.state;
+      else if (v.state === 'active') out.hint = v.tunnel === 'no_address' || v.tunnel === 'port_in_use' ? 'tunnel_' + v.tunnel : null;
+      else if (v.state !== 'broker_off') out.hint = 'pending';
+    }
+    if (v.enabled && v.host) out.address = v.host + ':8883';
     return out;
   }
 
@@ -381,6 +413,6 @@
     TABS, STATES, REASONS, reasonDoc, reasonTopic, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
-    topicPrefix, brokerAddress, fingerprintText, tlsView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
+    topicPrefix, brokerAddress, fingerprintText, tlsView, vpnCertView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
   };
 });
