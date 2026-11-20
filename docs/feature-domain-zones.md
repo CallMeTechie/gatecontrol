@@ -267,16 +267,34 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   `BUNDLE_PORT_CONFLICT` (409, mit `conflict`); `DOMAIN_UNVERIFIED`,
   `DOMAIN_COLLISION`, `ZONE_NO_GATEWAY`, `LAN_HOST_REQUIRED` und
   `UDP_VIA_GATEWAY` (400, übersetzter Text); `NOT_FOUND` (404).
-- **UDP hinter Gateway/Pool:** Das Gateway leitet nur TCP weiter. Ein
-  UDP-Eintrag auf einem Gateway- oder Pool-Ziel wird abgelehnt (400
-  `UDP_VIA_GATEWAY`): beim Anlegen eines Hosts, beim Hinzufügen eines
-  Eintrags, bei `PUT /api/routes/:id` (Feldfehler `l4_protocol`) und beim
-  Zielwechsel der Domain / „Override lösen“ (UDP-Einträge mit Peer-Ziel).
-  Ältere Zeilen mit dieser Kombination bleiben bearbeitbar (abgelehnt wird nur
-  der Wechsel hinein) und tragen in der Liste die Notiz „wirkt nicht“
-  (`V.isUdpViaGateway`). Caddy wählt für UDP-Einträge das Upstream-Netz
-  ausdrücklich (`udp/host:port`, `l4.upstreamDial`) – ohne Präfix wählt
-  caddy-l4 TCP.
+- **UDP über ein Gateway** (`src/services/gatewayUdp.js`, Gateway-Seite:
+  gatecontrol-gateway `docs/udp.md`): Ein Gateway leitet UDP weiter, wenn es
+  im Heartbeat die Capability `udp-routes` nennt (`telemetry.capabilities`,
+  ab Gateway 1.40.0 = `MIN_GATEWAY_UDP`, nur für den Hinweistext; seit 1.21.0
+  meldet jedes Gateway seine Capabilities). Ein UDP-Eintrag auf einem
+  Gateway-Ziel braucht dieses Gateway, auf einem Pool mindestens ein Mitglied
+  mit der Capability – sonst 400 `UDP_VIA_GATEWAY` mit übersetztem Hinweis
+  „Gateway aktualisieren (ab Version …)“ (`error.routes.udp_via_gateway`,
+  beim Pool `error.routes.udp_via_pool`): beim Anlegen eines Hosts, beim
+  Hinzufügen eines Eintrags, bei `POST/PUT /api/routes` (Feldfehler
+  `l4_protocol`) und beim Zielwechsel der Domain / „Override lösen“. Ein
+  Zielwechsel lehnt nur Einträge ab, die dabei ihre Wirkung verlören
+  (Peer-Ziel oder ein Gateway mit UDP); eine ältere Zeile hinter einem Gateway
+  ohne UDP bleibt bearbeitbar, solange ihr Ziel eines ohne UDP bleibt.
+  Config-Pull: nur ein Gateway mit der Capability bekommt die UDP-Einträge –
+  als eigenes Feld `udp_routes: [{ id, listen_port, target_lan_host,
+  target_lan_port }]`, nie in `l4_routes`; der Hash nimmt es nach `features`
+  dazu (`sha256(h + '\nudp_routes\n' + stableJson(udp_routes))`, gleich im
+  Gateway). Nach dem Update meldet der nächste Heartbeat die Capability, der
+  Hash ändert sich, das Gateway holt die Einträge – bestehende UDP-Einträge
+  wirken ohne Zutun. Caddy gibt den UDP-Eintrag eines Pools nur an Mitglieder
+  mit UDP (`resolveRouteUpstreams`, die übrigen zählen dafür als „down“).
+  Listen: `gateway_udp` (true/false) an jedem TCP/UDP-Eintrag mit Gateway-Ziel,
+  `zone.gateway.udp` am Ziel der Domain; die Notiz „wirkt noch nicht“ steht an
+  UDP-Einträgen mit `gateway_udp: false` (`V.isUdpWithoutEffect`). Caddy wählt
+  für UDP-Einträge das Upstream-Netz ausdrücklich (`udp/host:port`,
+  `l4.upstreamDial`) – ohne Präfix wählt caddy-l4 TCP. Broadcast/Multicast
+  leitet das Gateway bewusst nicht weiter.
 - **`applyGateway`:** beendet laufende Failover (`original_peer_id` wird
   geleert). Wechsel von Peer auf Gateway oder Pool verlangt, dass jeder Eintrag
   eine LAN-Adresse hat.
@@ -399,8 +417,11 @@ Abweichungen und Ergänzungen gegenüber dem Entwurf oben, so wie sie im Code st
   Ziel, #533); ein unveränderter Pool wird nicht mitgeschickt. Ohne Ziel
   (Gateway gelöscht) steht ein Hinweis am Feld, die 400 `TARGET_REQUIRED`
   des Servers landet als Feldfehler dort.
-- UDP bei Gateway-Ziel: der UDP-Knopf ist gesperrt (Titel mit Grund); ein
-  älterer UDP-Eintrag hinter einem Gateway zeigt „wirkt nicht“.
+- UDP bei Gateway-Ziel: wählbar; der Hinweis sagt, dass das Gateway UDP
+  können muss, und der Server lehnt sonst mit „Gateway aktualisieren“ ab
+  (Feldfehler am Typ). Ein UDP-Eintrag hinter einem Gateway ohne UDP
+  (`gateway_udp: false`) zeigt „wirkt noch nicht“, solange dasselbe Ziel
+  gewählt ist.
 - Das Overlay hängt am `<body>` (z-index 1050 über den großen Dialogen 1000,
   kleine Rückfragen 1100).
 - Header: Vorlagen als Karten (Sicherheits-Header, CORS, CSP, neu:

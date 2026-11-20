@@ -59,21 +59,29 @@ function assertGatewayTarget({ gateway, peer, pool, poolChanged }) {
 
 // ─── UDP behind a gateway ──────────────────────────────
 //
-// The gateway forwards TCP only (UDP forwarding in the gateway is deferred on
-// purpose). A UDP entry on a gateway or pool target would open a listener on
-// the server that leads nowhere — so the move INTO that combination is a 400
-// (UDP_VIA_GATEWAY, field l4_protocol). A row from before this rule is left
-// as it is (it keeps its other edits; the page marks it "has no effect").
+// A gateway forwards UDP once it names the capability `udp-routes`
+// (services/gatewayUdp.js). A UDP entry on a gateway target needs that
+// gateway to be able to, on a pool at least one member — otherwise 400
+// UDP_VIA_GATEWAY (field l4_protocol) with the hint "update the gateway (from
+// version …)". A row that already sits behind a gateway that cannot (from
+// before) keeps its other edits while its target stays one that cannot; the
+// page marks it "has no effect" (gateway_udp: false) until the gateway is
+// updated — then it works without a change.
 
 function isUdpViaGateway(row) {
   return !!row && (row.route_type || 'http') === 'l4' && row.l4_protocol === 'udp'
     && (row.target_kind || 'peer') === 'gateway';
 }
 
+const udpTargetOf = (row) => ({ peerId: row.target_peer_id, poolId: row.target_pool_id });
+
 function assertNoUdpViaGateway(next, prev) {
-  if (!isUdpViaGateway(next) || isUdpViaGateway(prev)) return;
-  throw targetError('UDP_VIA_GATEWAY', 'l4_protocol',
-    'udp_via_gateway: a gateway forwards TCP only — a UDP entry needs a VPN peer as its target');
+  if (!isUdpViaGateway(next)) return;
+  const gatewayUdp = require('./gatewayUdp');
+  if (gatewayUdp.targetSupportsUdp(udpTargetOf(next))) return;
+  // unchanged "without effect" state of an older row: no new refusal
+  if (isUdpViaGateway(prev) && !gatewayUdp.targetSupportsUdp(udpTargetOf(prev))) return;
+  throw gatewayUdp.udpRefusal({ pool: next.target_pool_id != null && next.target_pool_id !== '', field: 'l4_protocol' });
 }
 
 // ─── Gateway push ───────────────────────────────────────
@@ -269,6 +277,8 @@ function toApiRows(list) {
   let verifiedSet;
   try { verifiedSet = new Set(require('./domains').baseDomains()); }
   catch (err) { logger.warn({ err: err.message }, 'routes list: baseDomains() failed; suppressing nudge'); verifiedSet = new Set(); }
+  // UDP entries behind a gateway/pool: does the target forward UDP? (one query per gateway/pool)
+  const udpJudge = require('./gatewayUdp').makeRowJudge();
   return list.map((row) => {
     const r = stripFields(row, ['basic_auth_password_hash']);
     const isPub = !!(r.domain && isPublicDomain(r.domain));
@@ -276,6 +286,9 @@ function toApiRows(list) {
       ...r,
       domainIsPublic: isPub,                                   // drives edit-modal path detection
       baseUnverified: !!(isPub && !verifiedSet.has(baseDomain(r.domain))),
+      // TCP/UDP entry behind a gateway/pool: does it forward UDP? On a UDP
+      // entry false = the page says "no effect yet – update the gateway"
+      ...((r.route_type === 'l4' && (r.target_kind || 'peer') === 'gateway') ? { gateway_udp: udpJudge(r) } : {}),
     };
   });
 }
@@ -462,7 +475,10 @@ async function create(data, opts = {}) {
     gateway: (data.target_kind || 'peer') === 'gateway',
     peer: data.target_peer_id, pool: data.target_pool_id, poolChanged: true,
   });
-  assertNoUdpViaGateway({ route_type: routeType, l4_protocol: data.l4_protocol, target_kind: data.target_kind }, null);
+  assertNoUdpViaGateway({
+    route_type: routeType, l4_protocol: data.l4_protocol, target_kind: data.target_kind,
+    target_peer_id: data.target_peer_id, target_pool_id: data.target_pool_id,
+  }, null);
 
   const targetKind = data.target_kind || 'peer';
   const targetPeerId = targetKind === 'gateway' ? (data.target_peer_id || null) : null;
@@ -903,6 +919,9 @@ async function update(id, data, opts = {}) {
     route_type: routeType,
     l4_protocol: data.l4_protocol !== undefined ? data.l4_protocol : route.l4_protocol,
     target_kind: data.target_kind !== undefined ? data.target_kind : route.target_kind,
+    // the target after the UPDATE (COALESCE keeps a stored value, `clear` drops one)
+    target_peer_id: clear.has('target_peer_id') ? null : (setsPeer ? data.target_peer_id : route.target_peer_id),
+    target_pool_id: clear.has('target_pool_id') ? null : (setsPool ? data.target_pool_id : route.target_pool_id),
   }, route);
 
   // A plain (no-TLS) TCP/UDP listener whose port, protocol or type changes —

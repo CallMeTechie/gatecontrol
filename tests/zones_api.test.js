@@ -84,7 +84,8 @@ test('POST /domains/:id/hosts creates a host; GET /zones returns the contract sh
   for (const k of ['domain_id', 'domain', 'verification', 'gateway', 'default_external_enabled', 'counts', 'health', 'hosts']) {
     assert.ok(k in zone, 'zone.' + k);
   }
-  assert.deepEqual(zone.gateway, { kind: 'gateway', peer_id: gw1, pool_id: null, name: 'Home Gateway', ip: '10.8.0.2', online: true });
+  // udp: does the gateway forward UDP (capability udp-routes)? — this one never reported it
+  assert.deepEqual(zone.gateway, { kind: 'gateway', peer_id: gw1, pool_id: null, name: 'Home Gateway', ip: '10.8.0.2', online: true, udp: false });
   assert.equal(zone.default_external_enabled, true);
   assert.deepEqual(zone.counts, { hosts: 1, entries: 2, http: 1, l4: 1, disabled: 0 });
   assert.equal(zone.health, 'ok');

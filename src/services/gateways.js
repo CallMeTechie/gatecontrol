@@ -154,6 +154,7 @@ function getGatewayConfig(peerId) {
 
   const l4Routes = db.prepare(`
     SELECT r.id, r.l4_listen_port AS listen_port, r.target_lan_host, r.target_lan_port,
+           r.l4_protocol,
            ${HOME_PEER} AS home_peer_id, gm_home.lan_ip AS home_lan_ip,
            r.wol_enabled, r.wol_mac
     FROM routes r
@@ -184,6 +185,41 @@ function getGatewayConfig(peerId) {
     if (!isLoopbackHost(r.target_lan_host) || r.home_peer_id == null || r.home_peer_id === peerId) return r.target_lan_host;
     return r.home_lan_ip || null;
   };
+
+  // UDP entries (docs/feature-domain-zones.md "UDP über ein Gateway"): only a
+  // gateway that forwards UDP (capability udp-routes, services/gatewayUdp.js)
+  // gets them — as their own list `udp_routes`, never in l4_routes (an older
+  // gateway would open a TCP listener for them). Without the capability the
+  // field is left out, so an older gateway's config and hash stay as before.
+  // The gateway's first heartbeat after its update names the capability, the
+  // hash changes and the gateway pulls its UDP entries — no step needed.
+  const isUdp = (r) => r.l4_protocol === 'udp';
+  const udpCapable = require('./gatewayUdp').peerSupportsUdp(peerId, db);
+  const l4Listener = (r) => {
+    // Loopback L4 target on a gateway that is not the route's home (failed
+    // over to this sibling, or checked by it as a reserve): the home
+    // gateway's LAN IP. If the home LAN IP is unknown, omit the listener
+    // (fail closed — no header / 502 possible at layer 4; a missing
+    // listener = connection refused).
+    const lanHost = lanHostFor(r);
+    if (lanHost == null) return null;
+    return {
+      id: r.id,
+      // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
+      // like "8000-8100" fits). The shared config-hash schema however
+      // requires a plain number — ranges don't apply to gateway L4
+      // anyway (a Node net.createServer listener binds a single port).
+      // Coerce to number; fall through to the original value if that
+      // fails so a misuse surfaces loudly instead of silently hashing
+      // wrong data.
+      listen_port: Number.isFinite(Number(r.listen_port)) ? Number(r.listen_port) : r.listen_port,
+      target_lan_host: lanHost,
+      target_lan_port: r.target_lan_port,
+      wol_enabled: !!r.wol_enabled,
+      ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
+    };
+  };
+  const l4Served = l4ServedByServer ? [] : l4Routes;
 
   return {
     config_hash_version: CONFIG_HASH_VERSION,
@@ -221,30 +257,15 @@ function getGatewayConfig(peerId) {
       wol_enabled: !!r.wol_enabled,
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
-    l4_routes: (l4ServedByServer ? [] : l4Routes).map(r => {
-      // Loopback L4 target on a gateway that is not the route's home (failed
-      // over to this sibling, or checked by it as a reserve): the home
-      // gateway's LAN IP. If the home LAN IP is unknown, omit the listener
-      // (fail closed — no header / 502 possible at layer 4; a missing
-      // listener = connection refused).
-      const lanHost = lanHostFor(r);
-      if (lanHost == null) return null;
-      return {
-        id: r.id,
-        // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
-        // like "8000-8100" fits). The shared config-hash schema however
-        // requires a plain number — ranges don't apply to gateway L4
-        // anyway (a Node net.createServer listener binds a single port).
-        // Coerce to number; fall through to the original value if that
-        // fails so a misuse surfaces loudly instead of silently hashing
-        // wrong data.
-        listen_port: Number.isFinite(Number(r.listen_port)) ? Number(r.listen_port) : r.listen_port,
-        target_lan_host: lanHost,
-        target_lan_port: r.target_lan_port,
-        wol_enabled: !!r.wol_enabled,
-        ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
-      };
-    }).filter(Boolean),
+    l4_routes: l4Served.filter(r => !isUdp(r)).map(l4Listener).filter(Boolean),
+    // { id, listen_port, target_lan_host, target_lan_port } — the gateway's
+    // UDP listener needs no WoL fields. Not in the shared config-hash schema:
+    // hashOfConfig adds it after `features`.
+    ...(udpCapable ? {
+      udp_routes: l4Served.filter(isUdp).map(l4Listener).filter(Boolean)
+        .filter(r => Number.isInteger(r.listen_port) && r.listen_port > 0 && r.listen_port <= 65535)
+        .map(({ id, listen_port, target_lan_host, target_lan_port }) => ({ id, listen_port, target_lan_host, target_lan_port })),
+    } : {}),
     egress_routes: require('./egressRoutes').resolveForPeer(peerId, db),
     // Phase 3a: network watch, internet quality, presence, UPS (services/gatewayFeatures.js).
     // Not part of the shared config-hash schema — computeConfigHash adds it to the hash itself.
@@ -342,10 +363,17 @@ function stableJson(v) {
  * without the key stay byte-identical). The gateway computes the same.
  */
 function hashOfConfig(cfg) {
-  const { features, ...rest } = cfg || {};
-  const base = libComputeConfigHash(rest);
-  if (features === undefined || features === null) return base;
-  return 'sha256:' + crypto.createHash('sha256').update(base + '\n' + stableJson(features), 'utf8').digest('hex');
+  const { features, udp_routes: udpRoutes, ...rest } = cfg || {};
+  let h = libComputeConfigHash(rest);
+  if (features !== undefined && features !== null) {
+    h = 'sha256:' + crypto.createHash('sha256').update(h + '\n' + stableJson(features), 'utf8').digest('hex');
+  }
+  // UDP entries (only for a gateway with udp-routes; gatecontrol-gateway
+  // src/features/config.js configHash computes the same)
+  if (udpRoutes !== undefined && udpRoutes !== null) {
+    h = 'sha256:' + crypto.createHash('sha256').update(h + '\nudp_routes\n' + stableJson(udpRoutes), 'utf8').digest('hex');
+  }
+  return h;
 }
 
 /**
@@ -1249,7 +1277,9 @@ function cleanupExpiredPairingCodes() {
 // hostname/config_hash — those are heartbeat-only and MUST be preserved.
 const SELF_CHECK_FIELDS = ['http_proxy_healthy', 'api_healthy', 'tcp_listeners', 'wg_handshake_age_s', 'dns_resolve_ok', 'route_reachability', 'overall_healthy',
   // the listeners of the TCP/UDP routes (l4ListenerNotes) — they explain overall_healthy
-  'l4_routes_configured', 'l4_listeners_missing', 'l4_listener_issues', 'l4_listeners_direct'];
+  'l4_routes_configured', 'l4_listeners_missing', 'l4_listener_issues', 'l4_listeners_direct',
+  // UDP listeners with their counters (gateway with udp-routes, gatecontrol-gateway docs/udp.md)
+  'udp_listeners'];
 
 // ─── Gateway self-update lifecycle helpers ────────────────────────────────
 

@@ -72,7 +72,11 @@ test('the reserve cannot open the partner\'s port: route, protocol, port, reason
   gateway(22, 'DS918+');
   l4Route(300, 'dns.example.com', 21, 'udp', 5335, '192.168.2.151', 5335);
   await pool('Heimnetz', [21, 22]);
-  assert.deepEqual(gws.getGatewayConfig(22).l4_routes.map((r) => r.id), [300], 'the reserve has the partner\'s route in its config');
+  // a UDP entry reaches a gateway only once it forwards UDP (capability udp-routes, as udp_routes)
+  assert.equal(gws.getGatewayConfig(22).udp_routes, undefined);
+  db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = 22').run(JSON.stringify({ telemetry: { capabilities: ['udp-routes'] } }));
+  assert.deepEqual(gws.getGatewayConfig(22).udp_routes.map((r) => r.id), [300], 'the reserve has the partner\'s route in its config');
+  assert.deepEqual(gws.getGatewayConfig(22).l4_routes, [], 'never as a TCP listener');
 
   gws.handleHeartbeat(22, { ...base, l4_routes_configured: 1, l4_listeners_missing: 1, overall_healthy: false, listener_reapply_triggered: true,
     l4_listener_issues: [{ route_id: 300, listen_port: 5335, reason: 'port_in_use', code: 'EADDRINUSE' }], l4_listeners_direct: [] });

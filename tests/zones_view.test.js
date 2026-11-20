@@ -379,8 +379,12 @@ describe('UDP behind a gateway (isUdpViaGateway, entry note udp_gateway)', () =>
     assert.equal(V.isUdpViaGateway(entry()), false);
   });
 
-  it('the host row line carries the note "udp_gateway" for such an entry only', () => {
-    assert.ok(V.entryLine(udp()).notes.some((n) => n.id === 'udp_gateway'));
-    assert.ok(!V.entryLine(udp({ target_kind: 'peer', peer_id: 5 })).notes.some((n) => n.id === 'udp_gateway'));
+  it('the note "udp_gateway" (no effect yet) only while the gateway cannot forward UDP (gateway_udp: false)', () => {
+    const noted = (e) => V.entryLine(e).notes.some((n) => n.id === 'udp_gateway');
+    assert.ok(noted(udp({ gateway_udp: false })));
+    assert.equal(V.isUdpWithoutEffect(udp({ gateway_udp: false })), true);
+    assert.ok(!noted(udp({ gateway_udp: true })), 'a gateway with udp-routes: the entry works');
+    assert.ok(!noted(udp()), 'unknown: no warning');
+    assert.ok(!noted(udp({ target_kind: 'peer', peer_id: 5, gateway_udp: false })));
   });
 });

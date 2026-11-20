@@ -122,6 +122,12 @@ function resolveRouteUpstreams(route, options = {}) {
 
   const pool = gatewayPool.getPool(route.target_pool_id);
   if (!pool || !pool.enabled) return { peers: [], outage: true };
+  // UDP entry of a pool: only members that forward UDP (services/gatewayUdp.js)
+  // — the others have no UDP listener; for the choice they count as down.
+  if (route.route_type === 'l4' && route.l4_protocol === 'udp') {
+    const udpPeers = new Set(require('./gatewayUdp').poolUdpPeers(route.target_pool_id, db).map(String));
+    snapshot = Object.fromEntries(Object.entries(snapshot).map(([id, s]) => [id, udpPeers.has(String(id)) ? s : { ...s, alive: false }]));
+  }
   const peerIds = pool.mode === 'failover'
     ? (() => { const id = gatewayPool.resolveActivePeer(route.target_pool_id, snapshot); return id ? [id] : []; })()
     : gatewayPool.resolveActivePeers(route.target_pool_id, snapshot);
