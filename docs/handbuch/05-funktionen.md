@@ -51,12 +51,21 @@ Gateway gibt es nicht mehr …“, und das Feld ist leer. Wähle ein neues Gatew
 oder einen Pool – ohne Ziel lässt sich der Eintrag nicht speichern; die
 Meldung erscheint dann direkt am Feld.
 
-**UDP geht nicht über ein Gateway.** Das Gateway leitet nur TCP weiter. Für
-einen Eintrag hinter einem Gateway oder Pool ist „UDP“ deshalb nicht wählbar,
-und der Server lehnt die Kombination ab. Für UDP (z. B. einen Spieleserver)
-nimm einen VPN-Peer als Ziel. Ältere UDP-Einträge hinter einem Gateway bleiben
-stehen, sind in der Liste aber mit „wirkt nicht“ markiert: Stelle sie auf TCP
-um oder wähle einen VPN-Peer.
+**UDP über ein Gateway.** Ab Gateway-Version 1.40.0 leitet das Gateway auch
+UDP weiter – etwa für einen DNS-Server, einen Spieleserver oder VoIP im
+Heimnetz. GateControl erkennt das selbst: Das Gateway meldet die Fähigkeit mit
+jedem Lebenszeichen. Bei einem Pool übernehmen nur die Gateways den
+UDP-Eintrag, die UDP können; im Failover springt ein UDP-Eintrag also nur auf
+ein solches Gateway.
+
+Kann das gewählte Gateway noch kein UDP (oder kein Gateway des Pools), lehnt
+GateControl das Speichern ab: „Gateway aktualisieren (ab Version 1.40.0)“. Für
+neue Einträge eines Hosts ist „UDP“ dann nicht wählbar. Ältere UDP-Einträge
+hinter einem solchen Gateway bleiben stehen und tragen in der Liste „wirkt
+noch nicht“. Aktualisiere das Gateway ([Kapitel 6](06-gateway-aktualisieren.md)) – danach
+funktionieren sie ohne weiteren Schritt, das Gateway holt sie sich beim
+nächsten Abgleich. Broadcast und Multicast (z. B. die Suche nach Spielen oder
+Geräten im LAN, mDNS, SSDP) gehen über eine UDP-Route nicht.
 
 Beim Löschen eines Eintrags – oder mit „Host löschen“ eines ganzen Hosts mit
 allen Einträgen – verschwindet die Zeile sofort. Braucht Caddy länger als ein

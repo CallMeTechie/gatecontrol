@@ -626,10 +626,13 @@ network – the internet quality would otherwise report a permanent outage.
 
 ### A UDP route through a gateway does not arrive
 
-The gateway forwards TCP only – a UDP route behind a gateway or pool has no
-effect. New ones cannot be created that way any more; older ones show “no
-effect” in the list. Switch them to TCP or use a VPN peer as the target
-([chapter 5](05-features.md#routes-through-a-gateway-or-a-pool)).
+If the entry shows “no effect yet”, the gateway (or no gateway of the pool)
+cannot do UDP yet – the gateway forwards UDP from version 1.40.0 on. Update
+the gateway; the entry then works without another step
+([chapter 5](05-features.md#routes-through-a-gateway-or-a-pool)). If nothing
+arrives anyway: does the service at home really answer UDP on the target
+port? Broadcast and multicast (LAN discovery, mDNS, SSDP) do not work over a
+UDP route.
 
 ## DNS protection
 

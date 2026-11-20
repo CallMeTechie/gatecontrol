@@ -1176,34 +1176,42 @@
       });
     }
   }
-  // UDP behind a gateway or pool: the gateway forwards TCP only (UDP
-  // forwarding is deferred), the server refuses the combination (400
-  // UDP_VIA_GATEWAY). An entry from before that rule may still have it — it
-  // keeps it on an unrelated save, but has no effect.
+  // UDP behind a gateway or pool: works when the gateway forwards UDP (on a
+  // pool: one member) — the server decides and otherwise answers 400
+  // UDP_VIA_GATEWAY with the hint "update the gateway (from version …)",
+  // shown at the type control. A stored entry whose gateway cannot yet carries
+  // gateway_udp: false — it has no effect until the gateway is updated.
   function udpViaGatewayNow() { return kindNow() === 'udp' && targetKindNow() === 'gateway'; }
   function routeWasUdpViaGateway() {
     var r = state.route;
     return !!r && r.route_type === 'l4' && r.l4_protocol === 'udp' && (r.target_kind || 'peer') === 'gateway';
+  }
+  function routeUdpWithoutEffect() {
+    if (!routeWasUdpViaGateway() || state.route.gateway_udp !== false) return false;
+    // only while the stored gateway/pool is still the one chosen
+    var r = state.route;
+    var sel = gatewaySelection();
+    return sel.pool != null ? String(sel.pool) === String(r.target_pool_id)
+      : (r.target_pool_id == null && String(sel.peer || '') === String(r.target_peer_id || ''));
   }
   function syncKindButtons() {
     var group = byId('ee-kind-group');
     if (!group) return;
     var otherHttp = hostHasOtherHttp();
     var l4ok = l4Allowed();
-    var gateway = targetKindNow() === 'gateway';
     var cur = kindNow();
     var hint = byId('ee-kind-hint');
     group.querySelectorAll('[data-value]').forEach(function (b) {
       var v = b.dataset.value;
-      var udpOff = v === 'udp' && gateway;
-      b.disabled = v !== cur && (v === 'http' ? otherHttp : (!l4ok || udpOff));
-      b.title = b.disabled ? (v === 'http' ? T('entry.err_http_taken', '') : udpOff && l4ok ? T('entry.udp_via_gateway', '') : T('entry.l4_locked', '')) : '';
+      b.disabled = v !== cur && (v === 'http' ? otherHttp : !l4ok);
+      b.title = b.disabled ? (v === 'http' ? T('entry.err_http_taken', '') : T('entry.l4_locked', '')) : '';
     });
     if (hint) {
       var udpGw = udpViaGatewayNow();
-      hint.textContent = udpGw ? T(routeWasUdpViaGateway() ? 'entry.udp_no_effect' : 'entry.udp_via_gateway', '')
+      var noEffect = udpGw && routeUdpWithoutEffect();
+      hint.textContent = udpGw ? T(noEffect ? 'entry.udp_no_effect' : 'entry.udp_via_gateway', '')
         : (otherHttp && cur !== 'http' ? T('entry.err_http_taken', '') : '');
-      hint.classList.toggle('rt-hint-warn', udpGw);
+      hint.classList.toggle('rt-hint-warn', noEffect);
     }
   }
 
@@ -1389,7 +1397,7 @@
     var tkSelect = byId('edit-route-target-kind');
     if (tkSelect) tkSelect.addEventListener('change', function () { updateTargetKindVisibility(); syncKindButtons(); });
     var gwSelect = byId('edit-route-gateway-peer');
-    if (gwSelect) gwSelect.addEventListener('change', function () { syncGatewayMissing(); renderFlow(); });
+    if (gwSelect) gwSelect.addEventListener('change', function () { syncGatewayMissing(); renderFlow(); syncKindButtons(); });
     var wolCb = byId('edit-route-wol-enabled');
     if (wolCb) wolCb.addEventListener('change', syncWolMacVisibility);
 
@@ -3441,9 +3449,8 @@
       return;
     }
     if (target.lanHost !== undefined && !target.lanHost) { fail(T('host.err_lan_required', 'LAN address required'), 'target'); return; }
-    // UDP through a gateway/pool: new combinations are refused (the server
-    // says so too); an entry that already had it may keep it.
-    if (udpViaGatewayNow() && !routeWasUdpViaGateway()) { fail(T('entry.udp_via_gateway', 'A gateway forwards TCP only'), 'target'); return; }
+    // UDP through a gateway/pool: the server knows whether the gateway
+    // forwards UDP (400 UDP_VIA_GATEWAY → field error at the type control).
     if (basic_auth_enabled && !basic_auth_user) {
       fail(T('entry_editor.err_basic_user', 'Basic auth needs a user name'), 'auth');
       return;
