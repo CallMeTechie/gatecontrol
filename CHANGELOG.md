@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.313.0] — 2026-11-20
+
+### Features
+- Schalter „Gerätezertifikat verwenden“ für den TLS-Listener des Gateway-Brokers (#554)
+
+---
+
 ## [1.312.0] — 2026-11-20
 
 ### Features
