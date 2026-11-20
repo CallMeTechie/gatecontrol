@@ -354,6 +354,7 @@ async function pauseHost(hostIn, reason = 'attempts') {
   const host = normHost(hostIn);
   const { row, before } = setPaused(host, reason);
   await withCaddySync(syncToCaddy, () => { restoreRow(host, before); publish(host, before); }, 'tls pause');
+  vpnCertChanged(host, 'paused');
   return row;
 }
 
@@ -474,8 +475,21 @@ function parseTlsLogLine(line) {
   return null;
 }
 
+// The wildcard of the VPN zone changed state: the portal and management names
+// under the zone follow (services/vpnCert.js refreshServed).
+function vpnCertChanged(host, reason) {
+  if (!String(host || '').startsWith('*.')) return;
+  try { require('./vpnCert').refreshServed(reason); } catch (err) { logger.warn({ err: err.message }, 'tls: vpn cert refresh failed'); }
+}
+
 /** Apply one parsed log event to tls_status. Returns the row or null. */
 async function applyLogEvent(evt) {
+  const row = await applyLogEventInner(evt);
+  if (evt) vpnCertChanged(evt.host, 'tls.log');
+  return row;
+}
+
+async function applyLogEventInner(evt) {
   if (!evt) return null;
   const host = evt.host;
   if (evt.kind === 'success') {
@@ -712,6 +726,8 @@ function inventory({ dataDir } = {}) {
     // A paused host turned out to hold a newer certificate — let it leave the skip list.
     syncToCaddy().catch(err => logger.warn({ err: err.message }, 'tls: sync after inventory failed'));
   }
+  // a wildcard of the VPN zone may have been issued, renewed or run out meanwhile
+  vpnCertChanged('*.inventory', 'inventory');
   return { hosts: certs.size, released, entries: [...certs.values()] };
 }
 
@@ -818,7 +834,8 @@ function loadUniverse() {
     ORDER BY (CASE WHEN r.route_type = 'l4' THEN 1 ELSE 0 END), r.id`).all();
   let portal = { host: null, public: false };
   try { portal = require('./portalConfig').effectivePortalHost(); } catch { /* ignore */ }
-  const forcedInternal = new Set(portal.host && !portal.public ? [normHost(portal.host)] : []);
+  // the internal-CA name of the portal (home.<zone> gets the wildcard of the VPN zone)
+  const forcedInternal = new Set(portal.host && !portal.public ? [normHost(portal.compatHost || portal.host)] : []);
   const map = new Map();
   for (const r of rows) {
     const host = normHost(r.domain);
@@ -926,6 +943,8 @@ function entryTls(routeRow, rows, opts) {
 // ─── Lifecycle ──────────────────────────────────────────
 
 function start({ watcher = true } = {}) {
+  // the names under the VPN zone served with its wildcard, as they are now
+  vpnCertChanged('*.start', 'start');
   if (acmeEmailMissing()) {
     logger.warn('No ACME contact e-mail configured (caddy.acme_email / GC_CADDY_EMAIL) — Let\'s Encrypt cannot send expiry notices');
   }

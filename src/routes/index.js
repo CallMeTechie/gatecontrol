@@ -498,7 +498,8 @@ function portalLink() {
   try {
     const portalConfig = require('../services/portalConfig');
     if (!portalConfig().enabled) return null;
-    return `https://${portalConfig.effectivePortalHost().host}`;
+    // the name every device resolves (home.<zone> is for the apps that know the zone)
+    return `https://${portalConfig.effectivePortalHost().compatHost}`;
   } catch { return null; }
 }
 

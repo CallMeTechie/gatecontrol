@@ -42,7 +42,7 @@ function portalIdentity(req, _res, next) {
   req.portalPeerName = null;
   const direct = req.socket && req.socket.remoteAddress;
   const headerIp = req.get && req.get('X-GC-Portal-Peer-IP');
-  if (isLoopback(direct) && headerIp && req.hostname === effectivePortalHost().host) {
+  if (isLoopback(direct) && headerIp && effectivePortalHost().hosts.includes(String(req.hostname || '').toLowerCase())) {
     const peer = peerFromIp(headerIp);
     if (peer) { req.portalPeerId = peer.id; req.portalPeerName = peer.name; }
   }

@@ -81,7 +81,7 @@ function clearKioskCookies(req, res) {
 }
 
 function onPortalHost(req) {
-  try { return req.hostname === effectivePortalHost().host; } catch { return false; }
+  try { return effectivePortalHost().hosts.includes(String(req.hostname || '').toLowerCase()); } catch { return false; }
 }
 
 function webSessionActive(req) {

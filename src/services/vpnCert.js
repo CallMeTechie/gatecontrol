@@ -56,6 +56,7 @@ const KEY = {
   delay: 'vpn_cert.propagation_delay',
   suspended: 'vpn_cert.suspended',
   lastTest: 'vpn_cert.last_test',
+  served: 'vpn_cert.served_zone',
 };
 
 const FEATURE = 'internal_dns';
@@ -383,6 +384,8 @@ function wantsPolicy(st = state()) {
 /** The view for the API (never a credential value). */
 function view() {
   const st = state();
+  // the card shows what is served right now (not the few seconds old cache)
+  servedZone({ fresh: true });
   const id = providerId();
   const { values, error } = storedCredentials();
   const row = tlsRow(st.wildcard);
@@ -420,6 +423,63 @@ function view() {
   };
 }
 
+// ─── The names served with the wildcard ────────────────────
+
+// Fixed names of the server that also reach the management (GC_BASE_URL
+// stays its main address): server.<zone>, gc-server.<zone>
+const MANAGEMENT_LABELS = ['server', 'gc-server'];
+
+let _served = { at: 0, zone: null };
+const SERVED_TTL_MS = 5000;
+
+/**
+ * The zone whose names the server answers with the wildcard right now: the
+ * policy is in the Caddy config and a valid certificate is in storage —
+ * without one, home.<zone> and the management names would fail every
+ * TLS handshake. null otherwise. Cached for a few seconds (the portal asks on
+ * every request); refreshServed() drops the cache.
+ */
+function servedZone({ fresh = false } = {}) {
+  if (!fresh && Date.now() - _served.at < SERVED_TTL_MS) return _served.zone;
+  let zone = null;
+  try {
+    const st = state();
+    if (st.state === 'active' || st.state === 'failed') {
+      const row = tlsRow(st.wildcard);
+      const dl = row ? daysLeft(row.not_after) : null;
+      if (dl != null && dl > 0 && wantsPolicy(st)) zone = st.zone;
+    }
+  } catch { zone = null; }
+  _served = { at: Date.now(), zone };
+  return zone;
+}
+
+/** server.<zone> and gc-server.<zone> while the wildcard is served, else []. */
+function managementHosts() {
+  const z = servedZone();
+  return z ? MANAGEMENT_LABELS.map((l) => `${l}.${z}`) : [];
+}
+
+/**
+ * After anything that may change servedZone() (certificate issued, renewed,
+ * expired or paused; setup, switch off, zone change, restore): when it did
+ * change, the hosts file gets home.<zone>, Caddy the portal and management
+ * names, and the apps are told to fetch their configuration (portalUrl).
+ * Never throws. → whether it changed
+ */
+function refreshServed(reason = '') {
+  const before = String(get(KEY.served, '') || '') || null;
+  const now = servedZone({ fresh: true });
+  if (before === now) return false;
+  try { settings.set(KEY.served, now || ''); } catch { /* no db */ }
+  log().info({ before, now, reason }, 'vpn cert: names served with the wildcard changed');
+  try { require('./dns').rebuildNow(); } catch (err) { log().warn({ err: err.message }, 'vpn cert: hosts file not rebuilt'); }
+  try { syncCaddy().catch((err) => log().warn({ err: redact(err.message) }, 'vpn cert: Caddy not synced')); } catch { /* none */ }
+  try { require('./notify/control').configChanged({ all: true }); } catch { /* best effort */ }
+  if (now) activityLog('tls_vpn_cert_serving', `Portal and management also under home.${now} / server.${now}`, 'info', { zone: now });
+  return true;
+}
+
 /** Names under the zone the server answers with the wildcard ("Genutzt von"). → [{ host, kind }] */
 function usedBy(zone) {
   if (!zone) return [];
@@ -429,11 +489,13 @@ function usedBy(zone) {
     const portal = require('./portalConfig').effectivePortalHost();
     if (portal && portal.host && covers(portal.host)) out.push({ host: norm(portal.host), kind: 'portal' });
   } catch { /* none */ }
+  for (const h of managementHosts()) if (covers(h)) out.push({ host: h, kind: 'management' });
   try {
     const rows = require('../db/connection').getDb().prepare("SELECT DISTINCT domain FROM routes WHERE enabled = 1 AND route_type != 'l4' AND https_enabled = 1 AND domain IS NOT NULL AND domain != ''").all();
     for (const r of rows) if (covers(r.domain) && !out.some((o) => o.host === norm(r.domain))) out.push({ host: norm(r.domain), kind: 'route' });
   } catch { /* none */ }
-  return out.sort((a, b) => (a.kind === b.kind ? a.host.localeCompare(b.host) : a.kind === 'portal' ? -1 : 1));
+  const rank = { portal: 0, management: 1, route: 2 };
+  return out.sort((a, b) => (a.kind === b.kind ? a.host.localeCompare(b.host) : rank[a.kind] - rank[b.kind]));
 }
 
 function canRenew(st, row) {
@@ -664,10 +726,11 @@ function suspend(message) {
   const error = redact(String(message || '')).slice(0, 2000);
   settings.set(KEY.suspended, JSON.stringify({ at: new Date().toISOString(), error }));
   log().warn({ error }, 'vpn cert: Caddy refused the DNS provider configuration — wildcard left out');
+  _served.at = 0;
   activityLog('tls_vpn_cert_suspended', 'Wildcard certificate of the VPN names stopped: Caddy refused the DNS provider configuration', 'warning', { error });
 }
 
-function unsuspend() { settings.set(KEY.suspended, ''); }
+function unsuspend() { settings.set(KEY.suspended, ''); _served.at = 0; }
 
 function syncCaddy() { return require('./caddyConfig').syncToCaddy(); }
 
@@ -715,6 +778,7 @@ async function save(input = {}, { ip = null } = {}) {
   activityLog('tls_vpn_cert_saved', `Wildcard certificate for ${wildcard}: DNS provider ${id} saved`, 'info',
     { provider: id, zone: zone.primary, delegated: !!delegate, provider_changed: changedProvider }, ip);
   await syncCaddy();
+  refreshServed('saved');
   return view();
 }
 
@@ -727,6 +791,7 @@ async function disable({ ip = null } = {}) {
   try { tlsGuard().forgetHosts(zones.map(wildcardOf)); } catch { /* none */ }
   if (st.provider) activityLog('tls_vpn_cert_disabled', 'Wildcard certificate of the VPN names switched off', 'info', { provider: st.provider, zone: st.zone }, ip);
   await syncCaddy();
+  refreshServed('disabled');
   return view();
 }
 
@@ -752,6 +817,7 @@ async function renew({ ip = null } = {}) {
   });
   activityLog('tls_vpn_cert_renew', `Wildcard certificate for ${st.wildcard}: new attempt requested`, 'info', { zone: st.zone }, ip);
   await syncCaddy();
+  refreshServed('renew');
   return view();
 }
 
@@ -762,6 +828,10 @@ function applyAfterRestore() {
     if (providerId() && !storedCredentials().error) writeSecretFiles();
     else removeSecretFiles();
   } catch (err) { log().warn({ err: redact(err.message) }, 'vpn cert: secret files not rewritten after restore'); }
+  // the hosts file was written before the files were back: once more, with home.<zone> when served
+  _served.at = 0;
+  try { settings.set(KEY.served, servedZone({ fresh: true }) || ''); } catch { /* no db */ }
+  try { require('./dns').rebuildNow(); } catch { /* no dnsmasq here */ }
 }
 
 // ─── Provider suggestion ───────────────────────────────────
@@ -948,6 +1018,7 @@ function _resetForTest() {
   if (_test && _test.child) { try { _test.child.kill('SIGKILL'); } catch { /* gone */ } }
   _test = null;
   _detectCache.clear();
+  _served = { at: 0, zone: null };
 }
 
 module.exports = {
@@ -955,6 +1026,7 @@ module.exports = {
   catalog, state, view, wantsPolicy,
   save, disable, renew, applyAfterRestore,
   caddyTls, inConfig, suspend, unsuspend,
+  servedZone, managementHosts, refreshServed, MANAGEMENT_LABELS,
   writeSecretFiles, removeSecretFiles, secretsDir,
   redact, preflight, detect, challengeNames, normDelegate,
   startTest, testView, suggestedDelay,

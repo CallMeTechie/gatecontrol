@@ -361,6 +361,24 @@ function belongs to the licence feature “Internal DNS”.
 5. Click “Save” at the bottom. After one to three minutes the card says
    “valid”.
 
+As soon as the certificate is valid, the server switches over by itself:
+
+- **Portal:** It then runs under `home.vpn.example.com` with the valid
+  certificate. This address goes to the apps that resolve the zone: the
+  Android app, GateControl Pro from **1.85.0** and Community from **1.49.0**.
+  Older Windows apps, invitation and kiosk links and the link in the menu keep
+  using `home.gc.internal` – that address works for good. If a public portal
+  domain is entered under “Portal”, the portal stays there.
+- **Management:** In the VPN you also reach the management under
+  `https://server.vpn.example.com` and `https://gc-server.vpn.example.com`.
+  The main address (`GC_BASE_URL`) stays. Under the new names you sign in
+  separately (a sign-in applies per address); passkeys and the sign-in via a
+  directory service (OIDC) only exist under the main address. Outside the VPN
+  the names do not answer.
+
+If the server stops the certificate or it expires, the portal and the
+management go back to their previous addresses.
+
 The certificate renews itself 30 days before it expires. If that fails
 several times, the server stops further attempts so that Let's Encrypt does
 not block the domain, and the card says what the provider reported. If the
@@ -410,5 +428,7 @@ their TLS ends on the device. And a certificate covers one level:
 server answers with it is listed in the card under “Used by”.
 
 **Check:** The card “Certificate for the names” says “valid” with the expiry
-date, and `*.vpn.example.com` appears under “Domains & certificates” with
-Let's Encrypt as issuer.
+date, “Used by” lists `home.vpn.example.com` (portal) and
+`server.vpn.example.com` (management), and `*.vpn.example.com` appears under
+“Domains & certificates” with Let's Encrypt as issuer. On a device in the VPN,
+`https://home.vpn.example.com` opens the portal without a warning.

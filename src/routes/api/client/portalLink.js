@@ -44,7 +44,8 @@ router.post('/portal-link', portalLinkLimiter, (req, res) => {
   if (req.tokenPeerId == null) return res.status(409).json({ ok: false, error: 'not_registered' });
   try {
     const { ticket, expiresIn } = portalTickets.create({ tokenId: req.tokenId, peerId: req.tokenPeerId, userId: req.tokenUserId });
-    const base = `https://${portalConfig.effectivePortalHost().host}`;
+    // home.<zone> only for apps that resolve the zone of the device names (portalConfig.resolvesZone)
+    const base = `https://${portalConfig.portalHostFor(req)}`;
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const pick = (v) => (typeof v === 'string' ? v : undefined);
     const next = portalTickets.portalNext(pick(b.next) ?? pick(b.path) ?? pick(req.query.next) ?? pick(req.query.path));

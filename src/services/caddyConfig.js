@@ -908,6 +908,14 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const { effectivePortalHost } = require('./portalConfig');
   const portal = effectivePortalHost();
   const homeHost = portal.host;
+  // Every name of the portal: with the wildcard of the VPN zone in use
+  // (services/vpnCert.js) home.<zone> and home.<legacy>, otherwise one.
+  const portalHosts = (portal.hosts && portal.hosts.length ? portal.hosts : [homeHost]).map(h => String(h).toLowerCase());
+  // The management also under server.<zone> / gc-server.<zone> then (GC_BASE_URL stays its address).
+  let vpnMgmtHosts = [];
+  try { vpnMgmtHosts = require('./vpnCert').managementHosts(); } catch (err) { logger.warn({ err: err.message }, 'vpn cert: management names unavailable'); }
+  // names that only exist with the wildcard: never a certificate of their own
+  const vpnOnlyHosts = [...(portal.vpn ? [String(homeHost).toLowerCase()] : []), ...vpnMgmtHosts];
 
   // TLS email. Split domains into public-TLD (gets real ACME) and
   // internal/private suffixes (gets Caddy's internal CA). Without the
@@ -921,7 +929,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // expiry notices, even with GC_CADDY_EMAIL set.
   let gcHost = '';
   try { gcHost = new URL(config.app.baseUrl || '').hostname.toLowerCase(); } catch { /* unset/invalid baseUrl */ }
-  const forceInternal = portal.public ? [] : [homeHost];
+  const forceInternal = portal.public ? [] : [portal.compatHost || homeHost];
   // TLS guard: hosts paused by the preflight or the attempt cap get no ACME
   // subject and land in automatic_https.skip below (no request, no redirect).
   let pausedHosts = [];
@@ -930,7 +938,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // Alias FQDNs (§A) are hostnames of their own for Caddy: they join the
   // subjects right after their primary name.
   const aliasSubjects = Object.values(caddyRoutes).flatMap(s => (Array.isArray(s._aliasFqdns) ? s._aliasFqdns : []));
-  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), ...aliasSubjects, homeHost, gcHost].filter(Boolean))]
+  const tlsDomains = [...new Set([...Object.keys(caddyRoutes), ...aliasSubjects, ...portalHosts, ...vpnOnlyHosts, gcHost].filter(Boolean))]
     .filter(d => !pausedSet.has(String(d).toLowerCase()));
   const tlsConfig = buildTlsAutomation(tlsDomains, { ...config.caddy, email: effectiveAcmeEmail() }, forceInternal);
   if (tlsConfig) caddyConfig.apps.tls = tlsConfig;
@@ -939,6 +947,19 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   // that Caddy serves leave the other policies and get the wildcard from the
   // cache by SNI (automatic_https.skip_certificates below).
   const vpnSkipCertificates = applyVpnCertTls(caddyConfig, tlsDomains);
+  // Without the wildcard in this config (its provider could not be set up)
+  // the names under the zone get no route and no certificate attempt.
+  const vpnServed = vpnOnlyHosts.every(h => vpnSkipCertificates.includes(h));
+  if (!vpnServed && vpnOnlyHosts.length > 0) {
+    const drop = new Set(vpnOnlyHosts);
+    const pols = (caddyConfig.apps.tls && caddyConfig.apps.tls.automation && caddyConfig.apps.tls.automation.policies) || [];
+    caddyConfig.apps.tls.automation.policies = pols.flatMap((p) => {
+      if (!Array.isArray(p.subjects)) return [p];
+      const subjects = p.subjects.filter(x => !drop.has(String(x).toLowerCase()));
+      return subjects.length > 0 ? [{ ...p, subjects }] : [];
+    });
+  }
+  const servedPortalHosts = portalHosts.filter(h => vpnServed || !vpnOnlyHosts.includes(h));
 
   // GateControl management UI route
   try {
@@ -965,6 +986,31 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     }
   } catch (err) { logger.warn({ err: err.message }, 'caddy config: adding management-UI vhost failed'); }
 
+  // The management under server.<zone> / gc-server.<zone> (wildcard of the
+  // VPN zone): these names exist only in the VPN — a request from anywhere
+  // else gets a plain 404, like the portal. The session cookie is host-only,
+  // so a login there is a session of its own; CSRF tokens live in that session.
+  if (vpnServed) {
+    for (const h of vpnMgmtHosts) {
+      if (caddyRoutes[h]) continue;
+      caddyRoutes[h] = {
+        listen: [':443', ':80'],
+        routes: [
+          {
+            match: [{ remote_ip: { ranges: INTERNAL_ONLY_RANGES } }],
+            handle: [{
+              handler: 'reverse_proxy',
+              ...appUpstream(config.app.port),
+              ...streamCloseDelay(),
+              headers: { request: { delete: ['X-GC-Portal-Peer-IP'] } },
+            }],
+          },
+          { handle: [{ handler: 'static_response', status_code: 404 }] },
+        ],
+      };
+    }
+  }
+
   // Home portal site — internal-only reverse proxy to the local Node app.
   // SECURITY-CRITICAL: This is the trusted-IP control for the VPN landing
   // portal (Task 10). The site:
@@ -975,8 +1021,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   //     source IP, NOT from any forwarded header.
   //   • Rewrites bare / to /portal so VPN clients landing on home.<domain> see
   //     the portal immediately; asset/API paths pass through unchanged.
-  if (!caddyRoutes[homeHost]) {
-    caddyRoutes[homeHost] = {
+  for (const portalHost of servedPortalHosts) {
+  if (!caddyRoutes[portalHost]) {
+    caddyRoutes[portalHost] = {
       listen: [':443', ':80'],
       routes: [
         // (0) Explicit, UNGATED ACME-challenge route (Spec §6 safeguard): matches the
@@ -1027,6 +1074,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       ],
     };
   }
+  }
 
   // HTTP→HTTPS redirect (docs/feature-security-options.md §0). srv0 listens on
   // :443 AND :80 and the host routes match only the hostname, so Caddy served
@@ -1044,7 +1092,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const addRedirectHost = (h) => {
     const k = String(h || '').toLowerCase();
     if (!k || redirectSeen.has(k) || pausedSet.has(k)) return;
-    if (k === String(homeHost).toLowerCase() && !routeDomains.has(k)) return;
+    if (portalHosts.includes(k) && !routeDomains.has(k)) return;
     redirectSeen.add(k);
     redirectHosts.push(k);
   };
@@ -1054,6 +1102,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     for (const a of aliasFqdnsOf(route)) addRedirectHost(a);
   }
   if (gcHost && !routeDomains.has(gcHost) && /^https:/i.test(String(config.app.baseUrl || ''))) addRedirectHost(gcHost);
+  // the management names under the VPN zone are https only (wildcard)
+  if (vpnServed) for (const h of vpnMgmtHosts) addRedirectHost(h);
   const redirectRoute = redirectHosts.length === 0 ? null : {
     '@id': 'gc_https_redirect',
     match: [{

@@ -29,9 +29,11 @@ test('effectivePortalHost: internal default when no base', () => {
 test('effectivePortalHost: prefix.base when base set; empty prefix -> apex', () => {
   settings.set('portal.base_domain', 'example.net');
   settings.set('portal.prefix', 'home');
-  assert.deepEqual(pc.effectivePortalHost(), { host: 'home.example.net', public: true });
+  // a public portal domain: one name, the same for every device and app
+  const pick = ({ host, public: pub, hosts, compatHost, vpn }) => ({ host, public: pub, hosts, compatHost, vpn });
+  assert.deepEqual(pick(pc.effectivePortalHost()), { host: 'home.example.net', public: true, hosts: ['home.example.net'], compatHost: 'home.example.net', vpn: false });
   settings.set('portal.prefix', '');
-  assert.deepEqual(pc.effectivePortalHost(), { host: 'example.net', public: true });
+  assert.deepEqual(pick(pc.effectivePortalHost()), { host: 'example.net', public: true, hosts: ['example.net'], compatHost: 'example.net', vpn: false });
 });
 
 test('validatePortalHost: empty base ok; unverified rejected; verified ok', async () => {

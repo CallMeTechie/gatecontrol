@@ -365,6 +365,25 @@ weiter unten. Die Funktion gehört zum Lizenz-Merkmal „Internes DNS“.
 5. Klick unten auf „Speichern“. Nach ein bis drei Minuten steht in der Karte
    „gültig“.
 
+Sobald das Zertifikat gültig ist, stellt der Server von selbst um:
+
+- **Portal:** Es läuft dann unter `home.vpn.example.com` mit dem gültigen
+  Zertifikat. Diese Adresse bekommen die Apps, die die Zone auflösen: die
+  Android-App, GateControl Pro ab **1.85.0** und Community ab **1.49.0**.
+  Ältere Windows-Apps, Einladungs- und Kiosk-Links und der Link im Menü
+  nutzen weiter `home.gc.internal` – diese Adresse funktioniert dauerhaft.
+  Ist unter „Portal“ eine öffentliche Portal-Domain eingetragen, bleibt das
+  Portal dort.
+- **Verwaltung:** Im VPN erreichst du die Verwaltung zusätzlich unter
+  `https://server.vpn.example.com` und `https://gc-server.vpn.example.com`.
+  Die Hauptadresse (`GC_BASE_URL`) bleibt. Unter den neuen Namen meldest du
+  dich eigens an (die Anmeldung gilt je Adresse); Passkeys und die Anmeldung
+  über einen Verzeichnisdienst (OIDC) gibt es nur unter der Hauptadresse.
+  Außerhalb des VPN antworten die Namen nicht.
+
+Hält der Server das Zertifikat an oder läuft es ab, gehen Portal und
+Verwaltung zurück auf ihre bisherigen Adressen.
+
 Das Zertifikat erneuert sich 30 Tage vor Ablauf von selbst. Klappt das
 mehrmals nicht, hält der Server weitere Versuche an, damit Let's Encrypt die
 Domain nicht sperrt, und die Karte sagt, was der Anbieter gemeldet hat. Läuft
@@ -418,5 +437,7 @@ nicht. Welche Namen der Server damit beantwortet, steht in der Karte unter
 „Genutzt von“.
 
 **Prüfen:** In der Karte „Zertifikat für die Namen“ steht „gültig“ mit dem
-Ablaufdatum, und unter „Domains & Zertifikate“ erscheint `*.vpn.example.com`
-mit Let's Encrypt als Aussteller.
+Ablaufdatum, unter „Genutzt von“ stehen `home.vpn.example.com` (Portal) und
+`server.vpn.example.com` (Verwaltung), und unter „Domains & Zertifikate“
+erscheint `*.vpn.example.com` mit Let's Encrypt als Aussteller. Auf einem
+Gerät im VPN öffnet `https://home.vpn.example.com` das Portal ohne Warnung.

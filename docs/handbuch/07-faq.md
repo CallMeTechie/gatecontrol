@@ -445,9 +445,10 @@ unbedenklich, aber lästig.
 
 Abhilfe: Wähle unter „Namen im VPN“ eine eigene Domain und richte unter
 „Einstellungen“ → „VPN & Netzwerk“ → „Zertifikat für die Namen“ ein Zertifikat
-für die Zone ein. Dann bekommen die Namen unter deiner Zone, die der Server
-beantwortet, ein Zertifikat, dem jeder Browser vertraut. Welche das sind,
-steht in der Karte unter „Genutzt von“. Mehr dazu:
+für die Zone ein. Dann läuft das Portal unter `home.vpn.example.com` mit einem
+Zertifikat, dem jeder Browser vertraut; die Apps (Android, Windows Pro ab
+1.85.0, Community ab 1.49.0) öffnen es von selbst dort. Welche Namen das
+Zertifikat nutzen, steht in der Karte unter „Genutzt von“. Mehr dazu:
 [2.12 Gültiges Zertifikat für die Namen im VPN](02-server-einrichten.md#212-gültiges-zertifikat-für-die-namen-im-vpn).
 
 ### „Testen“ beim Zertifikat für die Namen schlägt fehl

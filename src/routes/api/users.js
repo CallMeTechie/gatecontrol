@@ -616,7 +616,7 @@ function kioskPluginNames(ids, lang) {
 
 function kioskPairUrl(code) {
   const { effectivePortalHost } = require('../../services/portalConfig');
-  return `https://${effectivePortalHost().host}/portal/kiosk?code=${encodeURIComponent(code)}`;
+  return `https://${effectivePortalHost().compatHost}/portal/kiosk?code=${encodeURIComponent(code)}`;
 }
 
 router.get('/:id/kiosk', (req, res) => {

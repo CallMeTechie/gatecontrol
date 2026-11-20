@@ -269,6 +269,15 @@ module.exports = (ctx) => {
             && !document.getElementById('st-vc-off').hidden && document.getElementById('st-vc-renew').hidden
             && !!document.getElementById('st-vc-off').closest('.stx-cha')
             && document.getElementById('st-vc-pill').dataset.state === 'good', until90), until90);
+        step('valid: "Genutzt von" lists the portal and the management under the zone',
+          await until(p, () => {
+            const items = [...document.querySelectorAll('#st-vc-used .vn-name')].map((n) => n.querySelector('code').textContent);
+            return !document.getElementById('st-vc-used-row').hidden
+              && items.join() === 'home.vpn.example.com,gc-server.vpn.example.com,server.vpn.example.com';
+          }));
+        const perm = await p.request.fetch(B + '/api/v1/settings/portal');
+        step('the portal settings name home.<zone> next to the internal name',
+          (await perm.json()).data.vpnHost === 'home.vpn.example.com');
         await cardShot(p, 'vpncert-active');
 
         // ── Ändern ──
