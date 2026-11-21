@@ -261,7 +261,8 @@ function refreshInBackground({ force = false } = {}) {
   catch (err) { logger.debug({ err: err.message }, 'updates card: release refresh not started'); }
   try {
     const rel = require('./gatewayRelease');
-    if (force) rel._fetchLatest(); else rel.getLatestVersion();
+    // forced: the same once-a-minute limit as "Neu prüfen" on the Gateways page (gatewayRelease.checkNow)
+    if (force) rel.checkNow(); else rel.getLatestVersion();
   } catch (err) { logger.debug({ err: err.message }, 'updates card: gateway release refresh not started'); }
   if (process.env.NODE_ENV === 'test' && !module.exports._catalogInTest) return;
   try {

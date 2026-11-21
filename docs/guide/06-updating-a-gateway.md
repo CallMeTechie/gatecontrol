@@ -9,6 +9,13 @@ When a new gateway version is out, the gateway's card under “Devices” →
 gateway fetches the new image and restarts. If that fails, it rolls back to the
 previous version.
 
+GateControl looks for new gateway versions about once an hour. To check right
+away: **“Re-check”** in the gateway's view (or the arrows at the top right of
+its card). It asks the gateway whether it is reachable – a short message says
+“reachable” or “not reachable” – and at the same time looks for a new version
+(at most once a minute for the whole server). If there is one, “Update to …”
+appears after a few seconds.
+
 For the button to work, auto-update has to be set up on the device:
 
 - **Raspberry Pi image:** already built in.

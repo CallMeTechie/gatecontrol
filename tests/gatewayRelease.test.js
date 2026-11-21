@@ -103,4 +103,50 @@ describe('gatewayRelease', () => {
       else process.env.GC_GATEWAY_LATEST_RETRY_MS = origDelay;
     }
   });
+  // --- "Neu prüfen": a forced check, at most once a minute for the whole server ---
+
+  it('checkNow asks GitHub whatever the age of the copy, but only once a minute; pending until the answer', async () => {
+    const s = fresh();
+    let calls = 0;
+    let answer;
+    s._setTransport(() => { calls++; return new Promise((r) => { answer = r; }); });
+    try {
+      s._setCache('1.30.0'); // a fresh copy: the regular check would not ask
+      const first = s.checkNow();
+      assert.equal(calls, 1, 'forced: asked although the copy is fresh');
+      assert.equal(first.pending, true);
+      assert.equal(s.isChecking(), true);
+      // more clicks inside the minute (any gateway, any user): no further request
+      assert.equal(s.checkNow().pending, true);
+      answer({ status: 200, body: JSON.stringify({ tag_name: 'v1.31.0' }) });
+      await new Promise((r) => setImmediate(r));
+      assert.equal(s.isChecking(), false);
+      assert.equal(s.getLatestVersion(), '1.31.0');
+      assert.deepEqual(s.checkNow(), { pending: false });
+      assert.equal(calls, 1, 'throttled: one request per minute');
+      // a minute later it asks again
+      s._resetForce();
+      s.checkNow();
+      assert.equal(calls, 2);
+    } finally { s._setTransport(null); s._resetBackoff(); }
+    assert.equal(s.FORCE_MIN_MS, 60 * 1000);
+  });
+
+  it('checkNow keeps the back-off after a failed fetch and never fires a real request in tests', async () => {
+    const s = fresh();
+    let calls = 0;
+    s._setTransport(async () => { calls++; return { status: 503, body: '' }; });
+    try {
+      s.checkNow();
+      await new Promise((r) => setImmediate(r));
+      assert.equal(calls, 1);
+      assert.equal(s.getStatus().failed, true);
+      s._resetForce();
+      assert.equal(s.checkNow().pending, false, 'inside the back-off: nothing is asked');
+      assert.equal(calls, 1);
+    } finally { s._setTransport(null); s._resetBackoff(); }
+    // without a transport (test mode): no request, nothing pending
+    const t = fresh();
+    assert.deepEqual(t.checkNow(), { pending: false });
+  });
 });

@@ -213,4 +213,59 @@ describe('POST /api/v1/gateways/:id/update + update_state in list', () => {
     assert.equal(gmRow.update_request_id, null, 'terminal state must be cleared after the list call');
     gatewayRelease._setCache(null);
   });
+  // "Neu prüfen" (POST /:id/probe): the answer says reachable or not, and the same click
+  // asks for a newer gateway release — at most once a minute for the whole server.
+  function withProbe(stub, fn) {
+    const orig = gateways.refreshHealth;
+    gateways.refreshHealth = stub;
+    return Promise.resolve().then(fn).finally(() => { gateways.refreshHealth = orig; });
+  }
+
+  it('POST /:id/probe — reachable, starts the release check; "Update auf X" once GitHub answers', async () => {
+    clearTracking();
+    gatewayRelease._resetForce(); gatewayRelease._resetBackoff();
+    gatewayRelease._setCache('1.9.3'); // fresh copy: the hourly check would not ask
+    gateways.handleHeartbeat(peerId, { telemetry: { state_dir_writable: true, gateway_version: '1.9.3' } });
+    let calls = 0; let answer;
+    gatewayRelease._setTransport(() => { calls++; return new Promise((r) => { answer = r; }); });
+    try {
+      await withProbe(async (id) => { assert.equal(id, peerId); return { reachable: true }; }, async () => {
+        const res = await agent.post(`/api/v1/gateways/${peerId}/probe`).set('x-csrf-token', csrf).expect(200);
+        assert.deepEqual(res.body, { ok: true, reachable: true, update_check: { pending: true } });
+        assert.equal(calls, 1, 'the click asked GitHub although the copy was fresh');
+        let gw = (await agent.get('/api/v1/gateways').expect(200)).body.gateways.find((g) => g.peer_id === peerId);
+        assert.equal(gw.update_available, false);
+        answer({ status: 200, body: JSON.stringify({ tag_name: 'v1.9.5' }) });
+        await new Promise((r) => setImmediate(r));
+        const list = (await agent.get('/api/v1/gateways').expect(200)).body;
+        gw = list.gateways.find((g) => g.peer_id === peerId);
+        assert.equal(list.latest_version, '1.9.5');
+        assert.equal(gw.update_available, true);
+        // another click inside the minute: the gateway is asked, GitHub is not
+        const again = await agent.post(`/api/v1/gateways/${peerId}/probe`).set('x-csrf-token', csrf).expect(200);
+        assert.deepEqual(again.body.update_check, { pending: false });
+        assert.equal(calls, 1, 'at most one GitHub request a minute');
+      });
+    } finally {
+      gatewayRelease._setTransport(null); gatewayRelease._resetForce(); gatewayRelease._resetBackoff();
+      gatewayRelease._setCache(null);
+    }
+  });
+
+  it('POST /:id/probe — not reachable / unknown gateway / failing check', async () => {
+    await withProbe(async () => ({ reachable: false }), async () => {
+      const res = await agent.post(`/api/v1/gateways/${peerId}/probe`).set('x-csrf-token', csrf).expect(200);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.reachable, false);
+      assert.deepEqual(res.body.update_check, { pending: false }); // no transport in tests: nothing fired
+    });
+    const nf = await agent.post('/api/v1/gateways/999999/probe').set('x-csrf-token', csrf).expect(404);
+    assert.equal(nf.body.ok, false);
+    await withProbe(async () => { throw new Error('boom'); }, async () => {
+      const res = await agent.post(`/api/v1/gateways/${peerId}/probe`).set('x-csrf-token', csrf).expect(500);
+      assert.equal(res.body.ok, false);
+    });
+    // CSRF guards it
+    await agent.post(`/api/v1/gateways/${peerId}/probe`).expect(403);
+  });
 });
