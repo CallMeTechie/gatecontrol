@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.316.0] — 2026-11-21
+
+### Features
+- Anleitungs-Links ins In-App-Handbuch, „Ältere Versionen anzeigen“ (#563)
+
+---
+
 ## [1.315.2] — 2026-11-21
 
 ### Fixes
