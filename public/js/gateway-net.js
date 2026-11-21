@@ -37,6 +37,13 @@
   const GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
 
   function url(id, rest) { return API + encodeURIComponent(String(id)) + (rest || ''); }
+  // "Gateway-Versionen" of a "needs a newer image" hint: the view "Versionen" of this gateway inside the
+  // page (gateway-docs.js, #gw/<id>/versions); without it the releases on GitHub (new tab)
+  function versionsLink(g, key) {
+    const href = window.GCGatewayDocs && g ? window.GCGatewayDocs.versionsHref(g) : GW_RELEASES;
+    const out = /^https:/.test(href) ? { target: '_blank', rel: 'noopener noreferrer' } : {};
+    return h('a', Object.assign({ href, 'data-versions-link': '', text: t(key) }, out));
+  }
   function has(key) { const s = t(key); return s !== key; }
   function errText(e) {
     const code = e && e.code;
@@ -860,7 +867,7 @@
         out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'compose' }, [U.icon('info', 14), t('gwn.feat.print_office_compose'), ' ', dl]));
       } else if (p.officeCompose === 'image') {
         out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'image' }, [U.icon('info', 14), t('gwn.feat.print_office_image'), ' ',
-          h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+          versionsLink(g, 'gwn.feat.ai_releases')]));
       } else out.push(h('span', { class: 'gwe-d', 'data-print-office': 'starting', text: t('gwn.feat.print_office_starting') }));
       if (p.office && p.officeHint === 'small') out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'small' }, [U.icon('info', 14), t('gwn.feat.print_office_small')]));
     }
@@ -1024,7 +1031,7 @@
       extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': '' }, [U.icon('info', 14), t('gwn.feat.ai_compose'), ' ', dl]));
     } else if (a.compose === 'image') {
       extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': 'image' }, [U.icon('info', 14), t('gwn.feat.ai_old_image'), ' ',
-        h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+        versionsLink(g, 'gwn.feat.ai_releases')]));
     }
     extra.push(h('a', { href: '/settings/ki', class: 'gwn-link', 'data-ai-link': '', text: t('gwn.feat.ai_to_settings') }));
     return featRow(t('gwn.feat.ai'), text, sw, extra, 'ai');
@@ -1072,7 +1079,7 @@
       extra.push(h('span', { class: 'gwn-hint', 'data-cameras-compose': '' }, [U.icon('info', 14), t('gwn.feat.cameras_compose'), ' ', dl]));
     } else if (c.compose === 'image') {
       extra.push(h('span', { class: 'gwn-hint', 'data-cameras-compose': 'image' }, [U.icon('info', 14), t('gwn.feat.cameras_old_image'), ' ',
-        h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+        versionsLink(g, 'gwn.feat.ai_releases')]));
     }
     const plug = c.plugin || {};
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-door', class: 'gwn-link', 'data-cameras-link': 'plugin', text: t('gwn.feat.cameras_to_plugin') }));

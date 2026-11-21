@@ -177,11 +177,15 @@ router.get('/', (req, res) => {
 // ─── Versionen und Handbuch of the Gateways page (public/js/gateway-docs.js) ──
 
 /**
- * GET /api/v1/gateways/releases[?refresh=1] — what changed in each gateway
- * release (services/gatewayReleaseNotes.js: the GitHub releases of the gateway
- * repository, cached, offline-safe). The page marks the version a gateway runs.
- * → { available, stale, fetched_at, latest_version, releases_url,
- *     versions[{ version, published_at, notes, url, lines[{ kind: 'p'|'li', level, text }] }] }
+ * GET /api/v1/gateways/releases[?refresh=1][&offset=N&limit=N[&through=X.Y.Z]] — what
+ * changed in each gateway release (services/gatewayReleaseNotes.js: the GitHub
+ * releases of the gateway repository, cached, offline-safe). The page marks the
+ * version a gateway runs. A page of the list (newest first): `limit` versions from
+ * `offset` on (a single one left over is taken along, gateway-docs-kit.js pageEnd),
+ * the first page reaching down to the version `through` (the installed one) —
+ * paging reads only the cache, never GitHub. Without `limit`: the whole list.
+ * → { available, stale, fetched_at, latest_version, releases_url, total, offset, has_more,
+ *     oldest_version, through{ version, newer, listed }|null, versions[{ version, published_at, notes, url, lines[{ kind: 'p'|'li', level, text }] }] }
  */
 router.get('/releases', async (req, res) => {
   try {
@@ -189,16 +193,35 @@ router.get('/releases', async (req, res) => {
     const latest = require('../../services/gatewayRelease').getLatestVersion() || null;
     // the notes as plain lines, the way the plugin area shows release notes (public/js/plugins-ui.js)
     const { noteLines } = require('../../../public/js/plugins-ui');
+    const kit = require('../../../public/js/gateway-docs-kit');
     const r = await notes.list({ refresh: req.query.refresh === '1' });
+    const all = r.versions;
+    const int = (v, max) => (typeof v === 'string' && /^\d{1,4}$/.test(v) ? Math.min(Number(v), max) : null);
+    const offset = int(req.query.offset, all.length) || 0;
+    const limit = int(req.query.limit, 100);
+    const through = offset === 0 ? kit.cleanVersion(req.query.through) : null;
+    let end = all.length;
+    if (limit) {
+      const at = through ? all.findIndex((v) => v.version === through) : -1;
+      end = kit.pageEnd(all.length, offset, Math.max(limit, at + 1 - offset));
+    }
+    const page = all.slice(offset, end);
+    const sum = through ? kit.summary(all, through) : null;
     res.set('Cache-Control', 'no-store');
     res.json({
       ok: true,
       available: r.available,
       stale: r.stale,
       fetched_at: r.fetched_at,
-      latest_version: latest || (r.versions[0] ? r.versions[0].version : null),
+      latest_version: latest || (all[0] ? all[0].version : null),
       releases_url: notes.RELEASES_URL,
-      versions: r.versions.map((v) => ({ ...v, lines: noteLines(v.notes) })),
+      total: all.length,
+      offset,
+      has_more: end < all.length,
+      oldest_version: all.length ? all[all.length - 1].version : null,
+      // the head of the list counts over all versions, not only this page
+      through: sum ? { version: through, newer: sum.newer, listed: sum.listed } : null,
+      versions: page.map((v) => ({ ...v, lines: noteLines(v.notes) })),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list gateway releases');

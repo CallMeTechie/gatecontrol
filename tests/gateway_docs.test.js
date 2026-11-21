@@ -72,7 +72,7 @@ describe('gateway release notes (services/gatewayReleaseNotes.js)', () => {
   it('loads once, keeps the list (file next to the database), checks again only when old; offline → the last list, stale', async () => {
     let calls = 0;
     let headers = null;
-    notes._setTransport((url, h) => { calls++; headers = h; assert.match(url, /^https:\/\/api\.github\.com\/repos\/CallMeTechie\/gatecontrol-gateway\/releases\?per_page=60$/); return answer([release('1.34.0', BODY), release('1.33.1', 'x')])(); });
+    notes._setTransport((url, h) => { calls++; headers = h; assert.match(url, /^https:\/\/api\.github\.com\/repos\/CallMeTechie\/gatecontrol-gateway\/releases\?per_page=100$/); return answer([release('1.34.0', BODY), release('1.33.1', 'x')])(); });
     const a = await notes.list();
     assert.equal(calls, 1);
     assert.equal(a.available, true);
@@ -258,6 +258,18 @@ describe('gateway docs kit (public/js/gateway-docs-kit.js)', () => {
     assert.equal(kit.visibleCount(null, null), 0);
   });
 
+  it('"Ältere anzeigen": pages of ten; a single row left over is taken along', () => {
+    assert.equal(kit.VERSIONS_PAGE, 10);
+    assert.equal(kit.pageEnd(25, 5, 10), 15);
+    assert.equal(kit.pageEnd(25, 15, 10), 25);
+    assert.equal(kit.pageEnd(16, 5, 10), 16, 'one left over: along');
+    assert.equal(kit.pageEnd(17, 5, 10), 15);
+    assert.equal(kit.pageEnd(13, 5, 10), 13);
+    assert.equal(kit.pageEnd(5, 5, 10), 5);
+    assert.equal(kit.pageEnd(0, 0, 10), 0);
+    assert.equal(kit.pageEnd(30, 0, 0), 1, 'at least one row');
+  });
+
   it('"Anleitung": a help topic → its heading in the handbook of the gateway; nothing for a topic outside it', () => {
     const anchors = { 'gw.rpi': '3-3-raspberry-pi', 'feat.dns': 'dns-filter', top: '', bad: '../x', obj: {} };
     assert.equal(kit.topicHash(7, 'gw.rpi', anchors), '#gw/7/handbook/3-3-raspberry-pi');
@@ -308,6 +320,45 @@ describe('GET /api/v1/gateways/releases, /handbook and the page', () => {
     assert.equal(r.body.versions[1].url, `${REL}/tag/v1.34.0`);
     // the lines the page renders as text (the plugin area's noteLines, made on the server)
     assert.deepEqual(r.body.versions[1].lines, [{ kind: 'li', level: 0, text: 'Funksticks von Hand zuordnen (#51)' }, { kind: 'li', level: 0, text: 'Office-Image im Release (#52)' }]);
+  });
+
+  it('releases: pages of the cached list (offset, limit, down to the installed version) — GitHub asked once', async () => {
+    notes._reset();
+    let calls = 0;
+    const all = Array.from({ length: 25 }, (_, i) => '1.' + (40 - i) + '.0');
+    notes._setTransport(() => { calls++; return answer(all.map((v) => release(v, '- ' + v)))(); });
+    require('../src/services/gatewayRelease')._setCache('1.40.0');
+    const first = await agent.get('/api/v1/gateways/releases?limit=5&through=1.38.0').expect(200);
+    assert.deepEqual(first.body.versions.map((v) => v.version), all.slice(0, 5));
+    assert.equal(first.body.total, 25);
+    assert.equal(first.body.offset, 0);
+    assert.equal(first.body.has_more, true);
+    assert.equal(first.body.oldest_version, '1.16.0');
+    assert.deepEqual(first.body.through, { version: '1.38.0', newer: 2, listed: true });
+    // nine versions behind: the first page reaches down to the installed one
+    const behind = await agent.get('/api/v1/gateways/releases?limit=5&through=v1.31.0').expect(200);
+    assert.equal(behind.body.versions.length, 10);
+    assert.deepEqual(behind.body.through, { version: '1.31.0', newer: 9, listed: true });
+    // older than the whole list: counted over all of it, not the page
+    const old = await agent.get('/api/v1/gateways/releases?limit=5&through=1.2.0').expect(200);
+    assert.deepEqual(old.body.through, { version: '1.2.0', newer: 25, listed: false });
+    const p2 = await agent.get('/api/v1/gateways/releases?offset=5&limit=10').expect(200);
+    assert.deepEqual(p2.body.versions.map((v) => v.version), all.slice(5, 15));
+    assert.equal(p2.body.has_more, true);
+    assert.equal(p2.body.through, null, 'only the first page knows the installed version');
+    assert.ok(Array.isArray(p2.body.versions[0].lines));
+    const p3 = await agent.get('/api/v1/gateways/releases?offset=15&limit=10').expect(200);
+    assert.deepEqual(p3.body.versions.map((v) => v.version), all.slice(15));
+    assert.equal(p3.body.has_more, false);
+    const past = await agent.get('/api/v1/gateways/releases?offset=99&limit=10').expect(200);
+    assert.deepEqual(past.body.versions, []);
+    // odd parameters: the whole list (as without paging)
+    for (const q of ['', '?limit=x', '?limit=-1&offset=abc', '?limit=0', '?through=<b>']) {
+      const r = await agent.get('/api/v1/gateways/releases' + q).expect(200);
+      assert.equal(r.body.versions.length, 25, q);
+      assert.equal(r.body.has_more, false, q);
+    }
+    assert.equal(calls, 1, 'one request to GitHub; the pages come from the cache');
   });
 
   it('releases and handbook need a signed-in admin', async () => {
@@ -371,6 +422,14 @@ describe('GET /api/v1/gateways/releases, /handbook and the page', () => {
       const src = fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8');
       assert.doesNotMatch(src, /docs\/(handbuch|guide)\//, f);
       assert.equal((src.match(/GCHandbook\.url\(/g) || []).length, f === 'gateway-edge.js' ? 1 : 0, f + ': only the fallback of guideUrl()');
+    }
+    // the hints "needs a newer gateway / image" lead to "Versionen" of the gateway inside the page,
+    // the releases on GitHub only as the fallback without gateway-docs.js
+    for (const f of ['gateway-net.js', 'gateway-radio.js']) {
+      const src = fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8');
+      assert.equal((src.match(/href: GW_RELEASES/g) || []).length, 0, f + ': no link to the releases on GitHub built by hand');
+      assert.match(src, /window\.GCGatewayDocs\.versionsHref\(g\) : GW_RELEASES/, f);
+      assert.equal((src.match(/versionsLink\(/g) || []).length, 4, f + ': three hints and the helper');
     }
   });
 

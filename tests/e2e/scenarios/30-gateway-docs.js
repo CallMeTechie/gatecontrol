@@ -37,9 +37,10 @@ const VERSIONS = [
   { version: '1.31.0', published_at: '2026-11-07T14:31:00.000Z', notes: '- Lokale KI mit Grafikkarte (#49)', url: REL + '/tag/v1.31.0' },
   { version: '1.30.0', published_at: '2026-11-06T10:00:00.000Z', notes: '- Drucken und Scannen (#45)', url: REL + '/tag/v1.30.0' },
 ];
-// a longer history: with it "All versions" opens with the newest ones and folds the rest
-const OLDER = ['1.29.2', '1.29.1', '1.29.0', '1.28.0', '1.27.1', '1.27.0', '1.26.0', '1.25.0']
+// a longer history (25 versions): "All versions" opens with the newest ones, "Show older" adds ten at a time
+const OLDER = Array.from({ length: 20 }, (_, i) => '1.' + (29 - Math.floor(i / 2)) + '.' + (i % 2 ? 0 : 1))
   .map((v, i) => ({ version: v, published_at: new Date(Date.UTC(2026, 9, 28 - i)).toISOString(), notes: '- Änderung in ' + v, url: REL + '/tag/v' + v }));
+const kit = require('../../../public/js/gateway-docs-kit');
 // the API sends the notes as lines too (the plugin area's noteLines, routes/api/gateways.js)
 const { noteLines } = require('../../../public/js/plugins-ui');
 VERSIONS.concat(OLDER).forEach((v) => { v.lines = noteLines(v.notes); });
@@ -57,9 +58,21 @@ module.exports = (ctx) => {
 
   let stale = false;
   let long = false; // the list with the older versions too
+  let pages = [];     // the offsets the page asked for (paging as routes/api/gateways.js does it)
   async function mockReleases(page) {
     await page.route(/\/api\/v1\/gateways\/releases(\?.*)?$/, (route) => {
-      const body = { ok: true, available: true, stale, fetched_at: Date.now() - 3 * 3600 * 1000, latest_version: '1.34.1', releases_url: REL, versions: long ? VERSIONS.concat(OLDER) : VERSIONS };
+      const all = long ? VERSIONS.concat(OLDER) : VERSIONS;
+      const q = new URL(route.request().url()).searchParams;
+      const offset = Math.min(Number(q.get('offset') || 0), all.length);
+      const limit = Number(q.get('limit') || 0);
+      const through = offset === 0 ? kit.cleanVersion(q.get('through')) : null;
+      const at = through ? all.findIndex((v) => v.version === through) : -1;
+      const end = limit ? kit.pageEnd(all.length, offset, Math.max(limit, at + 1 - offset)) : all.length;
+      pages.push(offset);
+      const sum = through ? kit.summary(all, through) : null;
+      const body = { ok: true, available: true, stale, fetched_at: Date.now() - 3 * 3600 * 1000, latest_version: '1.34.1', releases_url: REL,
+        total: all.length, offset, has_more: end < all.length, oldest_version: all[all.length - 1].version,
+        through: sum ? { version: through, newer: sum.newer, listed: sum.listed } : null, versions: all.slice(offset, end) };
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
   }
@@ -239,34 +252,51 @@ module.exports = (ctx) => {
       && document.querySelectorAll('#gwd-versions .pgx-vr').length === 5));
     stale = false;
 
-    // a long history: the newest five, the rest behind "Show older"
+    // a long history: the newest five, ten more per "Show older" (pages of the server)
     long = true;
+    pages = [];
     await page.click('#gwd-ver-reload');
     const shownRows = () => [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).map((r) => r.getAttribute('data-version')).join();
-    step('docs: 13 versions: the newest five show (with "Installed" and every "Newer" one), eight are folded behind "Show older (8)"', await until(page, () => {
+    step('docs: 25 versions: the newest five show (with "Installed" and every "Newer" one), "Show older (10 of 20)"; only the first page is loaded', await until(page, () => {
       const older = document.getElementById('gwd-ver-older');
       const btn = document.getElementById('gwd-ver-older-btn');
       const shown = [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).map((r) => r.getAttribute('data-version')).join();
-      return !!older && older.hidden && older.querySelectorAll('.pgx-vr').length === 8 && shown === '1.34.1,1.34.0,1.33.1,1.31.0,1.30.0'
-        && !!btn && btn.textContent === 'Show older (8)' && btn.getAttribute('aria-expanded') === 'false' && btn.getAttribute('aria-controls') === 'gwd-ver-older'
-        && !document.getElementById('gwd-ver-stale');
+      return !!older && older.hidden && document.querySelectorAll('#gwd-versions .pgx-vr').length === 5 && shown === '1.34.1,1.34.0,1.33.1,1.31.0,1.30.0'
+        && !!btn && btn.textContent === 'Show older (10 of 20)' && btn.getAttribute('aria-expanded') === 'false' && btn.getAttribute('aria-controls') === 'gwd-ver-older'
+        && !document.getElementById('gwd-ver-fold-btn') && !document.getElementById('gwd-ver-stale')
+        && /3 versions are newer/.test((document.getElementById('gwd-ver-newer') || {}).textContent || '');
     }), await page.evaluate(shownRows));
+    step('docs: the first answer is one page', pages.join() === '0', pages.join());
     await shot(page, 'gateway-docs-versions-folded');
     await page.focus('#gwd-ver-older-btn');
     await page.keyboard.press('Enter');
-    step('docs: "Show older" (keyboard) opens the rest; the button says "Hide older"', await until(page, () => {
+    step('docs: "Show older" (keyboard) loads the next ten (offset 5); "Show older (10)" and "Hide older"', await until(page, () => {
       const older = document.getElementById('gwd-ver-older');
       const btn = document.getElementById('gwd-ver-older-btn');
+      const fold = document.getElementById('gwd-ver-fold-btn');
       const rows = [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null);
-      return !older.hidden && rows.length === 13 && rows[12].getAttribute('data-version') === '1.25.0' && rows[5].getAttribute('data-state') === 'older'
-        && btn.textContent === 'Hide older' && btn.getAttribute('aria-expanded') === 'true' && older.contains(document.activeElement);
-    }));
+      return !older.hidden && rows.length === 15 && rows[5].getAttribute('data-version') === '1.29.1' && rows[5].getAttribute('data-state') === 'older'
+        && btn.textContent === 'Show older (10)' && btn.getAttribute('aria-expanded') === 'true' && !!fold && fold.textContent === 'Hide older'
+        && older.contains(document.activeElement) && document.activeElement.getAttribute('data-version') === '1.29.1';
+    }), pages.join());
+    step('docs: one more page asked for', pages.join() === '0,5', pages.join());
     await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
     await page.waitForTimeout(1500);
-    step('docs: the poll leaves the older versions open', await page.evaluate(() => !document.getElementById('gwd-ver-older').hidden));
+    step('docs: the poll leaves the older versions open', await page.evaluate(() => !document.getElementById('gwd-ver-older').hidden
+      && [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).length === 15));
+    await page.click('#gwd-ver-older-btn');
+    step('docs: "Show older" again: the last ten (offset 15); the one button says "Hide older"', await until(page, () => {
+      const rows = [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null);
+      const btn = document.getElementById('gwd-ver-older-btn');
+      return rows.length === 25 && rows[24].getAttribute('data-version') === '1.20.0' && btn.textContent === 'Hide older'
+        && btn.getAttribute('aria-expanded') === 'true' && !document.getElementById('gwd-ver-fold-btn');
+    }), pages.join());
     await page.click('#gwd-ver-older-btn');
     step('docs: "Hide older" folds them again', await until(page, () => document.getElementById('gwd-ver-older').hidden
-      && document.getElementById('gwd-ver-older-btn').textContent === 'Show older (8)'));
+      && document.getElementById('gwd-ver-older-btn').textContent === 'Show older (10 of 20)' && document.activeElement === document.getElementById('gwd-ver-older-btn')));
+    await page.click('#gwd-ver-older-btn');
+    step('docs: opened again from what is loaded – no new request', await until(page, () => [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).length === 15)
+      && pages.join() === '0,5,15', pages.join());
     long = false;
     await page.click('#gwd-ver-refresh');
     step('docs: a short list (five versions) has no fold', await until(page, () => document.querySelectorAll('#gwd-versions .pgx-vr').length === 5 && !document.getElementById('gwd-ver-older-btn')));

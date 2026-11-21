@@ -396,10 +396,15 @@ the top right of the gateway:
 - **Versions** – every gateway version with its changes, the newest at the
   top. The version this gateway runs is marked **“Installed”**; every newer
   one **“Newer”**. If there is an update, a line above says how many versions
-  it brings. “What's new?” next to “Update to … available” in “Status” leads
+  it brings. First you see the newest ones (and everything down to the
+  installed one); **“Show older”** adds ten more each time, “Hide older” folds
+  them again. “What's new?” next to “Update to … available” in “Status” and
+  the link “Gateway versions” in the hints “needs a newer gateway/image” lead
   here as well.
 - **Manual** – chapters 3 to 7 of this guide right inside GateControl, with a
-  table of contents. It ships with GateControl and needs no internet.
+  table of contents. It ships with GateControl and needs no internet. The
+  “Guide” links of the Gateways page and the instructions links of the
+  assistant open it (in a new tab) right at the matching section.
 
 GateControl loads the version list from GitHub (at most every 6 hours) and
 keeps it. If your server cannot reach GitHub right now, you see the last

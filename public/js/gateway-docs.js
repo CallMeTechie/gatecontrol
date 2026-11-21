@@ -75,7 +75,10 @@
   let host = null;         // the view's element (#gw-docs-view)
   let rel = null;          // the last answer of /releases
   let hb = null;           // { lang, data }
-  let olderOpen = false;   // "Ältere anzeigen" of "Alle Versionen" is open (kept across the poll, closed for another gateway)
+  let more = [];           // the older versions loaded by "Ältere anzeigen" (pages after the first answer)
+  let shown = 0;           // how many rows of "Alle Versionen" show (kept across the poll; 0: the first page)
+  let moreBusy = false;    // a page of older versions is on its way
+  let moreFailed = false;  // the last page could not be loaded
 
   function installedOf(g) { return K.cleanVersion(g && g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null); }
 
@@ -111,37 +114,50 @@
         el('span', { class: 'pgx-grow', text: t('gwd.ver.stale', { time: fmtDateTime(d.fetched_at) }) }),
         linkBtn(t('gwd.ver.reload'), () => reload(), { id: 'gwd-ver-reload' })]));
     }
-    const versions = Array.isArray(d.versions) ? d.versions : [];
+    const versions = loaded(d);
     const installed = installedOf(gw);
     const newest = K.cleanVersion(latest) || K.cleanVersion(d.latest_version) || (versions[0] ? versions[0].version : '');
-    const s = K.summary(versions, installed);
+    // the head counts over the whole list (the server's `through`: the first answer has only a page)
+    const th = d.through && d.through.version === installed ? d.through : null;
+    const s = th ? { installed, newer: th.newer | 0, listed: !!th.listed } : K.summary(versions, installed);
+    const oldest = K.cleanVersion(d.oldest_version) || (versions.length ? versions[versions.length - 1].version : null);
     if (s.newer) {
       panel.appendChild(el('div', { class: 'pgx-banner', 'data-tone': 'info', role: 'status', id: 'gwd-ver-newer' }, [
         el('span', { class: 'pgx-grow' }, [el('b', { text: t('gwd.ver.update', { version: newest }) }), ' ',
           el('span', { class: 'pgx-muted', text: t(s.newer === 1 ? 'gwd.ver.newer_one' : 'gwd.ver.newer_n', { n: s.newer, installed: s.installed }) })])]));
     }
-    // the newest ones (and everything down to the installed one); the rest behind "Ältere anzeigen"
-    const first = K.visibleCount(versions, installed);
+    // the newest ones (and everything down to the installed one); "Ältere anzeigen" adds the next
+    // ten — from what is loaded, else the next page of the server
+    const total = Number.isInteger(d.total) && d.total >= versions.length ? d.total : versions.length;
+    const at = installed ? versions.findIndex((v) => v.version === installed) : -1;
+    const first = Math.min(versions.length, K.pageEnd(total, 0, Math.max(K.VERSIONS_FIRST, at + 1)));
+    const upto = Math.max(first, Math.min(shown, versions.length));
     const rows = versions.slice(0, first).map((v) => versionRow(v, installed, newest));
     if (!rows.length) rows.push(el('p', { class: 'pgx-empty', text: t('gwd.ver.empty') }));
-    if (versions.length > first) {
-      const rest = versions.length - first;
-      const older = el('div', { id: 'gwd-ver-older', hidden: !olderOpen }, versions.slice(first).map((v) => versionRow(v, installed, newest)));
-      const label = () => t(olderOpen ? 'gwd.ver.older_hide' : 'gwd.ver.older_show', { n: rest });
-      const btn = linkBtn(label(), () => {
-        olderOpen = !olderOpen;
-        older.hidden = !olderOpen;
-        btn.textContent = label();
-        btn.setAttribute('aria-expanded', String(olderOpen));
-        // opened: on to the first of the older ones (keyboard and screen reader land where the new rows start)
-        if (olderOpen && older.firstChild) { older.firstChild.setAttribute('tabindex', '-1'); try { older.firstChild.focus({ preventScroll: true }); } catch (_) { /* old browser */ } }
-      }, { id: 'gwd-ver-older-btn', 'aria-expanded': String(olderOpen), 'aria-controls': 'gwd-ver-older' });
-      rows.push(older, el('p', { class: 'pgx-acts gwd-older' }, [btn]));
+    if (total > first) {
+      const older = el('div', { id: 'gwd-ver-older', hidden: upto === first }, versions.slice(first, upto).map((v) => versionRow(v, installed, newest)));
+      const rest = total - upto;
+      const acts = [];
+      if (rest > 0) {
+        const n = K.pageEnd(total, upto, K.VERSIONS_PAGE) - upto;
+        acts.push(linkBtn(moreBusy ? t('gwd.ver.older_loading') : t(n === rest ? 'gwd.ver.older_show' : 'gwd.ver.older_show_page', { n, rest }),
+          () => showOlder(panel, upto), { id: 'gwd-ver-older-btn', 'aria-expanded': String(upto > first), 'aria-controls': 'gwd-ver-older', disabled: moreBusy ? true : null }));
+      }
+      if (upto > first) {
+        acts.push(linkBtn(t('gwd.ver.older_hide'), () => {
+          shown = 0;
+          versionsBody(panel, rel);
+          const b = document.getElementById('gwd-ver-older-btn');
+          if (b) b.focus();
+        }, rest > 0 ? { id: 'gwd-ver-fold-btn', 'aria-controls': 'gwd-ver-older' } : { id: 'gwd-ver-older-btn', 'aria-expanded': 'true', 'aria-controls': 'gwd-ver-older' }));
+      }
+      rows.push(older, el('p', { class: 'pgx-acts gwd-older' }, acts));
+      if (moreFailed) rows.push(el('p', { class: 'pgx-empty', id: 'gwd-ver-older-err', role: 'alert', text: t('gwd.ver.older_failed') }));
     }
     // the installed version is older than the list (or the gateway reports none)
     let note = null;
     if (!installed) note = t('gwd.ver.unknown');
-    else if (!s.listed && versions.length && K.compare(installed, versions[versions.length - 1].version) < 0) note = t('gwd.ver.older_than_list', { version: installed });
+    else if (!s.listed && oldest && K.compare(installed, oldest) < 0) note = t('gwd.ver.older_than_list', { version: installed });
     if (note) rows.push(el('p', { class: 'pgx-empty', id: 'gwd-ver-note', text: note }));
     const sub = d.fetched_at ? t('gwd.ver.checked', { time: fmtDateTime(d.fetched_at) }) : null;
     const right = el('span', { class: 'pgx-push pgx-acts' }, [
@@ -151,12 +167,51 @@
     panel.appendChild(card([head].concat(rows), { 'aria-labelledby': 'gwd-versions-h', id: 'gwd-versions' }, 'pgx-flush'));
   }
 
+  /** The first answer and the pages loaded after it, newest first, each version once. */
+  function loaded(d) {
+    const seen = new Set();
+    return (Array.isArray(d.versions) ? d.versions : []).concat(more)
+      .filter((v) => v && typeof v.version === 'string' && !seen.has(v.version) && seen.add(v.version));
+  }
+
+  function releasesUrl(q) {
+    const p = Object.keys(q).filter((k) => q[k] != null && q[k] !== '').map((k) => k + '=' + encodeURIComponent(String(q[k])));
+    return '/api/v1/gateways/releases' + (p.length ? '?' + p.join('&') : '');
+  }
+
   async function panelVersions(panel, refresh) {
     panel.appendChild(el('p', { class: 'pgx-loading', text: t('gwd.ver.loading') }));
-    const d = await getJson('/api/v1/gateways/releases' + (refresh ? '?refresh=1' : ''));
+    // the first page: the newest ones, down to the installed version (the server cuts it from its cache)
+    const d = await getJson(releasesUrl({ refresh: refresh ? '1' : null, limit: K.VERSIONS_FIRST, through: installedOf(gw) }));
     if (!panel.isConnected) return;
     rel = d;
+    more = []; shown = 0; moreBusy = false; moreFailed = false;
     versionsBody(panel, d);
+  }
+
+  /** "Ältere anzeigen": the next ten rows — loaded ones at once, the rest as the next page of the server. */
+  async function showOlder(panel, from) {
+    if (moreBusy || !rel) return;
+    const d = rel;
+    const total = Number.isInteger(d.total) ? d.total : loaded(d).length;
+    const want = K.pageEnd(total, from, K.VERSIONS_PAGE);
+    if (loaded(d).length < want) {
+      moreBusy = true; moreFailed = false;
+      versionsBody(panel, d);
+      const have = loaded(d).length;
+      const r = await getJson(releasesUrl({ offset: have, limit: K.VERSIONS_PAGE }));
+      if (!panel.isConnected || rel !== d) return;
+      moreBusy = false;
+      if (r && r.ok && Array.isArray(r.versions)) more = more.concat(r.versions);
+      else moreFailed = true;
+    }
+    shown = Math.min(want, loaded(d).length);
+    versionsBody(panel, d);
+    // on to the first of the new rows (keyboard and screen reader land where they start)
+    const v = loaded(d)[from];
+    const row = v && from < shown ? panel.querySelector('#gwd-ver-older [data-version="' + v.version + '"]') : null;
+    if (row) { row.setAttribute('tabindex', '-1'); try { row.focus({ preventScroll: true }); } catch (_) { /* old browser */ } }
+    else if (moreFailed) { const b = document.getElementById('gwd-ver-older-btn'); if (b) b.focus(); }
   }
   function reload() { if (cur && cur.view === 'versions') render(true); }
 
@@ -307,7 +362,7 @@
       if (route.view === 'handbook' && route.target) { cur.target = route.target; hbJump(route.target, true); }
       return;
     }
-    if (!cur || cur.id !== route.id) olderOpen = false;
+    if (!cur || cur.id !== route.id) shown = 0;
     cur = { id: route.id, view: route.view, target: route.target || null };
     render(false);
     if (route.view === 'versions') window.scrollTo(0, 0);
@@ -325,7 +380,7 @@
     const panel = document.getElementById('gwd-panel');
     if (panel && !panel.querySelector('.pgx-loading')) versionsBody(panel, rel);
   }
-  function hide() { cur = null; olderOpen = false; if (host) clear(host); }
+  function hide() { cur = null; shown = 0; more = []; if (host) clear(host); }
 
   /** The address of "Versionen" of a gateway — for "Was ist neu?" of the other tabs. */
   function versionsHref(g) { return g && g.peer_id != null ? K.versionsHash(g.peer_id) : RELEASES; }
