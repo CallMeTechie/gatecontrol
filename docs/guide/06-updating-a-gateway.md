@@ -276,18 +276,30 @@ services:
 
   # Local MQTT broker. Idle (only a small watcher) until GateControl switches MQTT on;
   # the gateway then writes mosquitto.conf/passwd/acl to /gc-mqtt-conf (out of reach of
-  # the edge container). The watcher copies them to /gc-mqtt, restarts Mosquitto when the
-  # configuration changes and sends SIGHUP when the accounts change. Port 1883 only on
-  # LAN addresses, no anonymous access.
+  # the edge container). The watcher copies them to /gc-mqtt, with TLS certificate and key
+  # to /run/gc-mqtt-tls (tmpfs, 0600), restarts Mosquitto when the configuration changes
+  # and sends SIGHUP when the accounts or the certificate change. Port 1883 only on LAN
+  # addresses, no anonymous access.
   mqtt:
     image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
     entrypoint:
       - /bin/sh
       - -c
       - |
-        G=/gc-mqtt-conf; C=/gc-mqtt; p=""; s=""; r=""
+        G=/gc-mqtt-conf; C=/gc-mqtt; T=/run/gc-mqtt-tls; p=""; s=""; r=""
+        umask 077
         halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }
-        take() { for f in mosquitto.conf passwd acl; do cp "$$G/$$f" "$$C/.$$f" && chmod 600 "$$C/.$$f" && mv -f "$$C/.$$f" "$$C/$$f" || return 1; done; }
+        put() { cp "$$1" "$$2.n" && chmod 600 "$$2.n" && mv -f "$$2.n" "$$2"; }
+        take() {
+          for f in passwd acl; do put "$$G/$$f" "$$C/$$f" || return 1; done
+          if [ ! -w "$$T" ]; then put "$$G/mosquitto.conf" "$$C/mosquitto.conf"; return; fi
+          for d in tls tls-self; do
+            if [ -d "$$G/$$d" ]; then
+              mkdir -p "$$T/$$d" && put "$$G/$$d/server.crt" "$$T/$$d/server.crt" && put "$$G/$$d/server.key" "$$T/$$d/server.key" || return 1
+            else rm -rf "$$T/$$d"; fi
+          done
+          sed -E "s#^(certfile|keyfile) $$G/#\1 $$T/#" "$$G/mosquitto.conf" > "$$C/mosquitto.conf.n" && mv -f "$$C/mosquitto.conf.n" "$$C/mosquitto.conf"
+        }
         trap 'halt; exit 0' TERM INT
         mkdir -p "$$C/data"
         while :; do
@@ -313,6 +325,8 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    tmpfs:                    # copy of certificate and key (0600, only 61001), never on disk
+      - /run/gc-mqtt-tls:size=1m,mode=0700,uid=61001,gid=61001
     mem_limit: 128m
     pids_limit: 32
     depends_on:

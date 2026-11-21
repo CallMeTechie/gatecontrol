@@ -240,11 +240,20 @@ describe('compose and commands', () => {
       assert.match(mqtt, /entrypoint:\n {6}- \/bin\/sh\n {6}- -c\n {6}- \|\n {8}G=\/gc-mqtt-conf; C=\/gc-mqtt;/);
       // compose escapes: every $ of the script doubled; the watcher copies the gateway's files before starting
       assert.match(mqtt, /if take; then mosquitto -c "\$\$C\/mosquitto\.conf" & p=\$\$!/);
+      // gateway >= 1.46: the watcher copies certificate and key into its own tmpfs (0600) and points
+      // certfile/keyfile of its mosquitto.conf there; without the tmpfs as before (store of the gateway, 0640)
+      assert.match(mqtt, /T=\/run\/gc-mqtt-tls;/);
+      assert.match(mqtt, /\n {8}umask 077\n/);
+      assert.match(mqtt, /for d in tls tls-self; do/);
+      assert.match(mqtt, /put "\$\$G\/\$\$d\/server\.key" "\$\$T\/\$\$d\/server\.key"/);
+      assert.match(mqtt, /sed -E "s#\^\(certfile\|keyfile\) \$\$G\/#\\1 \$\$T\/#"/);
+      assert.match(mqtt, /if \[ ! -w "\$\$T" \]; then put "\$\$G\/mosquitto\.conf" "\$\$C\/mosquitto\.conf"; return; fi/);
+      assert.match(mqtt, /read_only: true\n {4}tmpfs: [^\n]*\n {6}- \/run\/gc-mqtt-tls:size=1m,mode=0700,uid=61001,gid=61001\n/);
       assert.doesNotMatch(mqtt.replace(/\$\$/g, ''), /\$/);
       assert.match(mqtt, /user: "61001:61001"/);
       assert.match(mqtt, /cap_drop:\n {6}- ALL/);
       assert.match(mqtt, /no-new-privileges:true/);
-      assert.match(mqtt, /read_only: true\n {4}mem_limit: 128m\n {4}pids_limit: 32/);
+      assert.match(mqtt, /\n {4}mem_limit: 128m\n {4}pids_limit: 32/);
       assert.match(mqtt, /depends_on:\n {6}- gateway/);
       assert.match(mqtt, /source: edge-mqtt-conf\n {8}target: \/gc-mqtt-conf\n {8}read_only: true/);
       assert.match(mqtt, /source: edge-mqtt\n {8}target: \/gc-mqtt\n {8}volume: \{ nocopy: true \}/);
