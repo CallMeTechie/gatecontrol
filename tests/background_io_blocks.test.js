@@ -15,6 +15,10 @@
 //     byte), und dem letzten guten Katalog, solange GitHub nicht antwortet.
 
 const crypto = require('node:crypto');
+// WAL checkpoints off the main thread, as in production (db/connection.js; in tests only on request): on the main
+// thread a checkpoint of the ingested rows waits for the disk, without CPU, 0.4–0.6 s here and 1.2 s on a slow
+// CI runner (20. 11.) — a pause of the test setup, not of the watcher.
+process.env.GC_DB_CHECKPOINT = 'worker';
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
 const { describe, it, before, after, afterEach, mock } = require('node:test');
@@ -72,11 +76,13 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     try {
       let ticks = 0;
       let worst = 0;
+      let own = 0;
       let gapCpu = 0;
       let before = 0;
       for (; ticks < 40; ticks++) {
         const r = await maxLag(() => waf.pollOnce());
         worst = Math.max(worst, r.worst);
+        own = Math.max(own, r.own);
         gapCpu = Math.max(gapCpu, r.cpu);
         const st = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'waf.watch_state'").get()?.value || '{"offset":0}');
         assert.ok(st.offset - before <= 4 * 1024 * 1024 + 1024 * 1024, `tick ${ticks} read ${st.offset - before} bytes`);
@@ -85,14 +91,15 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
       }
       assert.ok(ticks >= 2, 'a backlog takes several ticks');
       const longest = slices.reduce((m, x) => (x.cpuMs > m.cpuMs ? x : m), { cpuMs: 0, wallMs: 0, name: null });
-      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms (${gapCpu} ms CPU at most between two ticks)`);
+      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms, ${own} ms of it ours (${gapCpu} ms CPU at most between two ticks)`);
       assert.ok(slices.some((x) => x.name === 'waf.audit split') && slices.some((x) => x.name === 'waf.audit ingest'), 'split and ingest are measured');
       assert.ok(slices.filter((x) => x.name === 'waf.audit ingest').length > ticks * 2, 'the ingest yields between slices');
       assert.ok(longest.cpuMs < LIMIT_MS, `a slice held the thread for ${Math.round(longest.cpuMs)} ms of CPU`);
       // and nothing outside the measured slices either: no gap between two ticks with that much CPU of this thread
       assert.ok(gapCpu < LIMIT_MS, `${gapCpu} ms of CPU between two ticks`);
-      // what no slice covers (reads, state) is async: no pause of seconds, even on a loaded runner
-      assert.ok(worst < 5 * LIMIT_MS, `longest pause ${worst} ms`);
+      // what no slice covers (reads, state) is async: no pause of seconds of our own — the wall clock less what the
+      // runner took from the whole process (helpers/loopLag.js; CI, 20. 11.: 1210 ms with 43 ms of CPU in it)
+      assert.ok(own < 5 * LIMIT_MS, `longest pause of our own ${own} ms (${worst} ms on the wall clock)`);
       assert.ok(db.prepare('SELECT COUNT(*) AS n FROM waf_events').get().n > lines.length / 2, 'the lines were stored');
     } finally { waf.stopWatcher(); fs.rmSync(dir, { recursive: true, force: true }); }
   });
@@ -129,6 +136,31 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
       const r = await maxLag(async () => { for (let i = 0; i < 10; i++) await guard.pollOnce(); });
       assertLoopFree(r, 'layer-4 log', LIMIT_MS, t);
     } finally { guard.stop(); fs.rmSync(dir, { recursive: true, force: true }); db.prepare('DELETE FROM routes WHERE id = ?').run(routeId); }
+  });
+});
+
+describe('the measurement itself (helpers/loopLag.js): ours or the runner\'s', () => {
+  it('the whole process stopped for 1.3 s (as a loaded runner does): a pause on the wall clock, none of our own', async (t) => {
+    const r = await maxLag(() => new Promise((resolve, reject) => {
+      // a child stops this process and lets it go on after 1.3 s
+      const code = `process.kill(${process.pid}, 'SIGSTOP'); setTimeout(() => process.kill(${process.pid}, 'SIGCONT'), 1300);`;
+      require('node:child_process').execFile(process.execPath, ['-e', code], (err) => (err ? reject(err) : resolve()));
+    }));
+    t.diagnostic(`stopped: pause ${r.worst} ms, ${r.own} ms of it ours, ${r.cpu} ms CPU`);
+    assert.ok(r.worst >= 1200, `the stop is seen on the wall clock (${r.worst} ms)`);
+    assertLoopFree(r, 'stopped process', LIMIT_MS, t);
+  });
+
+  it('our own thread waiting 1.3 s synchronously (no CPU, like blocking I/O) is still caught', async (t) => {
+    const r = await maxLag(async () => {
+      await sleep(20);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1300);
+      await sleep(20);
+    });
+    t.diagnostic(`blocked: pause ${r.worst} ms, ${r.own} ms of it ours, ${r.cpu} ms CPU`);
+    assert.ok(r.cpu < LIMIT_MS, `no CPU in it (${r.cpu} ms)`);
+    assert.ok(r.own >= 1200, `ours (${r.own} ms)`);
+    assert.throws(() => assertLoopFree(r, 'blocked', LIMIT_MS), /of our own/);
   });
 });
 
