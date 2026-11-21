@@ -132,6 +132,21 @@ function getLatestVersion() {
   return cache.version;
 }
 
+// "Neu prüfen" on the Gateways page (and "Erneut prüfen" of the dashboard's Updates card):
+// ask GitHub again whatever the age of the copy — but at most once a minute for the whole
+// server, however many people click; a click inside that minute reads the copy (and starts
+// the regular refresh when it is due). The back-off after a failed fetch still holds.
+const FORCE_MIN_MS = 60 * 1000;
+let lastForcedAt = 0;
+
+/** Start a check now (throttled, never waits); `pending`: a fetch is running whose answer is still to come. */
+function checkNow() {
+  const now = Date.now();
+  if (now - lastForcedAt >= FORCE_MIN_MS) { lastForcedAt = now; _fetchLatest(); }
+  else getLatestVersion();
+  return { pending: inFlight };
+}
+
 /**
  * What the check knows, for the "Updates" card of the dashboard — no fetch:
  * `checked_at` is the last successful check (ms; from the persisted file
@@ -172,6 +187,9 @@ function init(retriesLeft = INIT_MAX_RETRIES) {
 
 module.exports = {
   getLatestVersion,
+  checkNow,
+  isChecking: () => inFlight,
+  FORCE_MIN_MS,
   getStatus,
   getRpiImage,
   _normalizeTag,
@@ -184,5 +202,6 @@ module.exports = {
   _fetchCallCount: () => fetchCalls,
   _backoff: backoff,
   _setTransport: (fn) => { transportOverride = fn || null; },
+  _resetForce: () => { lastForcedAt = 0; },
   _resetBackoff: () => { backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0; backoff.lastAt = 0; inFlight = false; warnOnce.recovered(OUTAGE_KEY); },
 };
