@@ -6,7 +6,7 @@ const { gatewayApiLimiter, gatewayCacheLimiter, gatewayBulkLimiter, gatewayAuthL
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
-const { isPrivateIpv4 } = require('../../utils/validate');
+const { isPrivateIpv4, isUlaIpv6 } = require('../../utils/validate');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -142,7 +142,7 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   // Opportunistic LAN-IP capture. Used to rewrite a loopback X-Gateway-Target
   // to this gateway's real LAN address when one of its co-located routes has
   // failed over to a sibling (see caddyConfig loopback resolution). Only
-  // accept RFC1918 private IPv4 — a heartbeat is authenticated but the value
+  // accept RFC1918 private IPv4 (or a ULA, below) — a heartbeat is authenticated but the value
   // is self-reported and becomes a forwarding target for OTHER gateways.
   // Write only on change to avoid needless churn.
   //
@@ -151,9 +151,18 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
   // arrives as body.telemetry.lan_ip — a sibling of telemetry.lan_subnets /
   // telemetry.gateway_version. Read it there; keep a top-level fallback so a
   // companion that reports it at the root still works.
+  //
+  // A home network without IPv4 (gateway capability `ipv6-lan`): no private
+  // IPv4 address, but a unique local IPv6 address (ULA, fc00::/7) as
+  // telemetry.lan_ip6 — taken only then. Never a public or link-local IPv6
+  // address (fe80::/10 needs an interface zone, meaningless on another host).
   const reportedLanIp = (body.telemetry && body.telemetry.lan_ip) || body.lan_ip;
-  if (reportedLanIp && typeof reportedLanIp === 'string' && isPrivateIpv4(reportedLanIp.trim())) {
-    const ip = reportedLanIp.trim();
+  const reportedLanIp6 = body.telemetry && body.telemetry.lan_ip6;
+  let lanIp = null;
+  if (reportedLanIp && typeof reportedLanIp === 'string' && isPrivateIpv4(reportedLanIp.trim())) lanIp = reportedLanIp.trim();
+  else if (typeof reportedLanIp6 === 'string' && reportedLanIp6.length <= 45 && isUlaIpv6(reportedLanIp6.trim())) lanIp = reportedLanIp6.trim().toLowerCase();
+  if (lanIp) {
+    const ip = lanIp;
     const db = require('../../db/connection').getDb();
     const cur = db.prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
     if (cur && cur.lan_ip !== ip) {

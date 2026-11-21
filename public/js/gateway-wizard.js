@@ -699,7 +699,7 @@
       if (st.deconz && st.deconz.url) { ph.href = st.deconz.url; show(ph, true); show(lan, false); }
       else {
         show(ph, false);
-        var host = st.hostname || (state.platform === 'rpi' && state.pi.hostname) || st.lan_ip;
+        var host = st.hostname || (state.platform === 'rpi' && state.pi.hostname) || (st.lan_ip && st.lan_ip.indexOf(':') >= 0 ? '[' + st.lan_ip + ']' : st.lan_ip);
         lan.textContent = host ? T('gwiz.s4.phoscon_lan', 'Phoscon im Heimnetz: {{url}}', { url: 'http://' + host + ':' + kit.DECONZ_PORT }) : '';
         show(lan, !!host);
       }

@@ -337,8 +337,16 @@
     else if (t.gateway_version && latest) gwVal.appendChild(el('span', 'gwe-d', TT('gwp.head.current')));
     body.appendChild(kvRow(T('gateways.lbl_gateway', 'Gateway'), gwVal));
     var lan = el('span');
-    if (t.lan_ip) lan.appendChild(el('code', null, t.lan_ip));
-    if (t.default_gateway_ip) { if (t.lan_ip) lan.appendChild(document.createTextNode(' · ')); lan.appendChild(document.createTextNode(TT('gwp.dev.router') + ' ')); lan.appendChild(el('code', null, t.default_gateway_ip)); }
+    // a home network without IPv4: the unique local IPv6 address (lan_ip6, gateway capability ipv6-lan)
+    var lanAddr = t.lan_ip || (typeof t.lan_ip6 === 'string' && /^f[cd][0-9a-f:]{2,43}$/i.test(t.lan_ip6) ? t.lan_ip6 : null);
+    if (lanAddr) lan.appendChild(el('code', null, lanAddr));
+    // the gateway's mDNS name (telemetry.mdns_name, e.g. pi-keller.local) — one label + .local only
+    var mdns = typeof t.mdns_name === 'string' ? t.mdns_name.toLowerCase() : '';
+    if (mdns.length <= 69 && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$/.test(mdns)) {
+      if (lan.childNodes.length) lan.appendChild(document.createTextNode(' · '));
+      lan.appendChild(el('code', null, mdns));
+    }
+    if (t.default_gateway_ip) { if (lan.childNodes.length) lan.appendChild(document.createTextNode(' · ')); lan.appendChild(document.createTextNode(TT('gwp.dev.router') + ' ')); lan.appendChild(el('code', null, t.default_gateway_ip)); }
     body.appendChild(kvRow(T('gwp.dev.lan', 'Heimnetz'), lan.childNodes.length ? lan : '—'));
     var upd = [t.last_pull_at ? agoT(t.last_pull_at) : T('gateways.last_pull_never', 'never')];
     var dg = shortDigest(t); if (dg) upd.push(TT('gwp.dev.image', { digest: dg }));

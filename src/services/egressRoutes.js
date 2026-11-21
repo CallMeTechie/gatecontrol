@@ -49,7 +49,8 @@ function resolveForPeer(peerId, db = getDb(), opts = {}) {
     let nearPeers = [];
     if (poolId != null) {
       const members = db.prepare('SELECT peer_id FROM gateway_pool_members WHERE pool_id=? AND peer_id<>?').all(poolId, peerId);
-      nearPeers = members.map(m => lanIpOf(db, m.peer_id)).filter(Boolean);
+      // the virtual IP is IPv4 (validate) — a member in a network without IPv4 (lan_ip a ULA) is no unicast peer
+      nearPeers = members.map(m => lanIpOf(db, m.peer_id)).filter(isIpv4);
     }
     return {
       id: e.id,

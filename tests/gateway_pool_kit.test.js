@@ -155,6 +155,20 @@ describe('gateway-pool-kit: same LAN and the hint card', () => {
     assert.equal(PK.sameLan(a, a), null);
     assert.equal(PK.sameLan(gw(6, tel(['8.8.8.0/24'])), gw(7, tel(['8.8.8.0/24']))), null, 'public subnets do not count');
   });
+  it('sameLan: home networks without IPv4 — overlapping unique local subnets (lan_subnets6)', () => {
+    const tel6 = (subnets) => ({ health: { telemetry: { lan_subnets: [], lan_subnets6: subnets.map((cidr) => ({ iface: 'eth0', cidr })) } } });
+    const a = gw(1, tel6(['fd00:db8:1::/64']));
+    const b = gw(2, tel6(['fd00:db8:1:0::/64']));
+    const c = gw(3, tel6(['fd00:db8:2::/64']));
+    const d = gw(4, tel6(['fd00:db8::/32']));
+    assert.equal(PK.sameLan(a, b), 'fd00:db8:1::/64');
+    assert.equal(PK.sameLan(a, c), null);
+    assert.equal(PK.sameLan(a, d), 'fd00:db8::/32', 'the wider subnet');
+    assert.equal(PK.sameLan(gw(5, tel6(['2001:db8::/64'])), gw(6, tel6(['2001:db8::/64']))), null, 'global subnets do not count');
+    assert.equal(PK.sameLan(gw(7, tel6(['fe80::/64'])), gw(8, tel6(['fe80::/64']))), null, 'link-local does not count');
+    assert.equal(PK.sameLan(gw(9, tel6(['fd00::1::/64', 'fd00:/64', 'x'])), a), null, 'malformed entries are ignored');
+    assert.deepEqual(PK.subnets6Of(a).map((x) => x.text), ['fd00:db8:1::/64']);
+  });
   it('suggestion: the single gateway with most routes, a partner in the same LAN when there is one', () => {
     const a = gw(1, { ...tel(['192.168.1.0/24']), routes: [{ id: 1 }, { id: 2 }] });
     const b = gw(2, tel(['192.168.1.0/24']));

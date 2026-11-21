@@ -181,9 +181,19 @@ function getGatewayConfig(peerId) {
   // partner that only checks it as a reserve — it is the home gateway's LAN
   // IP. Unknown (the home never reported one): the route is left out (fail
   // closed; Caddy serves the maintenance page for the HTTP case).
+  // A home gateway in a network without IPv4 has a ULA as its LAN IP: only a
+  // gateway with the capability `ipv6-lan` gets it — an older one would put
+  // the address into a backend URL without brackets and never connect.
+  let ipv6Lan = null;
+  const homeLanIp = (ip) => {
+    if (!ip) return null;
+    if (!String(ip).includes(':')) return ip;
+    if (ipv6Lan === null) ipv6Lan = require('./gatewayUdp').peerHasCapability(peerId, 'ipv6-lan', db);
+    return ipv6Lan ? ip : null;
+  };
   const lanHostFor = (r) => {
     if (!isLoopbackHost(r.target_lan_host) || r.home_peer_id == null || r.home_peer_id === peerId) return r.target_lan_host;
-    return r.home_lan_ip || null;
+    return homeLanIp(r.home_lan_ip);
   };
 
   // UDP entries (docs/feature-domain-zones.md "UDP über ein Gateway"): only a
