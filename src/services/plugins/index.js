@@ -180,7 +180,9 @@ function permissionSummary(m, lang) {
     // since 1.214.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
     ai: p.ai ? { purpose: loc(p.ai.purpose, lang), capabilities: p.ai.capabilities.slice() } : null,
     // plugin.json `edge`: a part that runs on home gateways — switched on per gateway with these capabilities (services/edge)
-    edge: m.edge ? { memoryMb: m.edge.memoryMb, minGateway: m.edge.minGateway, capabilities: require('../edge/manifest').describe(m.edge.capabilities, lang) } : null,
+    edge: m.edge ? { memoryMb: m.edge.memoryMb, minGateway: m.edge.minGateway, capabilities: require('../edge/manifest').describe(m.edge.capabilities, lang),
+      // since 1.317.0: asked for later per gateway, confirmed one by one (never part of switching it on)
+      optionalCapabilities: require('../edge/manifest').describe(m.edge.optionalCapabilities, lang) } : null,
     // since 1.216.0: IMAP / SMTP to the mail servers people enter (gc.mail, docs/plugins.md "Mail") and what for
     mail: p.mail ? { purpose: loc(p.mail.purpose, lang), maxConnections: p.mail.maxConnections,
       // since 1.219.0: also CalDAV/CardDAV (gc.mail.dav) and what for — only when declared, so older mail plugins keep their summary

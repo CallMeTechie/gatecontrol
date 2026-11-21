@@ -769,6 +769,127 @@ describe('MQTT accounts', () => {
   });
 });
 
+describe('optional capabilities (edge.optionalCapabilities)', () => {
+  let h;
+  const Z = 'mqtt.topic:zigbee2mqtt/#';
+  const gw = () => gwA.peer.id;
+  const optOf = async () => (await agent.get(`${API}/gateways/${gw()}`).expect(200)).body.gateway.plugins.find((x) => x.id === P);
+  before(async () => {
+    h = hosts.find((x) => !x.closed && x.o.apiToken === gwA.apiToken);
+    // the version from "updates" (port 6000 approved) plus an optional topic
+    const pj = require('./fixtures/plugins/edge-demo/plugin.json');
+    const caps = { ...pj.edge.capabilities, udp: { ports: [5683, 6000], multicast: ['224.0.1.187'] } };
+    await installPkg(edgePackage({ overrides: { version: '1.2.0', edge: { ...pj.edge, capabilities: caps, optionalCapabilities: { mqtt: { topics: ['zigbee2mqtt/#'] } } } } }));
+    assert.equal(await runtime.waitRunning(P), true);
+  });
+
+  it('a new optional capability never sets update_pending: the plugin keeps running, without the topic', async () => {
+    const st = await h.waitForState((s) => s.plugins.some((p) => p.id === P && p.version === '1.2.0'));
+    const e = st.plugins.find((p) => p.id === P);
+    assert.equal(e.enabled, true);
+    assert.equal(e.reason, undefined);
+    assert.deepEqual(e.caps.mqtt.topics, ['shellies/#']);
+    assert.deepEqual(st.mqtt.pluginTopics[P], ['shellies/#']);
+    assert.equal(activities('gateway_edge_update_pending').filter((r) => JSON.parse(r.details).version === '1.2.0').length, 0);
+    const p = await optOf();
+    assert.deepEqual(p.edge.optionalCapabilities.map((x) => x.key), [Z]);
+    assert.equal(p.assignment.newCapabilities.length, 0);
+    assert.deepEqual(p.assignment.optional.map((x) => [x.key, x.approved, x.requestedAt]), [[Z, false, null]]);
+    assert.match(p.assignment.optional[0].text, /zigbee2mqtt\/#/);
+  });
+
+  it('gc.edge.capabilities: declared, nothing confirmed; another gateway → not_enabled; topics outside → denied', async () => {
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [], requested: [] });
+    const other = await pluginApi('/capabilities', { gatewayId: 999999 });
+    assert.equal(other.code, 'not_enabled');
+    assert.equal((await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { topics: ['zigbee2mqtt/lamp/#'] } })).code, 'denied');
+  });
+
+  it('gc.edge.requestCapability: one note with the way to the confirmation, throttled; unknown keys refused', async () => {
+    const r1 = await pluginApi('/request', { gatewayId: gw(), key: Z });
+    assert.deepEqual(r1.result, { status: 'requested', notified: true });
+    const notes = activities('gateway_edge_capability_requested');
+    assert.equal(notes.length, 1);
+    assert.match(notes[0].message, /Edge demo/);
+    assert.match(notes[0].message, /gw-a/);
+    assert.match(notes[0].message, /zigbee2mqtt\/#/);
+    const det = JSON.parse(notes[0].details);
+    assert.equal(det.link, `/gateways#gw/${gw()}/edge`);
+    assert.equal(det.capability, Z);
+    // again (and again): no second note
+    for (let i = 0; i < 3; i++) assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'requested', notified: false });
+    assert.equal(activities('gateway_edge_capability_requested').length, 1);
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result.requested, [Z]);
+    const p = await optOf();
+    assert.ok(p.assignment.optional[0].requestedAt);
+    assert.equal((await pluginApi('/request', { gatewayId: gw(), key: 'mqtt.topic:other/#' })).code, 'ERR_INVALID');
+    assert.equal((await pluginApi('/request', { gatewayId: gw(), key: 'udp.port:5683' })).code, 'ERR_INVALID');
+    assert.equal((await pluginApi('/request', { gatewayId: 999999, key: Z })).code, 'not_enabled');
+  });
+
+  it('approve: needs the session and CSRF, an optional key; then only that topic reaches the gateway', async () => {
+    const url = `${API}/gateways/${gw()}/plugins/${P}/optional/approve`;
+    assert.equal((await agent.post(url).send({ key: Z })).status, 403, 'CSRF');
+    const bad = await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: 'mqtt.topic:other/#' });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.code, 'unknown_capability');
+    assert.equal((await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: 'udp.port:5683' })).body.code, 'unknown_capability');
+    assert.equal((await post(`/gateways/${gw()}/plugins/hello/optional/approve`, { key: Z })).status, 404);
+    const ok = await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: Z });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual(ok.body.assignment.optional.map((x) => [x.key, x.approved, x.requestedAt]), [[Z, true, null]]);
+    const st = await h.waitForState((s) => (s.mqtt.pluginTopics[P] || []).includes('zigbee2mqtt/#'));
+    const e = st.plugins.find((p) => p.id === P);
+    assert.equal(e.enabled, true);
+    assert.deepEqual(e.caps.mqtt.topics, ['shellies/#', 'zigbee2mqtt/#']);
+    assert.deepEqual(st.mqtt.pluginTopics[P], ['shellies/#', 'zigbee2mqtt/#']);
+    const appr = activities('gateway_edge_optional_approved');
+    assert.equal(appr.length, 1);
+    assert.equal(JSON.parse(appr[0].details).capability, Z);
+    // the plugin sees it; asking again is answered with "approved"
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [Z], requested: [] });
+    assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'approved', notified: false });
+    // device accounts below the confirmed topic now work
+    const acc = await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { name: 'zb', topics: ['zigbee2mqtt/lamp/#'] } });
+    assert.equal(acc.ok, true, JSON.stringify(acc));
+    assert.deepEqual((await pluginApi('/mqtt/remove', { gatewayId: gw(), username: `${P}-zb` })).result, true);
+    // approving twice changes nothing
+    await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: Z }).expect(200);
+    assert.equal(activities('gateway_edge_optional_approved').length, 1);
+  });
+
+  it('revoke: out of the next state, logged; the plugin sees it', async () => {
+    const r = await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: Z });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.assignment.optional[0].approved, false);
+    const st = await h.waitForState((s) => !(s.mqtt.pluginTopics[P] || []).includes('zigbee2mqtt/#'));
+    assert.deepEqual(st.plugins.find((p) => p.id === P).caps.mqtt.topics, ['shellies/#']);
+    assert.equal(st.plugins.find((p) => p.id === P).enabled, true);
+    assert.equal(activities('gateway_edge_optional_revoked').length, 1);
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result.approved, []);
+    assert.equal((await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { topics: ['zigbee2mqtt/lamp/#'] } })).code, 'denied');
+    // revoking what is not approved is fine; an unknown key is not
+    await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: Z }).expect(200);
+    assert.equal(activities('gateway_edge_optional_revoked').length, 1);
+    assert.equal((await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: 'mqtt.topic:other/#' })).body.code, 'unknown_capability');
+  });
+
+  it('an update that makes a confirmed optional key a regular capability needs no new confirmation', async () => {
+    await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: Z }).expect(200);
+    const pj = require('./fixtures/plugins/edge-demo/plugin.json');
+    const caps = { ...pj.edge.capabilities, udp: { ports: [5683, 6000], multicast: ['224.0.1.187'] }, mqtt: { topics: ['shellies/#', 'zigbee2mqtt/#'] } };
+    await installPkg(edgePackage({ overrides: { version: '1.3.0', edge: { ...pj.edge, capabilities: caps } } }));
+    const st = await h.waitForState((s) => s.plugins.some((p) => p.id === P && p.version === '1.3.0'));
+    const e = st.plugins.find((p) => p.id === P);
+    assert.equal(e.enabled, true, JSON.stringify(e));
+    assert.deepEqual(e.caps.mqtt.topics, ['shellies/#', 'zigbee2mqtt/#']);
+    assert.equal(activities('gateway_edge_update_pending').filter((r) => JSON.parse(r.details).version === '1.3.0').length, 0);
+    const p = await optOf();
+    assert.deepEqual(p.assignment.optional, []);
+    assert.deepEqual(p.assignment.newCapabilities, []);
+  });
+});
+
 describe('no secrets in the logs', () => {
   it('neither the gateway token nor MQTT hashes end up in the activity log or the ring buffer', () => {
     for (const t of ['activity_log', 'edge_logs']) {

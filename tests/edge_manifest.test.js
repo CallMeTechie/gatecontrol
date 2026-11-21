@@ -159,6 +159,64 @@ describe('capability keys', () => {
   });
 });
 
+describe('edge.optionalCapabilities', () => {
+  const opt = (o) => ({ ...goodEdge, optionalCapabilities: o });
+
+  it('the same form as capabilities, normalised; absent → not in the manifest', () => {
+    const r = check(opt({ mqtt: { topics: ['zigbee2mqtt/#', 'tasmota/+/state'] } }));
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+    assert.deepEqual(r.manifest.edge.optionalCapabilities, { mqtt: { topics: ['zigbee2mqtt/#', 'tasmota/+/state'] } });
+    assert.deepEqual(r.manifest.edge.capabilities, check(goodEdge).manifest.edge.capabilities, 'capabilities unchanged');
+    assert.equal('optionalCapabilities' in check(goodEdge).manifest.edge, false);
+    assert.deepEqual(check(opt({})).manifest.edge.optionalCapabilities, {});
+  });
+
+  it('only MQTT topics can be optional; the same topic rules; nothing that capabilities already holds', () => {
+    for (const k of ['udp', 'mdns', 'tcp', 'http', 'serial']) {
+      const v = { udp: { ports: [6000] }, mdns: { services: ['_x._tcp'] }, tcp: { lan: true }, http: { lan: true }, serial: ['zigbee'] }[k];
+      assert.match(errorsOf(opt({ [k]: v })).join(), new RegExp('edge\\.optionalCapabilities: ' + k + ' cannot be optional'), k);
+    }
+    assert.match(errorsOf(opt({ nope: true })).join(), /edge\.optionalCapabilities: nope cannot be optional/);
+    assert.match(errorsOf(opt([])).join(), /edge\.optionalCapabilities: invalid/);
+    assert.match(errorsOf(opt({ mqtt: { topics: ['#'] } })).join(), /edge\.optionalCapabilities\.mqtt\.topics: invalid topic/);
+    assert.match(errorsOf(opt({ mqtt: { topics: ['$SYS/#'] } })).join(), /edge\.optionalCapabilities\.mqtt\.topics: invalid topic/);
+    assert.match(errorsOf(opt({ mqtt: { topics: [] } })).join(), /edge\.optionalCapabilities\.mqtt\.topics: invalid/);
+    assert.match(errorsOf(opt({ mqtt: { topics: ['a/#', 'a/#'] } })).join(), /edge\.optionalCapabilities\.mqtt\.topics: duplicate/);
+    assert.match(errorsOf(opt({ mqtt: { topics: ['shellies/#'] } })).join(), /edge\.optionalCapabilities\.mqtt\.topics: already in capabilities/);
+    // the gateway takes ≤ 16 topics per plugin: required and optional together
+    const many = Array.from({ length: 16 }, (_, i) => 'x' + i + '/#');
+    assert.match(errorsOf(opt({ mqtt: { topics: many } })).join(), /more than 16 together with capabilities/);
+    assert.equal(check(opt({ mqtt: { topics: many.slice(0, 15) } })).ok, true);
+  });
+
+  it('never part of newCapabilities (no update_pending); keys, approved ones and the state caps', () => {
+    const edge = check(opt({ mqtt: { topics: ['zigbee2mqtt/#'] } })).manifest.edge;
+    const approved = edgeManifest.capabilityList(edge.capabilities);
+    assert.deepEqual(edgeManifest.newCapabilities(edge.capabilities, approved), []);
+    assert.deepEqual(edgeManifest.optionalList(edge), ['mqtt.topic:zigbee2mqtt/#']);
+    assert.deepEqual(edgeManifest.optionalList({ capabilities: {} }), []);
+    assert.deepEqual(edgeManifest.approvedOptional(edge, ['mqtt.topic:zigbee2mqtt/#', 'mqtt.topic:gone/#']), ['mqtt.topic:zigbee2mqtt/#']);
+    assert.deepEqual(edgeManifest.approvedOptional(edge, null), []);
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, ['mqtt.topic:zigbee2mqtt/#']).mqtt, { topics: ['shellies/#', 'zigbee2mqtt/#'] });
+    assert.deepEqual(edgeManifest.withOptional({ udp: { ports: [6000], multicast: [] } }, ['mqtt.topic:z/#']), { udp: { ports: [6000], multicast: [] }, mqtt: { topics: ['z/#'] } });
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, []), edge.capabilities);
+    assert.deepEqual(edgeManifest.describe(edge.optionalCapabilities, 'de').map((x) => x.text), ['MQTT-Themen zigbee2mqtt/# am lokalen Broker']);
+  });
+});
+
+describe('migration 161 (edge_optional_capabilities)', () => {
+  before(() => { require('../src/db/migrations').runMigrations(); });
+  it('is the newest migration, has a unique version and adds the two columns', () => {
+    const list = require('../src/db/migrationList').migrations;
+    const versions = list.map((x) => x.version);
+    assert.equal(new Set(versions).size, versions.length, 'every version once');
+    assert.equal(Math.max(...versions), 161, 'the newest migration');
+    assert.equal(list.find((x) => x.version === 161).name, 'edge_optional_capabilities');
+    const cols = require('../src/db/connection').getDb().prepare('PRAGMA table_info(edge_assignments)').all().map((c) => c.name);
+    assert.ok(cols.includes('opt_caps_list') && cols.includes('opt_requests'), cols.join());
+  });
+});
+
 describe('install of a package with a broken edge section', () => {
   before(() => { require('../src/db/migrations').runMigrations(); });
   it('is refused with the manifest errors', () => {
@@ -187,5 +245,11 @@ describe('install of a package with a broken edge section', () => {
     assert.equal(r.plugin.permissions.edge.memoryMb, 48);
     assert.equal(r.plugin.permissions.edge.minGateway, '1.20.0');
     assert.deepEqual(r.plugin.permissions.edge.capabilities.map((x) => x.key), ['http.lan', 'mqtt.topic:shellies/#', 'udp.multicast:224.0.1.187', 'udp.port:5683']);
+    assert.deepEqual(r.plugin.permissions.edge.optionalCapabilities, []);
+    const pj = require('./fixtures/plugins/edge-demo/plugin.json');
+    const withOpt = plugins.inspect(edgePackage({ overrides: { edge: { ...pj.edge, optionalCapabilities: { mqtt: { topics: ['zigbee2mqtt/#'] } } } } }), 'en');
+    assert.equal(withOpt.canInstall, true, JSON.stringify(withOpt.checks));
+    assert.deepEqual(withOpt.plugin.permissions.edge.optionalCapabilities.map((x) => x.key), ['mqtt.topic:zigbee2mqtt/#']);
+    assert.deepEqual(withOpt.plugin.permissions.edge.capabilities.map((x) => x.key), r.plugin.permissions.edge.capabilities.map((x) => x.key));
   });
 });

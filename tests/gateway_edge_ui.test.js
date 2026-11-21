@@ -396,6 +396,25 @@ describe('gateway-edge: texts and errors', () => {
     assert.ok(CONFIRM_WORDS.has(de['gwe.uns.word']) && CONFIRM_WORDS.has(en['gwe.uns.word']));
   });
 
+  it('„Zusätzliche Rechte (optional)“: per key, Bestätigen with a confirmation, Entziehen; only the admin routes of the server', () => {
+    const src = stripComments(EDGE_JS);
+    assert.match(src, /const opt = \(a && a\.optional\) \|\| \[\];/);
+    assert.match(src, /if \(opt\.length\) main\.appendChild\(optionalBlock\(g, d, p, opt\)\)/);
+    assert.match(src, /'\/optional\/' \+ \(approve \? 'approve' : 'revoke'\)\), \{ key: c\.key \}/);
+    const i = src.indexOf("'gwe.opt.approve_title'");
+    assert.ok(i > 0);
+    assert.match(src.slice(Math.max(0, i - 120), i), /if \(approve && !await D\.confirm\(/);
+    // the routes exist on the server, the keys of the view come from services/edge/index.js
+    const routes = read('src/routes/api/edge.js');
+    assert.match(routes, /for \(const op of \['approve', 'revoke'\]\)/);
+    assert.match(routes, /\/gateways\/:id\/plugins\/:pluginId\/optional\/\$\{op\}/);
+    assert.match(read('src/services/edge/index.js'), /\.\.\.x, approved: approved\.has\(x\.key\),\s*requestedAt:/);
+    // the section uses the existing look (tags, small buttons) and has its own CSS block
+    assert.match(read('public/css/app.css'), /\.gwe-opt\{/);
+    assert.equal(de['gwe.opt.title'], 'Zusätzliche Rechte (optional)');
+    assert.equal(en['gwe.opt.title'], 'Additional rights (optional)');
+  });
+
   it('no innerHTML, no browser dialogs, destructive confirmations in red', () => {
     const src = stripComments(EDGE_JS);
     assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML/);

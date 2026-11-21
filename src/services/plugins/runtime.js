@@ -170,7 +170,7 @@ class PluginProcess {
     const edge = p.manifest.edge || null;
     const features = { mail: !!perms.mail, dav: !!(perms.mail && perms.mail.dav), images: !!(perms.network && perms.network.images === true),
       // gc.edge / gc.mqtt.accounts: plugins with an edge part (and MQTT topics) only
-      edge: !!edge, mqtt: !!(edge && edge.capabilities && edge.capabilities.mqtt),
+      edge: !!edge, mqtt: !!(edge && ((edge.capabilities && edge.capabilities.mqtt) || (edge.optionalCapabilities && edge.optionalCapabilities.mqtt))),
       // gc.homeNetwork: permissions.homePresence (phase 3a), .internet: permissions.homeInternet (phase 3b)
       homePresence: perms.homePresence === true, homeInternet: perms.homeInternet === true,
       // gc.homeCache: permissions.homeCache (phase 3b)

@@ -10,7 +10,15 @@
 //     "capabilities": { "udp": { "ports": [5683], "multicast": ["224.0.1.187"] },
 //                       "mdns": { "services": ["_shelly._tcp"] },
 //                       "tcp": { "lan": true }, "http": { "lan": true },
-//                       "mqtt": { "topics": ["shellies/#"] }, "serial": ["zigbee"] } }
+//                       "mqtt": { "topics": ["shellies/#"] }, "serial": ["zigbee"] },
+//     "optionalCapabilities": { "mqtt": { "topics": ["zigbee2mqtt/#"] } } }
+//
+// optionalCapabilities (since 1.317.0): what the plugin may ask for later, per gateway, when it needs
+// it (gc.edge.requestCapability). Validated at install like capabilities, but never part of the
+// confirmation that switches the edge part on and never a reason for update_pending — an
+// administrator confirms each key on its own (Gateways › Gateway › Edge-Plugins). Only MQTT topics
+// for now: they are applied live on the gateway (subscriptions are checked again with every state);
+// ports, mDNS, LAN access and serial devices stay in capabilities.
 //
 // validate() pushes stable "edge…: problem" codes through `err` like the rest
 // of manifest.js and returns the normalised section (null when invalid).
@@ -29,7 +37,9 @@ const MQTT_TOPIC_LEN = 128;
 // serial devices by name — the gateway maps a name to the device its hardware detection found
 const SERIAL_NAMES = Object.freeze(['zigbee']);
 const CAP_KEYS = Object.freeze(['udp', 'mdns', 'tcp', 'http', 'mqtt', 'serial']);
-const EDGE_KEYS = Object.freeze(['entry', 'minGateway', 'memoryMb', 'capabilities']);
+const EDGE_KEYS = Object.freeze(['entry', 'minGateway', 'memoryMb', 'capabilities', 'optionalCapabilities']);
+// what edge.optionalCapabilities may hold (kept narrow on purpose, see above)
+const OPTIONAL_CAP_KEYS = Object.freeze(['mqtt']);
 const MDNS_RE = /^_[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\._(?:tcp|udp)$/;
 const ENTRY_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$/;
 
@@ -82,42 +92,42 @@ function filterCovers(outer, inner) {
   return a.length === b.length;
 }
 
-function validateCaps(raw, err) {
+function validateCaps(raw, err, where = 'edge.capabilities') {
   const caps = {};
   if (raw == null) return caps;
-  if (!plainObject(raw)) { err('edge.capabilities: invalid'); return null; }
+  if (!plainObject(raw)) { err(where + ': invalid'); return null; }
   let ok = true;
   const bad = (code) => { err(code); ok = false; };
-  for (const k of Object.keys(raw)) if (!CAP_KEYS.includes(k)) bad('edge.capabilities: unknown capability ' + k);
+  for (const k of Object.keys(raw)) if (!CAP_KEYS.includes(k)) bad(where + ': unknown capability ' + k);
 
   if (raw.udp != null) {
     const u = raw.udp;
-    if (!plainObject(u) || !onlyKeys(u, ['ports', 'multicast'])) bad('edge.capabilities.udp: invalid');
+    if (!plainObject(u) || !onlyKeys(u, ['ports', 'multicast'])) bad(where + '.udp: invalid');
     else {
       const ports = u.ports == null ? [] : u.ports;
       const groups = u.multicast == null ? [] : u.multicast;
       if (!Array.isArray(ports) || ports.length > UDP_PORTS_MAX || !ports.every((p) => Number.isInteger(p) && p >= 1 && p <= 65535)) {
-        bad('edge.capabilities.udp.ports: invalid');
-      } else if (ports.some((p) => p === 5353)) bad('edge.capabilities.udp.ports: 5353 only through capabilities.mdns');
-      else if (ports.some((p) => p < 1024)) bad('edge.capabilities.udp.ports: below 1024');
-      else if (new Set(ports).size !== ports.length) bad('edge.capabilities.udp.ports: duplicate');
+        bad(where + '.udp.ports: invalid');
+      } else if (ports.some((p) => p === 5353)) bad(where + '.udp.ports: 5353 only through capabilities.mdns');
+      else if (ports.some((p) => p < 1024)) bad(where + '.udp.ports: below 1024');
+      else if (new Set(ports).size !== ports.length) bad(where + '.udp.ports: duplicate');
       if (!Array.isArray(groups) || groups.length > MULTICAST_MAX || !groups.every(multicastOk)) {
-        bad('edge.capabilities.udp.multicast: invalid (224.0.0.0/4 without 224.0.0.0/24, ≤ ' + MULTICAST_MAX + ')');
-      } else if (new Set(groups).size !== groups.length) bad('edge.capabilities.udp.multicast: duplicate');
-      if (ok && !ports.length && !groups.length) bad('edge.capabilities.udp: empty');
+        bad(where + '.udp.multicast: invalid (224.0.0.0/4 without 224.0.0.0/24, ≤ ' + MULTICAST_MAX + ')');
+      } else if (new Set(groups).size !== groups.length) bad(where + '.udp.multicast: duplicate');
+      if (ok && !ports.length && !groups.length) bad(where + '.udp: empty');
       if (ok) caps.udp = { ports: ports.slice().sort((x, y) => x - y), multicast: groups.slice() };
     }
   }
   if (raw.mdns != null) {
     const m = raw.mdns;
     const list = plainObject(m) && onlyKeys(m, ['services']) ? m.services : null;
-    if (!Array.isArray(list) || !list.length || list.length > MDNS_MAX || !list.every((s) => typeof s === 'string' && MDNS_RE.test(s))) bad('edge.capabilities.mdns: invalid');
-    else if (new Set(list).size !== list.length) bad('edge.capabilities.mdns: duplicate');
+    if (!Array.isArray(list) || !list.length || list.length > MDNS_MAX || !list.every((s) => typeof s === 'string' && MDNS_RE.test(s))) bad(where + '.mdns: invalid');
+    else if (new Set(list).size !== list.length) bad(where + '.mdns: duplicate');
     else caps.mdns = { services: list.slice() };
   }
   if (raw.tcp != null) {
     const v = raw.tcp;
-    if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad('edge.capabilities.tcp: invalid');
+    if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad(where + '.tcp: invalid');
     else if (v.lan) caps.tcp = { lan: true };
   }
   // http: { lan } — HTTPS is always checked on the gateway: fully, or against a pinned certificate
@@ -125,22 +135,22 @@ function validateCaps(raw, err) {
   if (raw.http != null) {
     const v = raw.http;
     if (plainObject(v) && Object.prototype.hasOwnProperty.call(v, 'selfSigned')) {
-      bad('edge.capabilities.http.selfSigned: no longer supported — HTTPS to self-signed devices only with a pinned certificate (pinSha256, gc.lan.tlsFingerprint)');
-    } else if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad('edge.capabilities.http: invalid');
+      bad(where + '.http.selfSigned: no longer supported — HTTPS to self-signed devices only with a pinned certificate (pinSha256, gc.lan.tlsFingerprint)');
+    } else if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad(where + '.http: invalid');
     else if (v.lan) caps.http = { lan: true };
   }
   if (raw.mqtt != null) {
     const m = raw.mqtt;
     const list = plainObject(m) && onlyKeys(m, ['topics']) ? m.topics : null;
-    if (!Array.isArray(list) || !list.length || list.length > MQTT_TOPICS_MAX) bad('edge.capabilities.mqtt.topics: invalid');
-    else if (!list.every(topicFilterOk)) bad('edge.capabilities.mqtt.topics: invalid topic (no leading # or +, no $…)');
-    else if (new Set(list).size !== list.length) bad('edge.capabilities.mqtt.topics: duplicate');
+    if (!Array.isArray(list) || !list.length || list.length > MQTT_TOPICS_MAX) bad(where + '.mqtt.topics: invalid');
+    else if (!list.every(topicFilterOk)) bad(where + '.mqtt.topics: invalid topic (no leading # or +, no $…)');
+    else if (new Set(list).size !== list.length) bad(where + '.mqtt.topics: duplicate');
     else caps.mqtt = { topics: list.slice() };
   }
   if (raw.serial != null) {
     const s = raw.serial;
-    if (!Array.isArray(s) || !s.length || !s.every((n) => typeof n === 'string' && SERIAL_NAMES.includes(n))) bad('edge.capabilities.serial: invalid (known: ' + SERIAL_NAMES.join(', ') + ')');
-    else if (new Set(s).size !== s.length) bad('edge.capabilities.serial: duplicate');
+    if (!Array.isArray(s) || !s.length || !s.every((n) => typeof n === 'string' && SERIAL_NAMES.includes(n))) bad(where + '.serial: invalid (known: ' + SERIAL_NAMES.join(', ') + ')');
+    else if (new Set(s).size !== s.length) bad(where + '.serial: duplicate');
     else caps.serial = s.slice();
   }
   return ok ? caps : null;
@@ -174,7 +184,53 @@ function validate(raw, err, opts = {}) {
   } else out.memoryMb = MEMORY_DEFAULT;
   const caps = validateCaps(raw.capabilities, e);
   if (caps) out.capabilities = caps;
+  if (raw.optionalCapabilities != null) {
+    const opt = validateOptional(raw.optionalCapabilities, e, caps || {});
+    if (opt) out.optionalCapabilities = opt;
+  }
   return before.length ? null : out;
+}
+
+/** edge.optionalCapabilities: the same form as capabilities, only OPTIONAL_CAP_KEYS, nothing that capabilities already holds. */
+function validateOptional(raw, err, caps) {
+  const where = 'edge.optionalCapabilities';
+  if (!plainObject(raw)) { err(where + ': invalid'); return null; }
+  let ok = true;
+  for (const k of Object.keys(raw)) {
+    if (!OPTIONAL_CAP_KEYS.includes(k)) { err(where + ': ' + k + ' cannot be optional (optional: ' + OPTIONAL_CAP_KEYS.join(', ') + ')'); ok = false; }
+  }
+  if (!ok) return null;
+  const opt = validateCaps(raw, err, where);
+  if (!opt) return null;
+  if (opt.mqtt) {
+    const required = caps.mqtt ? caps.mqtt.topics : [];
+    if (opt.mqtt.topics.some((t) => required.includes(t))) { err(where + '.mqtt.topics: already in capabilities'); return null; }
+    // the gateway takes at most MQTT_TOPICS_MAX topics per plugin (state.mqtt.pluginTopics)
+    if (required.length + opt.mqtt.topics.length > MQTT_TOPICS_MAX) { err(where + '.mqtt.topics: more than ' + MQTT_TOPICS_MAX + ' together with capabilities'); return null; }
+  }
+  return opt;
+}
+
+/** The optional capability keys a plugin declares (edge.optionalCapabilities), flat and sorted like capabilityList. */
+function optionalList(edge) {
+  return capabilityList(edge && edge.optionalCapabilities);
+}
+
+/** The keys of `approvedList` the edge part still declares as optional (an update may drop one). */
+function approvedOptional(edge, approvedList) {
+  const ok = new Set(Array.isArray(approvedList) ? approvedList : []);
+  return optionalList(edge).filter((k) => ok.has(k));
+}
+
+/** capabilities plus the approved optional ones (keys of optionalList) — what a switched-on edge part may use. */
+function withOptional(caps, approvedKeys) {
+  const out = { ...(plainObject(caps) ? caps : {}) };
+  const topics = (approvedKeys || []).filter((k) => k.startsWith('mqtt.topic:')).map((k) => k.slice('mqtt.topic:'.length));
+  if (topics.length) {
+    const own = out.mqtt && Array.isArray(out.mqtt.topics) ? out.mqtt.topics : [];
+    out.mqtt = { topics: [...own, ...topics.filter((t) => !own.includes(t))] };
+  }
+  return out;
 }
 
 /**
@@ -247,5 +303,6 @@ function forState(caps) {
 
 module.exports = {
   validate, capabilityList, forState, newCapabilities, describe, topicFilterOk, filterCovers, multicastOk,
+  optionalList, approvedOptional, withOptional, OPTIONAL_CAP_KEYS,
   MEMORY_MIN, MEMORY_MAX, MEMORY_DEFAULT, SERIAL_NAMES, MQTT_TOPICS_MAX,
 };

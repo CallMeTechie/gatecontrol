@@ -28,6 +28,8 @@ module.exports = {
       case '/gateways': return { json: await attempt(() => gc.edge.gateways()) };
       case '/call': return { json: await attempt(() => gc.edge.call(b.gatewayId, b.method, b.params, { timeoutMs: b.timeoutMs })) };
       case '/configure': return { json: await attempt(() => gc.edge.configure(b.gatewayId, b.data)) };
+      case '/capabilities': return { json: await attempt(() => gc.edge.capabilities(b.gatewayId)) };
+      case '/request': return { json: await attempt(() => gc.edge.requestCapability(b.gatewayId, b.key)) };
       case '/events': return { json: { ok: true, events: received } };
       case '/release': if (release) { release(); release = null; } return { json: { ok: true } };
       case '/mqtt/create': return { json: await attempt(() => gc.mqtt.accounts.create(b.gatewayId, b.opts)) };

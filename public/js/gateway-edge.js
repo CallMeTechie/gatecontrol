@@ -597,6 +597,9 @@
     if (caps.length && st.state !== 'update_pending') {
       main.appendChild(h('div', { class: 'gwe-chips' }, caps.map((c) => chip(c.warning ? 'bad' : '', c.text, c.warning ? 'warn' : null))));
     }
+    // edge.optionalCapabilities: confirmed one by one for this gateway, never part of switching it on
+    const opt = (a && a.optional) || [];
+    if (opt.length) main.appendChild(optionalBlock(g, d, p, opt));
     // memory, restarts, last error
     const meta = [];
     if (status && status.rssMb != null) meta.push(t('gwe.pl.memory', { used: status.rssMb, max: p.edge.memoryMb }));
@@ -636,6 +639,37 @@
     return h('div', { class: 'gwe-prow', 'data-plugin': p.id, 'data-state': st.state }, [
       h('span', { class: 'gwe-pic gwe-tone-' + st.tone }, icon('plug', 20)), main, acts,
     ]);
+  }
+
+  // „Zusätzliche Rechte (optional)“: each optional capability with its state and Bestätigen / Entziehen
+  function optionalBlock(g, d, p, opt) {
+    const rows = opt.map((c) => {
+      const tone = c.approved ? 'green' : (c.requestedAt ? 'amber' : 'grey');
+      const label = c.approved ? 'gwe.opt.approved' : (c.requestedAt ? 'gwe.opt.requested' : 'gwe.opt.not_approved');
+      const b = h('button', { type: 'button', class: 'btn btn-sm ' + (c.approved ? 'btn-ghost' : 'btn-primary'), 'data-fk': 'opt:' + p.id + ':' + c.key,
+        text: t(c.approved ? 'gwe.opt.revoke' : 'gwe.opt.approve') });
+      b.addEventListener('click', () => setOptional(g, d, p, c, !c.approved, b));
+      return h('li', { class: 'gwe-opt-row', 'data-key': c.key, 'data-approved': c.approved ? '1' : '0' }, [
+        h('span', { class: 'gwe-opt-t', text: c.text }), tag(tone, t(label), true), b,
+      ]);
+    });
+    return h('div', { class: 'gwe-opt' }, [
+      h('p', { class: 'gwe-opt-h', text: t('gwe.opt.title') }),
+      h('p', { class: 'gwe-d', text: t('gwe.opt.intro') }),
+      h('ul', { class: 'gwe-opt-list', 'aria-label': t('gwe.opt.list', { plugin: p.name }) }, rows),
+    ]);
+  }
+
+  async function setOptional(g, d, p, c, approve, btn) {
+    if (approve && !await D.confirm({
+      title: t('gwe.opt.approve_title', { plugin: p.name }),
+      message: t('gwe.opt.approve_msg', { plugin: p.name, gateway: d.name || g.name, cap: c.text }),
+      okLabel: t('gwe.opt.approve'),
+    })) return;
+    btn.disabled = true;
+    api('POST', gwUrl(g.peer_id, '/plugins/' + encodeURIComponent(p.id) + '/optional/' + (approve ? 'approve' : 'revoke')), { key: c.key })
+      .then(() => { toast(t(approve ? 'gwe.opt.approved_done' : 'gwe.opt.revoked_done', { cap: c.text })); return reload(g.peer_id); })
+      .catch((e) => { btn.disabled = false; D.alert({ message: errText(e), danger: true }); });
   }
 
   // ─── Dialog: confirm the capabilities and switch on ───────────────────

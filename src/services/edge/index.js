@@ -9,6 +9,9 @@
 //   plugin × gateway     enable with the explicit list of capabilities shown, disable;
 //                        an update that needs new capabilities leaves it off (update_pending)
 //                        until an administrator confirms again
+//   optional rights      edge.optionalCapabilities: confirmed or revoked one by one per gateway
+//                        (approveOptional / revokeOptional); a plugin asks for one with
+//                        gc.edge.requestCapability — one note in the activity log per key and day
 //   MQTT accounts        per gateway; the password is shown once, only its hash is kept
 
 const store = require('./store');
@@ -23,6 +26,9 @@ const CONFIRM_WORDS = new Set(['ERLAUBEN', 'ALLOW']);
 const METHOD_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const CONFIGURE_MAX = 48 * 1024;
 const PLUGIN_USER_RE = /^[a-z0-9][a-z0-9_.-]{0,23}$/;
+// gc.edge.requestCapability: at most one note per plugin × gateway × key in this time
+const REQUEST_EVERY_MS = 24 * 60 * 60 * 1000;
+const OPTIONAL_KEY_MAX = 200;
 
 class EdgeAdminError extends Error {
   constructor(code, message, extra) { super(message || code); this.code = code; Object.assign(this, extra || {}); }
@@ -73,16 +79,28 @@ function assignmentView(a, settings, chan, lang) {
     state,
     reason: state === 'offline' ? chan.reason : null,
     approved: { capabilities: a.capsList, version: a.capsVersion, at: a.approvedAt ? new Date(a.approvedAt).toISOString() : null, by: a.approvedBy },
-    newCapabilities: edge ? edgeManifest.describe(edge.capabilities, lang).filter((x) => !a.capsList.includes(x.key)) : [],
+    newCapabilities: edge ? edgeManifest.describe(edge.capabilities, lang).filter((x) => !a.capsList.includes(x.key) && !(a.optCapsList || []).includes(x.key)) : [],
+    optional: edge ? optionalView(edge, a, lang) : [],
     status: a.status || null,
   };
+}
+
+/** [{ key, text, approved, requestedAt }] — the plugin's optional capabilities on this gateway („Zusätzliche Rechte (optional)“). */
+function optionalView(edge, a, lang) {
+  const approved = new Set(edgeManifest.approvedOptional(edge, a.optCapsList));
+  const req = a.optRequests && typeof a.optRequests === 'object' ? a.optRequests : {};
+  return edgeManifest.describe(edge.optionalCapabilities, lang).map((x) => ({
+    ...x, approved: approved.has(x.key),
+    requestedAt: !approved.has(x.key) && Number.isFinite(req[x.key]) ? new Date(req[x.key]).toISOString() : null,
+  }));
 }
 
 function pluginEdgeView(p, lang) {
   const e = p.manifest.edge;
   return {
     id: p.id, name: loc(p.manifest.name, lang), version: p.version, verified: p.signature === 'trusted', signature: p.signature, enabled: p.enabled,
-    edge: { memoryMb: e.memoryMb, minGateway: e.minGateway, capabilities: edgeManifest.describe(e.capabilities, lang) },
+    edge: { memoryMb: e.memoryMb, minGateway: e.minGateway, capabilities: edgeManifest.describe(e.capabilities, lang),
+      optionalCapabilities: edgeManifest.describe(e.optionalCapabilities, lang) },
   };
 }
 
@@ -294,6 +312,64 @@ function disablePlugin(peerId, pluginId, { ip, user, lang } = {}) {
   return assignmentView(store.assignment(a.pluginId, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
 }
 
+// ─── Optional capabilities (edge.optionalCapabilities) ─
+
+function needOptional(peerId, pluginId, key) {
+  const g = needGateway(peerId);
+  const p = edgePlugin(pluginId);
+  const a = store.assignment(p.id, g.id);
+  if (!a) throw new EdgeAdminError('not_assigned', 'the plugin is not set up for this gateway');
+  const k = typeof key === 'string' ? key : '';
+  if (!edgeManifest.optionalList(p.manifest.edge).includes(k)) {
+    throw new EdgeAdminError('unknown_capability', 'not an optional capability of this plugin', { capabilities: edgeManifest.optionalList(p.manifest.edge) });
+  }
+  return { g, p, a, key: k };
+}
+
+function capText(edge, key, lang) {
+  const x = edgeManifest.describe(edge.optionalCapabilities, lang).find((c) => c.key === key);
+  return x ? x.text : key;
+}
+
+/** Confirm one optional capability of a plugin on a gateway (it reaches the gateway with the next state). */
+function approveOptional(peerId, pluginId, { key, ip, user, lang } = {}) {
+  const { g, p, a, key: k } = needOptional(peerId, pluginId, key);
+  if (!a.optCapsList.includes(k)) {
+    store.setOptional(p.id, g.id, [...a.optCapsList, k]);
+    const req = { ...(a.optRequests || {}) };
+    delete req[k];
+    store.setOptionalRequests(p.id, g.id, req);
+    log('gateway_edge_optional_approved', `Optional capability of plugin "${p.name}" approved on gateway "${g.name}": ${k}`, {
+      source: 'admin', ipAddress: ip, severity: 'warning', details: { peer_id: g.id, plugin: p.id, version: p.version, capability: k, ...(user ? { user } : {}) },
+    });
+    store.addLog(g.id, p.id, 'system', 'info', `optional capability approved: ${k}`);
+    hub.refresh(g.id);
+  }
+  return assignmentView(store.assignment(p.id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
+}
+
+/** Take a confirmed optional capability back: the next state leaves it out (the gateway ends its subscriptions). */
+function revokeOptional(peerId, pluginId, { key, ip, user, lang } = {}) {
+  const g = needGateway(peerId);
+  const id = String(pluginId);
+  const a = store.assignment(id, g.id);
+  if (!a) throw new EdgeAdminError('not_assigned', 'the plugin is not set up for this gateway');
+  const k = typeof key === 'string' ? key : '';
+  const p = registry().get(id);
+  // also a key the installed version no longer declares: an approval must always be revocable
+  if (a.optCapsList.includes(k)) {
+    store.setOptional(id, g.id, a.optCapsList.filter((x) => x !== k));
+    log('gateway_edge_optional_revoked', `Optional capability of plugin "${p ? p.name : id}" revoked on gateway "${g.name}": ${k}`, {
+      source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, plugin: id, capability: k, ...(user ? { user } : {}) },
+    });
+    store.addLog(g.id, id, 'system', 'info', `optional capability revoked: ${k}`);
+    hub.refresh(g.id);
+  } else if (!(p && p.manifest && edgeManifest.optionalList(p.manifest.edge).includes(k))) {
+    throw new EdgeAdminError('unknown_capability', 'not an optional capability of this plugin');
+  }
+  return assignmentView(store.assignment(id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
+}
+
 function logs(peerId, opts = {}) {
   const g = needGateway(peerId);
   const pluginId = opts.plugin === undefined ? undefined : (opts.plugin === '' || opts.plugin === null ? null : String(opts.plugin));
@@ -375,7 +451,7 @@ function onPluginInstalled(manifest) {
     if (manifest && manifest.edge) {
       for (const a of store.assignmentsOfPlugin(manifest.id)) {
         if (!a.enabled) continue;
-        const added = edgeManifest.newCapabilities(manifest.edge.capabilities, a.capsList);
+        const added = edgeManifest.newCapabilities(manifest.edge.capabilities, [...a.capsList, ...(a.optCapsList || [])]);
         if (!added.length) continue;
         const g = store.gatewayPeer(a.peerId);
         store.addLog(a.peerId, manifest.id, 'system', 'warn', `update to v${manifest.version} needs new capabilities (${added.join(', ')}) — off until confirmed`);
@@ -440,6 +516,56 @@ function hostGateways(plugin) {
   }).filter(Boolean);
 }
 
+/**
+ * gc.edge.capabilities(gatewayId) → { gatewayId, optional, approved, requested } — the plugin's optional
+ * capabilities (edge.optionalCapabilities) on that gateway: declared, confirmed by an administrator,
+ * asked for and not confirmed yet. Keys as in capabilityList ("mqtt.topic:zigbee2mqtt/#").
+ */
+function hostCapabilities(plugin, args) {
+  needEdge(plugin);
+  const a0 = args && typeof args === 'object' ? args : {};
+  const peerId = gatewayIdOf(a0.gatewayId);
+  const a = store.assignment(plugin.id, peerId);
+  if (!a || !store.gatewayPeer(peerId)) throw hostError('not_enabled', 'the edge part is not set up for this gateway (not_assigned)');
+  const edge = plugin.manifest.edge;
+  const optional = edgeManifest.optionalList(edge);
+  const approved = edgeManifest.approvedOptional(edge, a.optCapsList);
+  const req = a.optRequests || {};
+  return { gatewayId: peerId, optional, approved, requested: optional.filter((k) => !approved.includes(k) && Number.isFinite(req[k])) };
+}
+
+/**
+ * gc.edge.requestCapability(gatewayId, key) → { status: 'approved' | 'requested', notified } — asks an
+ * administrator for one optional capability: a note in the activity log with the way to the
+ * confirmation (Gateways › Gateway › Edge-Plugins). One note per gateway and key per day; asking
+ * again meanwhile only answers 'requested' (notified: false).
+ */
+function hostRequestCapability(plugin, args) {
+  needEdge(plugin);
+  const a0 = args && typeof args === 'object' ? args : {};
+  const peerId = gatewayIdOf(a0.gatewayId);
+  const key = typeof a0.key === 'string' && a0.key.length <= OPTIONAL_KEY_MAX ? a0.key : null;
+  const edge = plugin.manifest.edge;
+  if (!key || !edgeManifest.optionalList(edge).includes(key)) throw hostError('ERR_INVALID', 'not an optional capability of this plugin (plugin.json edge.optionalCapabilities)');
+  const g = store.gatewayPeer(peerId);
+  const a = g ? store.assignment(plugin.id, peerId) : null;
+  if (!a) throw hostError('not_enabled', 'the edge part is not set up for this gateway (not_assigned)');
+  if (edgeManifest.approvedOptional(edge, a.optCapsList).includes(key)) return { status: 'approved', notified: false };
+  const now = Date.now();
+  const req = { ...(a.optRequests || {}) };
+  if (Number.isFinite(req[key]) && now - req[key] < REQUEST_EVERY_MS) return { status: 'requested', notified: false };
+  req[key] = now;
+  store.setOptionalRequests(plugin.id, peerId, req);
+  const name = loc(plugin.manifest.name, 'en') || plugin.id;
+  const link = '/gateways#gw/' + peerId + '/edge';
+  log('gateway_edge_capability_requested',
+    `Plugin "${name}" asks for an additional capability on gateway "${g.name}": ${capText(edge, key, 'en')} — confirm under Gateways › ${g.name} › Edge-Plugins (${link})`, {
+      source: 'system', severity: 'warning', details: { peer_id: peerId, plugin: plugin.id, version: plugin.version, capability: key, link },
+    });
+  store.addLog(peerId, plugin.id, 'system', 'warn', `asks for optional capability ${key} — confirm under Edge-Plugins`);
+  return { status: 'requested', notified: true };
+}
+
 async function hostCall(plugin, args) {
   needEdge(plugin);
   const a = args && typeof args === 'object' ? args : {};
@@ -468,11 +594,17 @@ function hostConfigure(plugin, args) {
  */
 function hostMqtt(plugin, op, args) {
   needEdge(plugin);
-  const topics = plugin.manifest.edge.capabilities && plugin.manifest.edge.capabilities.mqtt ? plugin.manifest.edge.capabilities.mqtt.topics : null;
-  if (!topics) throw hostError('denied', 'this plugin declares no MQTT topics (edge.capabilities.mqtt)');
+  const edge = plugin.manifest.edge;
+  const own = edge.capabilities && edge.capabilities.mqtt ? edge.capabilities.mqtt.topics : [];
+  const optional = edge.optionalCapabilities && edge.optionalCapabilities.mqtt ? edge.optionalCapabilities.mqtt.topics : [];
+  if (!own.length && !optional.length) throw hostError('denied', 'this plugin declares no MQTT topics (edge.capabilities.mqtt)');
   const a = args && typeof args === 'object' ? args : {};
   const peerId = gatewayIdOf(a.gatewayId);
   needEffective(plugin, peerId);
+  // the declared topics plus the optional ones confirmed on this gateway
+  const asg = store.assignment(plugin.id, peerId);
+  const topics = edgeManifest.withOptional(edge.capabilities, edgeManifest.approvedOptional(edge, asg ? asg.optCapsList : [])).mqtt;
+  if (!topics || !topics.topics.length) throw hostError('denied', 'no MQTT topics approved for this plugin on this gateway');
   const g = store.gatewayPeer(peerId);
   if (op === 'list') return mqtt.list(peerId, { pluginId: plugin.id }).map(({ id: _id, gatewayId: _g, createdBy: _c, ...rest }) => rest);
   if (op === 'remove') {
@@ -490,7 +622,7 @@ function hostMqtt(plugin, op, args) {
   let acl;
   try { acl = mqtt.normaliseAcl(o.topics == null ? [] : o.topics); } catch (e) { throw hostError('ERR_INVALID', e.message); }
   if (!acl.length) throw hostError('ERR_INVALID', 'topics: at least one');
-  if (!mqtt.topicsAllowed(topics, acl)) throw hostError('denied', 'topics outside the plugin\'s MQTT topics');
+  if (!mqtt.topicsAllowed(topics.topics, acl)) throw hostError('denied', 'topics outside the plugin\'s MQTT topics');
   const name = o.name == null ? require('node:crypto').randomBytes(4).toString('hex') : String(o.name).toLowerCase();
   if (!PLUGIN_USER_RE.test(name)) throw hostError('ERR_INVALID', 'invalid name');
   let r;
@@ -506,8 +638,8 @@ function hostMqtt(plugin, op, args) {
 }
 
 module.exports = {
-  gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, logs,
+  gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, approveOptional, revokeOptional, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
-  onPluginInstalled, onPluginRemoved, hostGateways, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
-  EdgeAdminError, CONFIRM_WORDS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY,
+  onPluginInstalled, onPluginRemoved, hostGateways, hostCapabilities, hostRequestCapability, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
+  EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY,
 };

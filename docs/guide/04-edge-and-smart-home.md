@@ -46,6 +46,32 @@ As long as you do not switch edge on, both containers are idle.
 **Check:** The plugin shows “running”. Instead of “Connected since …” there is
 a reason? Then see [4.4](#44-status-messages-and-what-helps).
 
+### Additional rights (optional)
+
+Some plugins need a right only for one feature – the Smart Home plugin, for
+example, needs the MQTT topics `zigbee2mqtt/#` once you use Zigbee2MQTT. A
+plugin asks for such rights only when it needs them. From GateControl
+**1.317.0**:
+
+- The edge part keeps running **without** these rights. An update that only
+  brings a new additional right switches nothing off – Shelly, Tasmota and the
+  like keep running.
+- When the plugin asks, the activity log shows “Plugin … asks for an additional
+  capability on gateway …” with the way to the confirmation (at most once a day
+  per gateway and right).
+- At the plugin in the tab “Edge plugins” the section “Additional rights
+  (optional)” lists each right as “confirmed”, “requested” or “not confirmed”,
+  with “Confirm” or “Revoke”. A confirmed right applies to this gateway only.
+- “Revoke” takes the right out again with the next sync; the gateway then ends
+  the plugin's subscriptions on those topics.
+
+For a confirmed MQTT topic to take effect on the gateway, the gateway needs a
+version that knows additional rights from the plugin package. Older gateways
+run the plugin as usual but refuse the additional topic.
+
+**Check:** The right shows “confirmed” and the feature in the plugin (e.g.
+Zigbee2MQTT devices) appears.
+
 ## 4.2 Switching the MQTT broker on
 
 Only needed if devices such as Shelly, Tasmota or ESPHome should report via MQTT.

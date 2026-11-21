@@ -418,7 +418,7 @@
   // ─── Errors and the log ─────────────────────────────────
 
   const ERROR_CODES = ['not_found', 'plugin_not_found', 'account_not_found', 'not_assigned', 'no_edge', 'caps_mismatch',
-    'unsigned_blocked', 'exists', 'limit', 'confirm_mismatch', 'invalid', 'session_required', 'forbidden', 'network'];
+    'unsigned_blocked', 'exists', 'limit', 'confirm_mismatch', 'invalid', 'unknown_capability', 'session_required', 'forbidden', 'network'];
 
   /** API error → i18n key (gwe.err.<code>). */
   function errorKey(code, status) {
