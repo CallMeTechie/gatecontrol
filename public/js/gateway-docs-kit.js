@@ -68,8 +68,20 @@
     return { installed: i, newer, listed };
   }
 
-  // "Alle Versionen" opens with the newest ones; the rest folds behind "Ältere anzeigen".
+  // "Alle Versionen" opens with the newest ones; "Ältere anzeigen" adds the next ten each time
+  // (GET /api/v1/gateways/releases?offset=&limit= — a page of the server's cached list).
   const VERSIONS_FIRST = 5;
+  const VERSIONS_PAGE = 10;
+
+  /**
+   * Where a page of the list ends (exclusive): `size` rows from `from` on —
+   * a single row left over is taken along (a fold for one row is no gain).
+   */
+  function pageEnd(total, from, size) {
+    const all = Math.max(0, total | 0);
+    const n = Math.min(all, Math.max(0, from | 0) + Math.max(1, size | 0));
+    return all - n <= 1 ? all : n;
+  }
 
   /**
    * How many rows of the list (newest first) show at once: the newest `limit`
@@ -83,8 +95,7 @@
     const max = limit > 0 ? limit : VERSIONS_FIRST;
     const i = cleanVersion(installed);
     const at = i ? list.findIndex((v) => v && v.version === i) : -1;
-    const n = Math.max(max, at + 1);
-    return list.length - n <= 1 ? list.length : n;
+    return pageEnd(list.length, 0, Math.max(max, at + 1));
   }
 
   /**
@@ -102,5 +113,5 @@
     return handbookHash(id, a);
   }
 
-  return { VERSION_RE, SLUG_RE, VERSIONS_FIRST, parseHash, versionsHash, handbookHash, topicHash, cleanVersion, compare, stateOf, summary, visibleCount };
+  return { VERSION_RE, SLUG_RE, VERSIONS_FIRST, VERSIONS_PAGE, pageEnd, parseHash, versionsHash, handbookHash, topicHash, cleanVersion, compare, stateOf, summary, visibleCount };
 });
