@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.315.1] — 2026-11-21
+
+### Fixes
+- Compose-Datei des Assistenten – TLS-Schlüssel für Mosquitto nur 0600 (Kopie im tmpfs des mqtt-Containers) (#560)
+
+---
+
 ## [1.315.0] — 2026-11-21
 
 ### Features
