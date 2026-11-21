@@ -16,7 +16,7 @@ const net = require('node:net');
 const path = require('node:path');
 const dgram = require('node:dgram');
 const { spawn } = require('node:child_process');
-const { monitorEventLoopDelay } = require('node:perf_hooks');
+const { maxLag } = require('./helpers/loopLag');
 
 const CORE = path.join(__dirname, '..', 'src', 'services', 'vpnDnsFilter', 'dnsfilter-core');
 const { wire } = require(CORE);
@@ -377,19 +377,19 @@ describe('measured: the service as its own process with lists the size of the de
     const idleRss = st.memory.rss;
 
     // what the server does meanwhile: ask the service for its status (services/vpnDns.js tick) — measured on THIS event loop
-    const loop = monitorEventLoopDelay({ resolution: 5 });
-    loop.enable();
+    // (helpers/loopLag.js: the pause less what a loaded runner took from the whole process, and the CPU in it)
     const t0 = Date.now();
-    writeConfig(dir, { ...cfg, rev: 2 });
     const during = [];
     let loaded = null;
-    while (Date.now() - t0 < 20000) {
-      const [s, a] = await Promise.all([control({ op: 'status' }), udp('fine.example', '10.8.0.11')]);
-      during.push(a.ms);
-      if (s.listsEntries === 273000) { loaded = Date.now() - t0; st = s; break; }
-      await sleep(5);
-    }
-    loop.disable();
+    const loop = await maxLag(async () => {
+      writeConfig(dir, { ...cfg, rev: 2 });
+      while (Date.now() - t0 < 20000) {
+        const [s, a] = await Promise.all([control({ op: 'status' }), udp('fine.example', '10.8.0.11')]);
+        during.push(a.ms);
+        if (s.listsEntries === 273000) { loaded = Date.now() - t0; st = s; break; }
+        await sleep(5);
+      }
+    });
     assert.ok(loaded !== null, 'both lists loaded');
     assert.deepEqual((await udp('ads-5.blocked-domain-5.example', '10.8.0.11')).a, ['0.0.0.0']);
     assert.deepEqual((await udp('sub.malware-77.blocked-domain-77.example', '10.8.0.11')).a, ['0.0.0.0'], 'adblock entries hold for subdomains');
@@ -399,10 +399,10 @@ describe('measured: the service as its own process with lists the size of the de
     const worst = Math.max(...during);
     console.log(`# dnsfilter with 273000 entries: lists ${mb(after.listsBytes)} MB, rss ${mb(after.memory.rss)} MB (idle without lists ${mb(idleRss)} MB), heap ${mb(after.memory.heapUsed)} MB; `
       + `loaded in ${loaded} ms; slowest answer while loading ${worst.toFixed(1)} ms (${during.length} asked); `
-      + `event loop of the asking process (the server's part): max ${(loop.max / 1e6).toFixed(1)} ms, mean ${(loop.mean / 1e6).toFixed(2)} ms`);
+      + `event loop of the asking process (the server's part): longest pause ${loop.worst} ms, ${loop.own} ms of it its own, ${loop.cpu} ms CPU in it`);
     assert.equal(after.listsBytes, 273000 * 8);
     assert.ok(after.memory.rss < 200 * 1048576, `rss ${mb(after.memory.rss)} MB`);
     assert.ok(worst < 1000, `an answer took ${worst} ms while the lists were loading`);
-    assert.ok(loop.max / 1e6 < 250, `the asking process was blocked for ${loop.max / 1e6} ms`);
+    assert.ok(loop.own < 250, `the asking process was blocked for ${loop.own} ms (${loop.worst} ms on the wall clock, ${loop.cpu} ms CPU)`);
   });
 });
