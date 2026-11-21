@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.315.2] — 2026-11-21
+
+### Fixes
+- „Neu prüfen“ zeigt Ergebnis und prüft auch auf neue Gateway-Version (#562)
+
+---
+
 ## [1.315.1] — 2026-11-21
 
 ### Fixes
