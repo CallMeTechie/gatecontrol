@@ -499,9 +499,26 @@ und `gateway-cache/` schon mit.
 
 ### „Your kernel does not support PIDs limit …“ (Synology)
 
-Harmlos. Der Kernel der Synology kann die Prozess-Grenze (`pids_limit`) der
-Container `edge` und `mqtt` nicht setzen. Docker lässt sie weg, alles andere
-läuft normal. Du musst nichts tun.
+Die ganze Meldung lautet „Your kernel does not support PIDs limit capabilities
+or the cgroup is not mounted. PIDs limit discarded.“ Sie kommt bei
+`docker compose up` oder im Container Manager, zum Beispiel wenn du die
+Compose-Datei erneuerst ([6.3](06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern)).
+
+Harmlos. Die Compose-Datei setzt für die Container `edge`, `mqtt` und – wenn
+gewählt – `kameras` und `office` eine Prozess-Grenze (`pids_limit`). Das ist ein
+zusätzlicher Schutz: Ein Container kann nur eine bestimmte Zahl an Prozessen
+starten, zum Beispiel wenn ein fehlerhaftes Plugin immer neue anlegt. Dem
+Kernel der Synology fehlt dafür der pids-Controller. Docker lässt die Grenze
+weg und startet die Container normal.
+
+Die übrigen Schutzschichten bleiben: `edge` und `office` laufen ohne Netzwerk,
+alle vier mit schreibgeschütztem Dateisystem (`read_only`), ohne Rechte
+(`cap_drop: ALL`, `no-new-privileges`) und mit einer Speichergrenze
+(`mem_limit`). `kameras` und `office` bekommen außerdem einen kleineren
+CPU-Anteil als das Gateway. Du musst nichts tun.
+
+**Prüfen:** Im Container Manager laufen die Container, und der Reiter
+„Edge-Plugins“ zeigt „Verbunden seit …“.
 
 ### „/dev/net/tun“ fehlt (Synology)
 

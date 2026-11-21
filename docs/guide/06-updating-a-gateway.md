@@ -47,12 +47,29 @@ containers or folders therefore do not arrive by themselves:
 | Cameras (live picture, clips) | 1.28.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
 | Radio: zigbee2mqtt, Thread border router | newer than 1.31.0 | services `zigbee2mqtt` and `otbr` (only when chosen), volumes `z2m-data` and `otbr-data` |
 | Print office files | 1.33.0 | service `office`, volume `office-ctl` |
+| MQTT with the device certificate (port 8883) and second TLS port 8884 | 1.44.0 / 1.45.0 | in the service `gateway` the volume `edge-mqtt-conf` at `/gc-mqtt-conf` (the gateway writes the broker files) |
+
+The volume `edge-mqtt-conf` is in every newly created compose file since
+gateway 1.23.0 (server 1.234.0). If your file is older, the edge container
+still writes the broker files. It does not have the device certificate, and
+GateControl then does not offer the switch. To see whether the volume is
+there, run this in the folder of the compose file:
+
+```bash
+grep -n "gc-mqtt-conf" docker-compose.yml
+```
+
+If no line comes back, the file is too old. Always get the new file through
+“Download docker-compose.yml only” on the gateway's page, not the examples on
+GitHub. Only the file from GateControl fits your gateway.
 
 You need this chapter if you see one of these:
 
 - “edge service missing” or “edge container not running” in the tab “Edge plugins”,
 - “folder not writable” for the home cache,
-- your compose file has no line with `gateway-cache` or no service `edge`.
+- your compose file has no line with `gateway-cache` or no service `edge`,
+- the switch “Use the device certificate” in Edge › MQTT does not show,
+  although the gateway is 1.44.0 or newer.
 
 The **Raspberry Pi image** maintains its compose file itself. This chapter is
 for **Synology** and **Linux/Docker**.
@@ -92,6 +109,12 @@ cd /volume1/docker/gatecontrol-gateway
 sudo mkdir -p gateway-state gateway-cache
 sudo docker compose up -d
 ```
+
+On start, Docker (or Container Manager) may report for `edge`, `mqtt` and – if
+you chose them – `kameras` and `office`: “Your kernel does not support PIDs
+limit capabilities or the cgroup is not mounted. PIDs limit discarded.” This
+is harmless, you do not need to do anything. More in the
+[FAQ](07-faq.md#your-kernel-does-not-support-pids-limit--synology).
 
 **Check:**
 
