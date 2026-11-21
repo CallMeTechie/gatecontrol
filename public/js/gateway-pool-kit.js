@@ -183,6 +183,41 @@
     const mask = a.bits < b.bits ? a.mask : b.mask;
     return ((a.net & mask) >>> 0) === ((b.net & mask) >>> 0);
   }
+  /** An IPv6 address as 8 words (0–0xffff) or null; no zone, no embedded IPv4. */
+  function ipv6(s) {
+    const t = String(s || '').trim().toLowerCase();
+    if (!/^[0-9a-f:]{2,39}$/.test(t) || t.split('::').length > 2) return null;
+    const [head, tail] = t.includes('::') ? t.split('::') : [t, null];
+    const part = (x) => (x ? x.split(':') : []);
+    const h = part(head), tl = part(tail);
+    if (h.concat(tl).some((w) => !/^[0-9a-f]{1,4}$/.test(w))) return null;
+    const fill = 8 - h.length - tl.length;
+    if (tail === null ? fill !== 0 : fill < 1) return null;
+    return h.concat(new Array(tail === null ? 0 : fill).fill('0'), tl).map((w) => parseInt(w, 16));
+  }
+  /** A unique local IPv6 subnet (fc00::/7, prefix 7–128) or null. */
+  function cidr6(s) {
+    const m = /^([0-9a-fA-F:]+)\/(\d{1,3})$/.exec(String(s || '').trim());
+    const w = m && ipv6(m[1]);
+    const bits = m ? Number(m[2]) : NaN;
+    if (!w || !(bits >= 7 && bits <= 128) || (w[0] & 0xfe00) !== 0xfc00) return null;
+    return { w, bits, text: String(s).trim() };
+  }
+  function overlap6(a, b) {
+    const bits = Math.min(a.bits, b.bits);
+    for (let i = 0; i < 8 && i * 16 < bits; i++) {
+      const n = Math.min(16, bits - i * 16);
+      const mask = (0xffff << (16 - n)) & 0xffff;
+      if ((a.w[i] & mask) !== (b.w[i] & mask)) return false;
+    }
+    return true;
+  }
+  /** The unique local IPv6 subnets a gateway reports (telemetry.lan_subnets6, home network without IPv4). */
+  function subnets6Of(g) {
+    const t = (g && g.health && g.health.telemetry) || {};
+    const list = Array.isArray(t.lan_subnets6) ? t.lan_subnets6 : [];
+    return list.slice(0, 16).map((x) => cidr6(x && typeof x === 'object' ? x.cidr : x)).filter(Boolean);
+  }
   /**
    * The subnet two gateways share (text of the wider one) or null. Like the
    * network watch's "Heimnetz" (services/homeNetwork.js) the subnet alone is
@@ -195,6 +230,7 @@
     const tb = (b.health && b.health.telemetry) || {};
     if (ta.default_gateway_ip && tb.default_gateway_ip && ta.default_gateway_ip !== tb.default_gateway_ip) return null;
     for (const x of subnetsOf(a)) for (const y of subnetsOf(b)) if (overlap(x, y)) return (x.bits <= y.bits ? x : y).text;
+    for (const x of subnets6Of(a)) for (const y of subnets6Of(b)) if (overlap6(x, y)) return (x.bits <= y.bits ? x : y).text;
     return null;
   }
 
@@ -425,7 +461,7 @@
     parsePoolHash, poolsOf, memberOf, fleetGroups, statusTone, roleOf, rankOf, activeMember, standbys,
     reserveGap, nextStandby, effectiveStatus,
     duration, COOLDOWN_PRESETS, proposeCooldown, presetFor,
-    cidr, subnetsOf, sameLan, suggestion,
+    cidr, subnetsOf, subnets6Of, sameLan, suggestion,
     healthChecks, overall,
     clock, liveOf, pollDelay,
     FEATURE_GROUPS, groupOf, featureStates, featureChips, CHIP_KEYS, CHIP_LIMIT, tabOff, memoryOf,

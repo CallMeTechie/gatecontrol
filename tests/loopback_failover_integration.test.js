@@ -121,6 +121,30 @@ describe('loopback failover integration (real pivot → rewrite → failback)', 
     assert.equal(sibCfg.l4_routes[0].target_lan_host, '192.168.2.228');
   });
 
+  // A home network without IPv4: HOME reports a unique local address (ULA) as
+  // its LAN IP. Only a sibling with the capability ipv6-lan gets it — an older
+  // one would build a backend URL without brackets, so it stays fail closed.
+  it('phase 1b: HOME with only a ULA — sibling with ipv6-lan gets it, an older sibling fails closed', async () => {
+    db.prepare('UPDATE gateway_meta SET lan_ip = ? WHERE peer_id = ?').run('fd00:db8::228', HOME);
+    try {
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { capabilities: ['netwatch'] } }), SIB);
+      assert.equal(gwTarget(buildCaddyConfig(), 'jelly.example.com'), null, 'older sibling: maintenance page, no target header');
+      let sibCfg = getGatewayConfig(SIB);
+      assert.equal(sibCfg.l4_routes.length, 0, 'older sibling: L4 listener left out');
+      assert.equal(sibCfg.routes.filter((r) => r.domain === 'jelly.example.com').length, 0, 'older sibling: HTTP route left out');
+
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { capabilities: ['netwatch', 'ipv6-lan'] } }), SIB);
+      assert.equal(gwTarget(buildCaddyConfig(), 'jelly.example.com'), '[fd00:db8::228]:8096');
+      sibCfg = getGatewayConfig(SIB);
+      assert.equal(sibCfg.l4_routes.length, 1);
+      assert.equal(sibCfg.l4_routes[0].target_lan_host, 'fd00:db8::228');
+      assert.equal(sibCfg.routes.find((r) => r.domain === 'jelly.example.com').target_lan_host, 'fd00:db8::228');
+    } finally {
+      db.prepare('UPDATE gateway_meta SET lan_ip = ?, last_health = NULL WHERE peer_id = ?').run('192.168.2.228', HOME);
+      db.prepare('UPDATE gateway_meta SET last_health = NULL WHERE peer_id = ?').run(SIB);
+    }
+  });
+
   it('phase 2: HOME recovers → routes fail back and loopback restores to 127.0.0.1', async () => {
     setAlive(HOME, true);
 

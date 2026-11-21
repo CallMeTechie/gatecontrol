@@ -52,6 +52,7 @@ const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Numbe
 function findDeconzRoute(peerId, lanIp) {
   const hosts = ['127.0.0.1', 'localhost'];
   if (lanIp) hosts.push(String(lanIp));
+  if (lanIp && String(lanIp).includes(':')) hosts.push(`[${lanIp}]`);
   const ph = hosts.map(() => '?').join(',');
   return getDb().prepare(`
     SELECT id, domain, https_enabled, enabled, external_enabled FROM routes

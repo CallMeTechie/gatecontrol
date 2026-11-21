@@ -1341,8 +1341,11 @@
       const extra = [];
       if (!knows) extra.push(h('span', { class: 'gwn-hint', 'data-setuppage-old': '' }, [U.icon('info', 14), sup.version ? t('gwn.feat.setuppage_old', { version: sup.version }) : t('gwn.feat.setuppage_unknown')]));
       else {
-        const lan = g.health && g.health.telemetry && g.health.telemetry.lan_ip;
-        if (f.setupPage.status !== false && typeof lan === 'string' && /^[0-9.]+$/.test(lan)) {
+        const tel = (g.health && g.health.telemetry) || {};
+        // IPv4, else the unique local IPv6 address of a home network without IPv4 (the page listens on both)
+        const lan = typeof tel.lan_ip === 'string' && /^[0-9.]+$/.test(tel.lan_ip) ? tel.lan_ip
+          : (typeof tel.lan_ip6 === 'string' && /^f[cd][0-9a-f:]{2,43}$/i.test(tel.lan_ip6) ? '[' + tel.lan_ip6 + ']' : null);
+        if (f.setupPage.status !== false && lan) {
           extra.push(h('span', { class: 'gwe-d', 'data-setuppage-url': '' }, [t('gwn.feat.setuppage_url'), ' ', h('code', { text: 'http://' + lan + ':8642' })]));
         }
       }
