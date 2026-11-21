@@ -484,9 +484,26 @@ The NAS package from the current assistant already brings `config/`,
 
 ### “Your kernel does not support PIDs limit …” (Synology)
 
-Harmless. The Synology kernel cannot set the process limit (`pids_limit`) of the
-containers `edge` and `mqtt`. Docker leaves it out, everything else runs
-normally. You do not need to do anything.
+The full message reads “Your kernel does not support PIDs limit capabilities or
+the cgroup is not mounted. PIDs limit discarded.” It shows on
+`docker compose up` or in Container Manager, for example when you renew the
+compose file ([6.3](06-updating-a-gateway.md#63-synology-renewing-the-compose-file)).
+
+Harmless. The compose file sets a process limit (`pids_limit`) for the
+containers `edge`, `mqtt` and – if chosen – `kameras` and `office`. It is an
+extra protection: a container can only start a certain number of processes,
+for example when a faulty plugin keeps creating new ones. The Synology kernel
+lacks the pids controller for this. Docker drops the limit and starts the
+containers normally.
+
+The other layers of protection stay: `edge` and `office` run without network,
+all four with a read-only file system (`read_only`), without privileges
+(`cap_drop: ALL`, `no-new-privileges`) and with a memory limit (`mem_limit`).
+`kameras` and `office` also get a smaller CPU share than the gateway. You do
+not need to do anything.
+
+**Check:** In Container Manager the containers are running, and the tab
+“Edge plugins” shows “Connected since …”.
 
 ### “/dev/net/tun” is missing (Synology)
 

@@ -49,12 +49,29 @@ zusätzliche Container oder Ordner brauchen, kommen deshalb nicht von selbst:
 | Kameras (Live-Bild, Clips) | 1.28.0 | Dienst `kameras`, Volumes `cam-ctl` und `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
 | Funk: zigbee2mqtt, Thread Border Router | nach 1.31.0 | Dienste `zigbee2mqtt` und `otbr` (nur wenn gewählt), Volumes `z2m-data` und `otbr-data` |
 | Office-Dateien drucken | 1.33.0 | Dienst `office`, Volume `office-ctl` |
+| MQTT mit Gerätezertifikat (Port 8883) und zweiter TLS-Port 8884 | 1.44.0 / 1.45.0 | im Dienst `gateway` das Volume `edge-mqtt-conf` unter `/gc-mqtt-conf` (das Gateway schreibt die Broker-Dateien) |
+
+Das Volume `edge-mqtt-conf` steht seit Gateway 1.23.0 (Server 1.234.0) in jeder
+neu erzeugten Compose-Datei. Ist deine Datei älter, schreibt noch der
+Edge-Container die Broker-Dateien. Der hat das Gerätezertifikat nicht, und
+GateControl bietet den Schalter dann nicht an. Ob das Volume da ist, siehst du
+im Ordner der Compose-Datei so:
+
+```bash
+grep -n "gc-mqtt-conf" docker-compose.yml
+```
+
+Kommt keine Zeile, ist die Datei zu alt. Hol die neue Datei immer über „Nur
+docker-compose.yml herunterladen“ auf der Seite des Gateways, nicht die
+Beispiele von GitHub. Nur die Datei aus GateControl passt zu deinem Gateway.
 
 Du brauchst dieses Kapitel, wenn du eines davon siehst:
 
 - „Edge-Dienst fehlt“ oder „Edge-Container läuft nicht“ im Reiter „Edge-Plugins“,
 - „Ordner nicht beschreibbar“ beim Zwischenspeicher,
-- deine Compose-Datei hat keine Zeile mit `gateway-cache` oder keinen Dienst `edge`.
+- deine Compose-Datei hat keine Zeile mit `gateway-cache` oder keinen Dienst `edge`,
+- der Schalter „Gerätezertifikat verwenden“ in Edge › MQTT erscheint nicht,
+  obwohl das Gateway 1.44.0 oder neuer ist.
 
 Das **Raspberry-Pi-Image** pflegt seine Compose-Datei selbst. Dieses Kapitel
 gilt für **Synology** und **Linux/Docker**.
@@ -95,6 +112,12 @@ cd /volume1/docker/gatecontrol-gateway
 sudo mkdir -p gateway-state gateway-cache
 sudo docker compose up -d
 ```
+
+Beim Start meldet Docker (oder der Container Manager) für `edge`, `mqtt` und –
+wenn du sie gewählt hast – `kameras` und `office` vielleicht: „Your kernel does
+not support PIDs limit capabilities or the cgroup is not mounted. PIDs limit
+discarded.“ Das ist harmlos, du musst nichts tun. Mehr dazu in der
+[FAQ](07-faq.md#your-kernel-does-not-support-pids-limit--synology).
 
 **Prüfen:**
 
