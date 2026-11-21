@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.315.0] — 2026-11-21
+
+### Features
+- Heimnetz nur mit IPv6 – ULA als LAN-Adresse des Gateways für Ausfall, Pool-Vorschlag und Anzeige (#559)
+
+---
+
 ## [1.314.1] — 2026-11-20
 
 ### Fixes
