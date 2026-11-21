@@ -3595,6 +3595,8 @@ a{color:inherit}
 .icon-action:hover{color:var(--text);border-color:var(--line-2)}
 .icon-action.danger:hover{color:var(--red);border-color:var(--red-bd)}
 .icon-action svg{width:15px;height:15px}
+/* Gateways: the card's update-check arrows while "Neu prüfen" runs (gateways.js setBusy) — stays clickable so the click does not fall through to the card */
+.icon-action.recheck[aria-busy="true"]{opacity:.55;cursor:progress}
 
 /* ----------------------------------------------------------------------------
    8 · FORMS (production: .form-group/.form-label/.form-input/.form-select/.form-hint)

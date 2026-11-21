@@ -228,11 +228,24 @@ router.get('/handbook', (req, res) => {
 
 // On-demand fresh-health re-check (session-authed; /api/v1 CSRF middleware guards
 // this POST for session callers; token-auth exempt). Update action = 2b, not here.
+// The same click ("Neu prüfen") asks for a newer gateway release: started before the
+// probe so both run side by side, at most once a minute for the whole server
+// (gatewayRelease.checkNow), never waited for. `update_check.pending`: GitHub has not
+// answered yet when the probe ends — the page reads the list again a little later.
 router.post('/:id/probe', async (req, res) => {
   const peerId = parseInt(req.params.id, 10);
-  const result = await require('../../services/gateways').refreshHealth(peerId);
+  const rel = require('../../services/gatewayRelease');
+  try { rel.checkNow(); } catch (err) { logger.debug({ err: err.message }, 'gateway release check not started'); }
+  let result;
+  try { result = await require('../../services/gateways').refreshHealth(peerId); }
+  catch (err) {
+    logger.warn({ err: err.message, peerId }, 'gateway re-check failed');
+    return res.status(500).json({ ok: false, error: req.t ? req.t('common.error') : 'Error' });
+  }
   if (result === null) return res.status(404).json({ ok: false, error: 'not a gateway' });
-  res.json({ ok: true, reachable: result.reachable });
+  let pending = false;
+  try { pending = !!rel.isChecking(); } catch { pending = false; }
+  res.json({ ok: true, reachable: result.reachable, update_check: { pending } });
 });
 
 // Trigger a gateway self-update (#2b). Session-authed; CSRF-guarded by the

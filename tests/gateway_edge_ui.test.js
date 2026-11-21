@@ -439,3 +439,40 @@ describe('gateway page', () => {
     assert.ok(island['gwiz.add'] && island['common.cancel'], 'the assistant keeps its strings');
   });
 });
+
+describe('gateways.js: "Neu prüfen" shows its result and the newer version', () => {
+  const src = stripComments(read('public/js/gateways.js'));
+  const probeFn = src.slice(src.indexOf('function probe(id)'), src.indexOf('function emptyFleet('));
+
+  it('both buttons go through probe(); busy while it runs, also across a redraw', () => {
+    assert.match(src, /var rc = e\.target\.closest\('\.recheck'\); if \(rc\) \{ e\.stopPropagation\(\); probe\(rc\.dataset\.id\); return; \}/);
+    assert.match(src, /var rc = e\.target\.closest\('\[data-act="recheck"\]'\); if \(rc\) \{ probe\(rc\.dataset\.id\); return; \}/);
+    // a redraw (poll, SSE) while the check runs keeps the buttons busy
+    assert.match(src, /if \(probing\[g\.peer_id\]\) setBusy\(rcBtn, true\);/);
+    assert.match(src, /if \(probing\[g\.peer_id\]\) setBusy\(rc, true\);/);
+    assert.match(probeFn, /if \(probing\[id\]\) return;/);
+    assert.match(probeFn, /recheckButtons\(id\)\.forEach\(function \(b\) \{ setBusy\(b, true\); \}\)/);
+    assert.match(probeFn, /recheckButtons\(id\)\.forEach\(function \(b\) \{ setBusy\(b, false\); \}\)/);
+    // the head's button is locked like the dashboard's "Erneut prüfen"; the card's arrows dim (CSS)
+    assert.match(src, /btn\.classList\.toggle\('db-up-busy', !!on\)/);
+    assert.match(read('public/css/app.css'), /\.icon-action\.recheck\[aria-busy="true"\]\{opacity:\.55;cursor:progress\}/);
+  });
+
+  it('a toast says reachable / not reachable / failed; the list is read again, later once more while GitHub answers', () => {
+    assert.match(probeFn, /T\('gateways\.recheck_failed'/);
+    assert.match(probeFn, /T\('gateways\.recheck_ok'/);
+    assert.match(probeFn, /T\('gateways\.recheck_unreachable'/);
+    assert.match(probeFn, /res\.body\.update_check && res\.body\.update_check\.pending/);
+    assert.match(probeFn, /return load\(true\);/);
+    assert.match(probeFn, /if \(pending\) followRelease\(2\);/);
+    assert.ok(!/console\.warn\('\[gateways\] probe failed', err\);\s*\}\);\s*\}/.test(probeFn), 'an error is not only logged');
+  });
+
+  it('the texts in German and English, delivered by the page', () => {
+    const layout = read('templates/aurora/layout.njk');
+    for (const k of ['gateways.recheck_ok', 'gateways.recheck_unreachable', 'gateways.recheck_failed']) {
+      assert.ok(de[k] && en[k] && de[k] !== en[k], k);
+      assert.ok(layout.includes(`'${k}': {{ t('${k}') | dump | safe }}`), k);
+    }
+  });
+});

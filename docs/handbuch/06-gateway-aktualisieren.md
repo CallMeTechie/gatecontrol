@@ -9,6 +9,13 @@ Ist eine neue Gateway-Version da, zeigt die Karte des Gateways unter
 bestätigen – das Gateway holt sich das neue Image und startet neu. Klappt das
 nicht, rollt es auf die vorige Version zurück.
 
+Nach neuen Gateway-Versionen sieht GateControl etwa einmal pro Stunde. Sofort
+prüfen: in der Ansicht des Gateways **„Neu prüfen“** (oder die Pfeile oben
+rechts auf der Karte). Das fragt das Gateway, ob es erreichbar ist – eine kurze
+Meldung sagt „erreichbar“ oder „nicht erreichbar“ – und sieht zugleich nach
+einer neuen Version (für den ganzen Server höchstens einmal pro Minute). Gibt es
+eine, erscheint „Update auf …“ nach wenigen Sekunden.
+
 Damit der Knopf wirkt, muss das Auto-Update auf dem Gerät eingerichtet sein:
 
 - **Raspberry-Pi-Image:** ist schon eingebaut.

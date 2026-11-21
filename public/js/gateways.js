@@ -221,6 +221,7 @@
     rcBtn.title = T('gateways.update_check', 'Check update');
     rcBtn.setAttribute('aria-label', rcBtn.title);
     rcBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>';
+    if (probing[g.peer_id]) setBusy(rcBtn, true);
     right.appendChild(rcBtn);
     uh.appendChild(right);
     wrap.appendChild(uh);
@@ -529,6 +530,7 @@
 
     var act = el('div', 'gw-detail-actions gw-head-actions');
     var rc = el('button', 'btn btn-ghost', T('gateways.recheck', 'Neu prüfen')); rc.type = 'button'; rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck'; rc.dataset.fk = 'gw-recheck';
+    if (probing[g.peer_id]) setBusy(rc, true);
     act.appendChild(rc);
     if (g.update_available) {
       var migrated = !!tel0.state_dir_writable;
@@ -1623,7 +1625,58 @@
     loading = Promise.all([gws, pools]).then(function (res) { loading = null; render(res[0]); }, function (err) { loading = null; schedulePoll(); console.warn('[gateways] loading gateways failed', err); });
     return loading;
   }
-  function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function (err) { console.warn('[gateways] probe failed', err); }); }
+  // "Neu prüfen" (detail head) and the arrows on the card: the server asks the gateway
+  // (reachable or not) and, at most once a minute, GitHub for a newer gateway version.
+  // The buttons stay busy until the answer is in (a redraw meanwhile keeps that state —
+  // `probing`), then a toast says what came out and the list is read again; when
+  // GitHub has not answered yet, it is read again a little later ("Update auf X").
+  var probing = {};
+  // the head's button is locked like "Erneut prüfen" of the dashboard (db-up-busy); the card's
+  // arrows only dim (app.css) — a locked one would hand the click to the card (opens the detail)
+  function setBusy(btn, on) {
+    if (on) { btn.setAttribute('aria-busy', 'true'); btn.setAttribute('aria-disabled', 'true'); }
+    else { btn.removeAttribute('aria-busy'); btn.removeAttribute('aria-disabled'); }
+    if (btn.classList.contains('recheck')) return;
+    btn.disabled = !!on;
+    btn.classList.toggle('db-up-busy', !!on);
+  }
+  function recheckButtons(id) {
+    return Array.prototype.filter.call(document.querySelectorAll('.recheck[data-id], [data-act="recheck"][data-id]'),
+      function (b) { return String(b.dataset.id) === String(id); });
+  }
+  function toast(msg, type) { if (typeof window.showToast === 'function') window.showToast(msg, type); }
+  var relFollow = null;
+  function followRelease(times) {
+    if (relFollow) clearTimeout(relFollow);
+    relFollow = setTimeout(function () {
+      relFollow = null;
+      if (document.hidden) return;
+      load(true).then(function () { if (times > 1) followRelease(times - 1); });
+    }, 4000);
+  }
+  function probe(id) {
+    if (probing[id]) return;
+    probing[id] = true;
+    recheckButtons(id).forEach(function (b) { setBusy(b, true); });
+    var pending = false;
+    fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok && b && b.ok, body: b || {} }; }); })
+      .then(function (res) {
+        if (!res.ok) toast(T('gateways.recheck_failed', 'Prüfen fehlgeschlagen – bitte später erneut versuchen'), 'error');
+        else if (res.body.reachable) toast(T('gateways.recheck_ok', 'Gateway erreichbar – Zustand aktualisiert'), 'success');
+        else toast(T('gateways.recheck_unreachable', 'Gateway nicht erreichbar'), 'warning');
+        pending = !!(res.ok && res.body.update_check && res.body.update_check.pending);
+      }, function (err) {
+        console.warn('[gateways] probe failed', err);
+        toast(T('gateways.recheck_failed', 'Prüfen fehlgeschlagen – bitte später erneut versuchen'), 'error');
+      })
+      .then(function () {
+        delete probing[id];
+        recheckButtons(id).forEach(function (b) { setBusy(b, false); });
+        return load(true);
+      })
+      .then(function () { if (pending) followRelease(2); });
+  }
 
   function emptyFleet() {
     var d = el('div', 'gw-empty-fleet');
