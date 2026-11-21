@@ -403,11 +403,15 @@ Klicke im Gateway oben rechts auf „Mehr“:
 - **Versionen** – jede Gateway-Version mit ihren Änderungen, die neueste
   oben. Die Version, die auf diesem Gateway läuft, ist mit **„Installiert“**
   markiert; jede neuere mit **„Neuer“**. Gibt es ein Update, steht darüber,
-  wie viele Versionen es bringt. „Was ist neu?“ neben „Update auf …
-  verfügbar“ im „Zustand“ führt ebenfalls hierher.
+  wie viele Versionen es bringt. Zuerst siehst du die neuesten (und alles bis
+  zur installierten); **„Ältere anzeigen“** holt jeweils zehn weitere dazu,
+  „Ältere ausblenden“ klappt sie wieder ein. „Was ist neu?“ neben „Update
+  auf … verfügbar“ im „Zustand“ und der Link „Gateway-Versionen“ in den
+  Hinweisen „braucht ein neueres Gateway/Image“ führen ebenfalls hierher.
 - **Handbuch** – die Kapitel 3 bis 7 dieses Handbuchs direkt in GateControl,
   mit Inhaltsverzeichnis. Es kommt mit GateControl mit und braucht kein
-  Internet.
+  Internet. Die Links „Anleitung“ der Gateways-Seite und die Anleitungs-Links
+  des Assistenten öffnen es (in einem neuen Tab) gleich beim passenden Abschnitt.
 
 Die Versionsliste lädt GateControl von GitHub (höchstens alle 6 Stunden) und
 merkt sie sich. Erreicht dein Server GitHub gerade nicht, siehst du den

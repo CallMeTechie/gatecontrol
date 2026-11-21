@@ -23,14 +23,15 @@ const { compareVersions } = require('../utils/version');
 
 const REPO = process.env.GC_GATEWAY_REPO || 'CallMeTechie/gatecontrol-gateway';
 const TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
-const API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=60`;
+// one request of the API (its largest page) — the page "Versionen" pages through this cached list
+const API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=100`;
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
 const TTL = 6 * 60 * 60 * 1000;
 const RETRY_AFTER_FAIL = 10 * 60 * 1000;
 const MANUAL_MIN = 60 * 1000;
 const TIMEOUT = 8000;
 const MAX_BODY = 2 * 1024 * 1024;
-const MAX_VERSIONS = 60;
+const MAX_VERSIONS = 100;
 const NOTES_MAX = 8000;
 const VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}$/;
 

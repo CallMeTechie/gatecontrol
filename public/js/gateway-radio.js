@@ -27,6 +27,13 @@
   const GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
 
   function url(id, rest) { return API + encodeURIComponent(String(id)) + (rest || ''); }
+  // "Gateway-Versionen" of a "needs a newer image" hint: the view "Versionen" of this gateway inside the
+  // page (gateway-docs.js, #gw/<id>/versions); without it the releases on GitHub (new tab)
+  function versionsLink(g, key) {
+    const href = window.GCGatewayDocs && g ? window.GCGatewayDocs.versionsHref(g) : GW_RELEASES;
+    const out = /^https:/.test(href) ? { target: '_blank', rel: 'noopener noreferrer' } : {};
+    return h('a', Object.assign({ href, 'data-versions-link': '', text: t(key) }, out));
+  }
   function has(key) { return t(key) !== key; }
   function errText(e) {
     const code = e && e.code;
@@ -287,7 +294,7 @@
   }
 
   function composeNote(g, d, key) {
-    if (d.compose === 'image' || (d.gateway.platform === 'rpi')) return U.note('warn', [t('gwr.zb.old_image'), ' ', h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwr.releases') })]);
+    if (d.compose === 'image' || (d.gateway.platform === 'rpi')) return U.note('warn', [t('gwr.zb.old_image'), ' ', versionsLink(g, 'gwr.releases')]);
     const dl = window.GCGatewayCompose ? actBtn(t('gwr.compose'), 'gwr-compose', 'btn-ghost btn-sm', () => { window.GCGatewayCompose.open(cur ? cur.g : g, 'gwr-compose'); }) : null;
     return U.note('warn', [h('span', { 'data-radio-compose': '', text: t(key) }), ' ', dl]);
   }
@@ -574,7 +581,7 @@
     const nodes = [head(t('gwr.th.title'), tagNode, null),
       sub(found ? t('gwr.th.found', { list: th.models.join(', ') || t('gwr.stick.unknown') }) : t('gwr.th.none')),
       h('p', { class: 'gwe-d', text: t('gwr.th.text2') })];
-    if (found) nodes.push(U.note('info', [t('gwr.th.found_update', { version: d.lastWithoutStacks || '1.31.0' }), ' ', h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwr.releases') })]));
+    if (found) nodes.push(U.note('info', [t('gwr.th.found_update', { version: d.lastWithoutStacks || '1.31.0' }), ' ', versionsLink(cur && cur.g, 'gwr.releases')]));
     return section('thread', nodes);
   }
 
@@ -644,7 +651,7 @@
     if (st) {
       const old = d.supported && !d.assignSupported
         ? h('p', { class: 'gwe-d gwe-muted', 'data-radio-assign-old': '' }, [t('gwr.stick.assign_old', { version: d.lastWithoutAssign || '1.33.1' }), ' ',
-          h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwr.releases') })])
+          versionsLink(cur && cur.g, 'gwr.releases')])
         : null;
       nodes.push(h('section', { class: 'gwr-sticks-box', 'data-radio': 'sticks', 'aria-labelledby': 'gwr-sticks-h' }, [h('h3', { class: 'gwr-h', id: 'gwr-sticks-h', text: t('gwr.stick.title') }), st,
         h('p', { class: 'gwe-d gwe-muted', text: t('gwr.stick.one') }), old]));
