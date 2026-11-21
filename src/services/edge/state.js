@@ -12,6 +12,10 @@
 //   unsigned         not signed by a trusted publisher and the gateway does not allow that
 //   plugin_off       the plugin itself does not run on the server (disabled, licence, …)
 //   gateway_too_old  the gateway is older than edge.minGateway
+//
+// edge.optionalCapabilities never decide the reason: only the optional keys an administrator
+// confirmed for this gateway (assignment optCapsList) are added to `caps` and to
+// mqtt.pluginTopics of a switched-on plugin; revoking one takes it out of the next state.
 
 const store = require('./store');
 const mqtt = require('./mqtt');
@@ -28,13 +32,16 @@ function serverRuns(plugin) {
 
 /**
  * The verdict for one assignment.
- * @returns {{ plugin, edge, reason: string|null, newCaps: string[] } | null}  null: the plugin has no edge part (any more)
+ * @returns {{ plugin, edge, reason: string|null, newCaps: string[], optional: string[] } | null}  null: the plugin has no edge part (any more)
+ *   optional: the confirmed optional keys the installed version still declares
  */
 function evaluate(a, settings) {
   const plugin = registry().get(a.pluginId);
   const edge = plugin && plugin.manifest ? plugin.manifest.edge : null;
   if (!edge) return null;
-  const newCaps = edgeManifest.newCapabilities(edge.capabilities, a.capsList);
+  const optional = edgeManifest.approvedOptional(edge, a.optCapsList);
+  // a key confirmed as optional counts as approved when a later version makes it a regular capability
+  const newCaps = edgeManifest.newCapabilities(edge.capabilities, [...(a.capsList || []), ...(a.optCapsList || [])]);
   let reason = null;
   if (!a.enabled) reason = 'disabled';
   else if (newCaps.length) reason = 'update_pending';
@@ -42,7 +49,7 @@ function evaluate(a, settings) {
   else if (!serverRuns(plugin)) reason = 'plugin_off';
   else if (edge.minGateway && settings.hello && typeof settings.hello.version === 'string' && semver.valid(settings.hello.version)
     && semver.compare(settings.hello.version, edge.minGateway) < 0) reason = 'gateway_too_old';
-  return { plugin, edge, reason, newCaps };
+  return { plugin, edge, reason, newCaps, optional };
 }
 
 /** May `pluginId` use the gateway right now (calls, configure, events, packages)? */
@@ -68,9 +75,9 @@ function compute(peerId) {
       const pk = packages.info(v.plugin.id, v.plugin.version);
       if (!pk) continue;
       const on = v.reason === null;
-      // switched on: what the installed version declares (⊆ what was approved); otherwise the approved snapshot
-      // forState: never a removed capability from an older install or approval (http.selfSigned)
-      const caps = edgeManifest.forState(on ? v.edge.capabilities : a.caps);
+      // switched on: what the installed version declares (⊆ what was approved) plus the confirmed optional ones;
+      // otherwise the approved snapshot. forState: never a removed capability from an older install or approval (http.selfSigned)
+      const caps = edgeManifest.forState(on ? edgeManifest.withOptional(v.edge.capabilities, v.optional) : a.caps);
       list.push({
         id: v.plugin.id, version: v.plugin.version, sha256: pk.sha256, caps, memoryMb: v.edge.memoryMb, enabled: on,
         ...(on ? {} : { reason: v.reason }),

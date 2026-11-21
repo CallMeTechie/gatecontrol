@@ -6156,7 +6156,7 @@ example `tests/fixtures/plugins/edge-demo/`.
 A broken `edge` section refuses the install like any other manifest error
 (check *manifest*, e.g. `edge.memoryMb: invalid (16…256)`). The install dialog
 shows the section as `permissions.edge` `{ memoryMb, minGateway, capabilities:
-[{ key, text }] }`. Plugins without `edge` are unchanged.
+[{ key, text }], optionalCapabilities: [{ key, text }] }`. Plugins without `edge` are unchanged.
 
 ### Capabilities and approval
 
@@ -6172,6 +6172,52 @@ confirmation. **Unsigned** (or untrusted) plugins run on a gateway only while
 with `ERLAUBEN`/`ALLOW`) — independent of the server-wide policy, which only
 lets them be installed. A plugin that does not run on the server (disabled,
 licence, …) is off on every gateway too (`plugin_off`).
+
+### Optional capabilities
+
+Since **1.317.0** an edge part may declare capabilities it asks for only when
+a feature needs them — e.g. a smart home plugin that runs Shelly and Tasmota
+with `shellies/#` and `tasmota/#`, and wants `zigbee2mqtt/#` only once a
+person uses Zigbee2MQTT:
+
+```json
+"edge": {
+  "entry": "edge/index.js",
+  "capabilities":         { "mqtt": { "topics": ["shellies/#", "tasmota/#"] } },
+  "optionalCapabilities": { "mqtt": { "topics": ["zigbee2mqtt/#"] } }
+}
+```
+
+* Same form as `capabilities`, validated at install with the same rules
+  (`edge.optionalCapabilities.mqtt.topics: invalid topic …`). For now **only
+  `mqtt.topics`** can be optional — the gateway applies topics live (it checks
+  every subscription again with each state); ports, mDNS, LAN access and
+  serial devices stay in `capabilities` (`edge.optionalCapabilities: udp cannot
+  be optional (optional: mqtt)`). A topic must not also be in `capabilities`
+  (`… already in capabilities`), and both lists together hold at most 16
+  topics.
+* Optional keys (`mqtt.topic:zigbee2mqtt/#`) are **never** part of the
+  confirmation that switches the edge part on and never cause
+  `update_pending`: an update that only adds an optional capability keeps
+  the plugin running on every gateway.
+* An administrator confirms (or revokes) each optional key **per gateway**
+  (*Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte (optional)*, admin
+  API `…/optional/approve` / `…/optional/revoke`). Only confirmed keys reach the
+  gateway — in `plugins[].caps` and `mqtt.pluginTopics` of the `state` — and
+  `gc.mqtt.accounts.create` accepts topics below them; revoking takes them out
+  of the next state. A confirmed key the plugin later moves into
+  `capabilities` counts as approved (no `update_pending`).
+* **Host version:** an older server refuses the package (`edge: unknown key
+  optionalCapabilities`), so declare `"gatecontrol": ">=1.317.0"` in
+  `plugin.json`. A plugin that must also install on older hosts leaves the
+  section out and checks `typeof gc.edge.requestCapability === 'function'` at
+  runtime.
+* **Gateway version:** the gateway grants a topic only if its own copy of
+  `plugin.json` lists it, too (it intersects the package's capabilities with
+  the approved ones). A gateway that does not read `optionalCapabilities` yet
+  runs the edge part as usual but refuses the optional topic in
+  `gc.mqtt.subscribe` / `publish` (`denied`). Treat `denied` as "not available
+  on this gateway yet".
 
 ### Server part: `gc.edge`
 
@@ -6213,6 +6259,28 @@ Only in plugins with an `edge` section:
   `state` stays `offline` for all of them, so plugins written against older
   servers keep working; show `reason` when it is set and fall back to a
   generic "not connected" otherwise.
+* `gc.edge.capabilities(gatewayId)` (since 1.317.0) → `{ gatewayId, optional,
+  approved, requested }` — the keys of `edge.optionalCapabilities`, the ones an
+  administrator confirmed for that gateway, and the ones asked for and not
+  confirmed yet. `not_enabled` when the plugin is not set up for that gateway.
+* `gc.edge.requestCapability(gatewayId, key)` (since 1.317.0) → `{ status:
+  'approved' | 'requested', notified }` — asks an administrator for one optional
+  key (`mqtt.topic:zigbee2mqtt/#`): a note in the activity log
+  (`gateway_edge_capability_requested`, severity warning, `details.link`
+  `/gateways#gw/<id>/edge`) naming the plugin, the gateway and the capability,
+  plus a line in the gateway's ring buffer. **At most one note per gateway and
+  key per 24 hours** — asking again meanwhile answers `requested` with
+  `notified: false`, so ask whenever the feature is used without spamming
+  anybody. A key the plugin does not declare as optional → `ERR_INVALID`; not
+  set up for that gateway → `not_enabled`. Typical use:
+
+  ```js
+  const { approved } = await gc.edge.capabilities(gatewayId);
+  if (!approved.includes('mqtt.topic:zigbee2mqtt/#')) {
+    await gc.edge.requestCapability(gatewayId, 'mqtt.topic:zigbee2mqtt/#');
+    return { needsApproval: true }; // show "waiting for the administrator" in the plugin's UI
+  }
+  ```
 * `gc.edge.call(gatewayId, method, params, { timeoutMs })` → what the edge
   part's `gc.handle(method)` returned. `timeoutMs` ≤ 30000 (default 30000),
   `method` `[A-Za-z0-9_.:-]{1,64}`, the whole call ≤ 64 KB, ≤ 32 open calls per
@@ -6242,7 +6310,9 @@ call), `not_enabled` (not switched on / not allowed on that gateway now),
 gateway refused a capability), `busy` (32 open calls), `too_large` (call or
 result over 64 KB), `ERR_INVALID` (arguments).
 
-`gc.mqtt.accounts` (plugins whose `edge.capabilities.mqtt` lists topics):
+`gc.mqtt.accounts` (plugins whose `edge.capabilities.mqtt` or
+`edge.optionalCapabilities.mqtt` lists topics; optional ones count only where
+confirmed for that gateway):
 `create(gatewayId, { name?, label?, topics })` → `{ username, password, acl,
 label }` — an account for one of its devices, user name `<plugin id>-<name or
 random>`, every topic below one of the plugin's `mqtt.topics` (else `denied`),
@@ -6421,10 +6491,12 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /gateways` | every gateway: switches, channel, gateway version and edge support (`support`), counts (assigned, on, needing attention), MQTT |
-| `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, assignment, state and `reason`, new capabilities, last status), MQTT status and accounts |
+| `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, optional capabilities, assignment, state and `reason`, new capabilities, `optional: [{ key, text, approved, requestedAt }]`, last status), MQTT status and accounts |
 | `PUT /gateways/:id/settings` | `{ edgeEnabled, mqttEnabled, mqttTls, allowUnsignedEdge, confirm }` |
 | `POST /gateways/:id/plugins/:pluginId/enable` | `{ capabilities: [keys] }` — exactly the current list, else `409 caps_mismatch` with it; unsigned without `allowUnsignedEdge` → `409 unsigned_blocked` |
 | `POST /gateways/:id/plugins/:pluginId/disable` | switch off |
+| `POST /gateways/:id/plugins/:pluginId/optional/approve` | `{ key }` — confirm one optional capability (since 1.317.0); `400 unknown_capability` when the plugin does not declare it; the plugin must be set up for the gateway (`404 not_assigned`) |
+| `POST /gateways/:id/plugins/:pluginId/optional/revoke` | `{ key }` — take it back; also for a key the installed version no longer declares |
 | `GET /gateways/:id/logs?plugin=&kind=&limit=&before=` | ring buffer, newest first (`kind` `log`, `event`, `system`; `plugin=` empty: the gateway's own notes); 500 entries per gateway × plugin |
 | `GET /gateways/:id/mqtt/accounts` | accounts (no password, no hash) |
 | `POST /gateways/:id/mqtt/accounts` | `{ username, label, topics, vendorPrefix }` → `201 { account, password }` |
@@ -6445,7 +6517,9 @@ Activity log (category *Peers & Gateways*): `gateway_edge_enabled` /
 `gateway_edge_disabled`, `gateway_edge_unsigned_allowed` /
 `gateway_edge_unsigned_blocked`, `gateway_edge_plugin_enabled` /
 `gateway_edge_plugin_disabled`, `gateway_edge_caps_approved` (the newly
-approved keys), `gateway_edge_update_pending`, `gateway_edge_plugin_crashed`
+approved keys), `gateway_edge_update_pending`, `gateway_edge_capability_requested`
+(gc.edge.requestCapability), `gateway_edge_optional_approved` /
+`gateway_edge_optional_revoked`, `gateway_edge_plugin_crashed`
 and `gateway_edge_plugin_throttled` (at most once per 10 minutes per gateway ×
 plugin), `gateway_mqtt_enabled` / `gateway_mqtt_disabled`,
 `gateway_mqtt_account_created` / `_locked` / `_unlocked` / `_password` /

@@ -144,7 +144,7 @@ describe('migration 160: tokens left without any scope', () => {
     assert.equal(m.name, 'pihole_only_tokens_removed');
     const versions = list.map((x) => x.version);
     assert.equal(new Set(versions).size, versions.length, 'every version once');
-    assert.equal(Math.max(...versions), 160, 'the newest migration');
+    // 161 (edge_optional_capabilities) came after it — the newest one is checked in tests/edge_manifest.test.js
     db.transaction(() => { db.exec(m.sql); m.run(db); })();
 
     assert.equal(db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(empty), undefined);

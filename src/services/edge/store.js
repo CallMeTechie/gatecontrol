@@ -78,6 +78,8 @@ function rowToAssignment(r) {
   return {
     pluginId: r.plugin_id, peerId: r.peer_id, enabled: r.enabled === 1,
     caps: json(r.caps, {}), capsList: json(r.caps_list, []), capsVersion: r.caps_version || null,
+    // edge.optionalCapabilities (migration 161): confirmed optional keys, last request per key
+    optCapsList: json(r.opt_caps_list, []), optRequests: json(r.opt_requests, {}),
     approvedAt: r.approved_at || null, approvedBy: r.approved_by || null,
     status: json(r.status), statusAt: r.status_at || null, createdAt: r.created_at,
   };
@@ -104,6 +106,17 @@ function approve(pluginId, peerId, { caps, capsList, version, by }) {
       caps_version = excluded.caps_version, approved_at = excluded.approved_at, approved_by = excluded.approved_by`)
     .run(pluginId, peerId, JSON.stringify(caps || {}), JSON.stringify(capsList || []), version || null, now, by || null, now);
   return assignment(pluginId, peerId);
+}
+
+/** The confirmed optional capability keys (edge.optionalCapabilities) of an assignment. */
+function setOptional(pluginId, peerId, list) {
+  const keys = [...new Set((list || []).map(String))].sort();
+  return db().prepare('UPDATE edge_assignments SET opt_caps_list = ? WHERE plugin_id = ? AND peer_id = ?').run(JSON.stringify(keys), pluginId, peerId).changes > 0;
+}
+
+/** { key: ms } of the last gc.edge.requestCapability per optional key. */
+function setOptionalRequests(pluginId, peerId, requests) {
+  db().prepare('UPDATE edge_assignments SET opt_requests = ? WHERE plugin_id = ? AND peer_id = ?').run(JSON.stringify(requests || {}), pluginId, peerId);
 }
 
 function setAssignmentEnabled(pluginId, peerId, enabled) {
@@ -162,6 +175,6 @@ function logs(peerId, { pluginId, limit = 200, before = null, kind = null } = {}
 
 module.exports = {
   gatewayPeer, gatewayPeers, settings, setSettings, setHello, setMqttStatus,
-  assignment, assignmentsOfGateway, assignmentsOfPlugin, approve, setAssignmentEnabled, setAssignmentStatus, removePlugin,
+  assignment, assignmentsOfGateway, assignmentsOfPlugin, approve, setOptional, setOptionalRequests, setAssignmentEnabled, setAssignmentStatus, removePlugin,
   addLog, logs, LOG_KEEP, LOG_LINE_MAX,
 };

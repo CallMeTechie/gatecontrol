@@ -10,6 +10,8 @@
 //   PUT    /gateways/:id/settings                      { edgeEnabled?, mqttEnabled?, mqttTls?, allowUnsignedEdge?, confirm: 'ERLAUBEN' }
 //   POST   /gateways/:id/plugins/:pluginId/enable      { capabilities: [keys exactly as shown] }
 //   POST   /gateways/:id/plugins/:pluginId/disable
+//   POST   /gateways/:id/plugins/:pluginId/optional/approve   { key } — one optional capability (edge.optionalCapabilities)
+//   POST   /gateways/:id/plugins/:pluginId/optional/revoke    { key }
 //   GET    /gateways/:id/logs?plugin=&kind=&limit=&before=   ring buffer (plugin= empty: the gateway's own notes)
 //   GET    /gateways/:id/mqtt/accounts
 //   POST   /gateways/:id/mqtt/accounts                 { username, label, topics: [{ topic, access }], vendorPrefix } → password once
@@ -32,7 +34,7 @@ router.use((req, res, next) => {
 
 const STATUS = {
   not_found: 404, plugin_not_found: 404, account_not_found: 404, not_assigned: 404, no_edge: 409,
-  caps_mismatch: 409, unsigned_blocked: 409, exists: 409, limit: 409, confirm_mismatch: 400, invalid: 400,
+  caps_mismatch: 409, unsigned_blocked: 409, exists: 409, limit: 409, confirm_mismatch: 400, invalid: 400, unknown_capability: 400,
 };
 
 function lang(req) { return req.language === 'en' ? 'en' : 'de'; }
@@ -87,6 +89,16 @@ router.post('/gateways/:id/plugins/:pluginId/disable', handle((req, res) => {
   if (!id) return res.status(404).json({ ok: false, code: 'not_assigned', error: 'the plugin is not set up for this gateway' });
   res.json({ ok: true, assignment: edge.disablePlugin(gatewayId(req), id, { ip: req.ip, user: who(req), lang: lang(req) }) });
 }));
+
+for (const op of ['approve', 'revoke']) {
+  router.post(`/gateways/:id/plugins/:pluginId/optional/${op}`, handle((req, res) => {
+    const id = pluginId(req);
+    if (!id) return res.status(404).json({ ok: false, code: 'not_assigned', error: 'the plugin is not set up for this gateway' });
+    const b = req.body || {};
+    const opts = { key: typeof b.key === 'string' ? b.key : null, ip: req.ip, user: who(req), lang: lang(req) };
+    res.json({ ok: true, assignment: op === 'approve' ? edge.approveOptional(gatewayId(req), id, opts) : edge.revokeOptional(gatewayId(req), id, opts) });
+  }));
+}
 
 router.get('/gateways/:id/logs', handle((req, res) => {
   const q = req.query || {};

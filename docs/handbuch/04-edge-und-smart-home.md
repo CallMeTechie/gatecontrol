@@ -47,6 +47,33 @@ Solange du Edge nicht einschaltest, sind beide Container untätig.
 **Prüfen:** Beim Plugin steht „läuft“. Statt „Verbunden seit …“ steht dort ein
 Grund? Dann hilft [4.4](#44-statusmeldungen-und-was-hilft).
 
+### Zusätzliche Rechte (optional)
+
+Manche Plugins brauchen ein Recht nur für eine bestimmte Funktion – das
+Smart-Home-Plugin etwa die MQTT-Themen `zigbee2mqtt/#`, wenn du Zigbee2MQTT
+nutzt. Solche Rechte fragt das Plugin erst an, wenn es sie braucht. Ab
+GateControl **1.317.0** gilt:
+
+- Der Edge-Teil läuft **ohne** diese Rechte weiter. Ein Update, das nur ein
+  neues zusätzliches Recht mitbringt, schaltet nichts aus – Shelly, Tasmota &
+  Co. laufen weiter.
+- Fragt das Plugin an, steht im Aktivitätsprotokoll „Plugin … asks for an
+  additional capability on gateway …“ mit dem Weg zur Bestätigung (höchstens
+  einmal am Tag je Gateway und Recht).
+- Beim Plugin im Reiter „Edge-Plugins“ steht der Abschnitt „Zusätzliche
+  Rechte (optional)“: je Recht „bestätigt“, „angefragt“ oder „nicht
+  bestätigt“, dazu „Bestätigen“ bzw. „Entziehen“. Ein bestätigtes Recht gilt
+  nur für dieses Gateway.
+- „Entziehen“ nimmt das Recht beim nächsten Abgleich wieder heraus; das Gateway
+  beendet dann die Abos des Plugins auf diesen Themen.
+
+Damit ein bestätigtes MQTT-Thema am Gateway wirkt, braucht das Gateway eine
+Version, die zusätzliche Rechte aus dem Plugin-Paket kennt. Ältere Gateways
+lassen das Plugin normal laufen, verweigern aber das zusätzliche Thema.
+
+**Prüfen:** Beim Recht steht „bestätigt“, und die Funktion im Plugin
+(z. B. Zigbee2MQTT-Geräte) erscheint.
+
 ## 4.2 MQTT-Broker einschalten
 
 Nur nötig, wenn Geräte wie Shelly, Tasmota oder ESPHome über MQTT melden sollen.

@@ -4400,6 +4400,19 @@ const migrations = [
     sql: `DELETE FROM client_enrollment_codes WHERE consumed_at IS NULL AND scopes = '[]';`,
     run: (db) => { require('../services/piholeRemoval').dropEmptyTokens(db); },
   },
+  {
+    version: 161,
+    name: 'edge_optional_capabilities',
+    // plugin.json edge.optionalCapabilities (services/edge/manifest.js): what a plugin asks for later, per gateway,
+    // and an administrator confirms on its own (Gateways › Gateway › Edge-Plugins, „Zusätzliche Rechte (optional)“):
+    //   opt_caps_list   JSON list of the confirmed optional keys (e.g. "mqtt.topic:zigbee2mqtt/#") — never part of
+    //                   caps_list, so they never cause update_pending
+    //   opt_requests    JSON { key: ms } — the last gc.edge.requestCapability per key (one admin note per day)
+    sql: `
+      ALTER TABLE edge_assignments ADD COLUMN opt_caps_list TEXT;
+      ALTER TABLE edge_assignments ADD COLUMN opt_requests TEXT;`,
+    detect: (db) => hasColumn(db, 'edge_assignments', 'opt_requests'),
+  },
 ];
 
 module.exports = { migrations };

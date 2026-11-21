@@ -3916,6 +3916,14 @@ input[type=date]:focus, select:focus {
 .gwe-pname{font-size:15px}
 .gwe-meta code{overflow-wrap:anywhere}
 .gwe-prow-a{display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end}
+/* „Zusätzliche Rechte (optional)“ of a plugin row (edge.optionalCapabilities) */
+.gwe-opt{display:flex; flex-direction:column; gap:6px; padding:10px 12px; border-radius:var(--r-sm); background:var(--chip); border:1px solid var(--line)}
+.gwe-opt-h{margin:0; font-size:13px; font-weight:600; color:var(--text)}
+.gwe-opt .gwe-d{margin:0}
+.gwe-opt-list{list-style:none; margin:0; padding:0}
+.gwe-opt-row{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13px}
+.gwe-opt-row:first-child{border-top:0}
+.gwe-opt-t{flex:1 1 220px; min-width:0; overflow-wrap:anywhere}
 /* key/value rows (MQTT) */
 .gwe-kvs{display:grid; gap:8px}
 .gwe-kv{display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:6px 14px; align-items:center; font-size:13px}

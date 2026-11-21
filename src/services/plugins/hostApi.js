@@ -2809,6 +2809,9 @@ async function handle(plugin, api, args, ctx) {
     // plugin.json `edge`: the plugin's edge part on home gateways (services/edge, docs/plugins.md "Edge part") —
     // errors carry the codes gateway_offline, not_enabled, timeout, edge_error, denied, busy
     case 'edge.gateways': return require('../edge').hostGateways(plugin);
+    // since 1.317.0: optional capabilities (plugin.json edge.optionalCapabilities) — confirmed per gateway, asked for on demand
+    case 'edge.capabilities': return require('../edge').hostCapabilities(plugin, args);
+    case 'edge.requestCapability': return require('../edge').hostRequestCapability(plugin, args);
     case 'edge.call': return require('../edge').hostCall(plugin, args);
     case 'edge.configure': return require('../edge').hostConfigure(plugin, args);
     // device accounts of the gateway's MQTT broker, only below the plugin's edge mqtt topics
