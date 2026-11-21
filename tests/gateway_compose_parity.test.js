@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/gateway-einrichtungsseite, 2026-11-11: setup page — ./config writable, GC_SETUP_PORT, /dev/net/tun unchanged in `devices`; before that feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
+// gatecontrol-gateway fix/mqtt-key-0600, 2026-11-21: the mqtt watcher copies certificate and key into its tmpfs /run/gc-mqtt-tls (0600); before that feat/gateway-einrichtungsseite, 2026-11-11: setup page — ./config writable, GC_SETUP_PORT, /dev/net/tun unchanged in `devices`; before that feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
