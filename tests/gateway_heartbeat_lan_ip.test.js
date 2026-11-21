@@ -82,6 +82,29 @@ describe('gateway API: heartbeat lan_ip capture', () => {
       const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
       assert.equal(row.lan_ip, null);
     });
+    // A home network without IPv4 (gateway capability ipv6-lan): lan_ip null,
+    // the unique local address (ULA) as lan_ip6 — stored as the LAN IP.
+    it('stores a ULA lan_ip6 when there is no private IPv4 address', async () => {
+      getDb().prepare('UPDATE gateway_meta SET lan_ip = NULL WHERE peer_id = ?').run(peerId);
+      await sendHeartbeat({ telemetry: { lan_ip: null, lan_ip6: 'FD00:DB8::10' } });
+      const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
+      assert.equal(row.lan_ip, 'fd00:db8::10');
+    });
+    it('prefers the private IPv4 address over the ULA', async () => {
+      await sendHeartbeat({ telemetry: { lan_ip: '192.168.5.5', lan_ip6: 'fd00:db8::10' } });
+      const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
+      assert.equal(row.lan_ip, '192.168.5.5');
+    });
+    it('ignores public, link-local, zoned and invalid IPv6 addresses', async () => {
+      getDb().prepare('UPDATE gateway_meta SET lan_ip = NULL WHERE peer_id = ?').run(peerId);
+      for (const v of ['2001:db8::1', 'fe80::1', 'fe80::1%eth0', 'fd00::1%eth0', '::1', '::ffff:192.168.1.2', 'fd00::zz', 42]) {
+        await sendHeartbeat({ telemetry: { lan_ip: null, lan_ip6: v } });
+      }
+      // top-level lan_ip6 is not read (the gateway nests it under telemetry)
+      await sendHeartbeat({ lan_ip6: 'fd00::1' });
+      const row = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);
+      assert.equal(row.lan_ip, null);
+    });
     it('only writes on change (no-op when unchanged)', async () => {
       await sendHeartbeat({ telemetry: { lan_ip: '10.1.2.3' } });
       const before = getDb().prepare('SELECT lan_ip FROM gateway_meta WHERE peer_id = ?').get(peerId);

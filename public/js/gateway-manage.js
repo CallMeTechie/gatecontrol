@@ -192,8 +192,10 @@
   function renewDialog(id, g, first) {
     var d = D.dialog({ title: T('gwm.renew_title') });
     d.box.classList.add('gwm-renew');
-    var lan = telemetryOf(g).lan_ip;
-    var url = 'http://' + (lan && /^[0-9.]+$/.test(lan) ? lan : '<' + T('gwm.renew_url') + '>') + ':8642';
+    var tel = telemetryOf(g), lan = tel.lan_ip, lan6 = tel.lan_ip6;
+    // the setup page listens on IPv4 and IPv6: in a home network without IPv4 its unique local address (ULA)
+    var host = lan && /^[0-9.]+$/.test(lan) ? lan : (typeof lan6 === 'string' && /^f[cd][0-9a-f:]{2,43}$/i.test(lan6) ? '[' + lan6 + ']' : null);
+    var url = 'http://' + (host || '<' + T('gwm.renew_url') + '>') + ':8642';
     var pair = first;
     var timer = null, poll = null, closed = false;
     var server = el('strong', { class: 'gwz-pair-v', id: 'gwm-renew-server' });

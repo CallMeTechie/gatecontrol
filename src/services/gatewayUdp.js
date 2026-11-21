@@ -32,12 +32,17 @@ function capabilitiesOf(lastHealth) {
   return t && Array.isArray(t.capabilities) ? t.capabilities.filter((c) => typeof c === 'string') : [];
 }
 
-/** Does the gateway (peer id) forward UDP? */
-function peerSupportsUdp(peerId, db = getDb()) {
+/** Does the gateway (peer id) name this capability in its last heartbeat? */
+function peerHasCapability(peerId, capability, db = getDb()) {
   const id = Number(peerId);
   if (!Number.isInteger(id) || id <= 0) return false;
   const row = db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(id);
-  return !!row && capabilitiesOf(row.last_health).includes(UDP_CAPABILITY);
+  return !!row && capabilitiesOf(row.last_health).includes(capability);
+}
+
+/** Does the gateway (peer id) forward UDP? */
+function peerSupportsUdp(peerId, db = getDb()) {
+  return peerHasCapability(peerId, UDP_CAPABILITY, db);
 }
 
 /** Members of a pool that forward UDP (peer ids, priority order). */
@@ -111,6 +116,7 @@ module.exports = {
   UDP_CAPABILITY,
   MIN_GATEWAY_UDP,
   capabilitiesOf,
+  peerHasCapability,
   peerSupportsUdp,
   poolUdpPeers,
   targetSupportsUdp,

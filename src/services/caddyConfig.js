@@ -463,7 +463,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     if (route.target_kind === 'gateway'
         && isLoopbackHost(route.target_lan_host)
         && route.original_peer_id != null) {
-      if (route.home_lan_ip) {
+      // A ULA as the home LAN IP (home network without IPv4): only a serving
+      // gateway with the capability `ipv6-lan` gets it in its config pull
+      // (gateways.getGatewayConfig) — for an older one the same outage page.
+      const homeIp6 = route.home_lan_ip && String(route.home_lan_ip).includes(':');
+      if (route.home_lan_ip && (!homeIp6
+          || require('./gatewayUdp').peerHasCapability(route.target_peer_id, 'ipv6-lan', db))) {
         effectiveLanHost = route.home_lan_ip;
       } else {
         loopbackOutage = true;
@@ -572,7 +577,8 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
         logger.error({ routeId: route.id, domain: route.domain },
           'LAN target contains a Caddy placeholder — refusing to set X-Gateway-Target');
       } else {
-        const lanTarget = `${effectiveLanHost}:${route.target_lan_port}`;
+        const lanHost = String(effectiveLanHost || '');
+        const lanTarget = `${lanHost.includes(':') && !lanHost.startsWith('[') ? `[${lanHost}]` : lanHost}:${route.target_lan_port}`;
         reverseProxy.headers.request.set = {
           ...(reverseProxy.headers.request.set || {}),
           'X-Gateway-Target': [lanTarget],

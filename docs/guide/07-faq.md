@@ -669,6 +669,15 @@ reports its ULA network, and the app sends its own ULA address along. The
 server evaluates this from this release on; an app that only sends IPv4
 addresses still counts as away in an IPv6-only network.
 
+Pools work as well: if a gateway fails whose route points at a service of its
+own host (`127.0.0.1`), the reserve forwards to its private IPv6 address – the
+reserve needs a gateway version that knows “home network with IPv6 only”,
+otherwise the route shows the maintenance page until the gateway is back.
+GateControl suggests gateways with a shared ULA network as pool partners.
+“Device & software” shows the ULA address at “Home network” and – when the
+gateway reports it – its name in the home network (e.g. `pi-keller.local`);
+the setup page is then at `http://[fd00::…]:8642`.
+
 These keep working with IPv4 only: network watch, presence in the Wi-Fi and LAN
 discovery (they search an IPv4 subnet), the internet quality (targets and
 router over IPv4), the MQTT broker and edge plugins in the home network,

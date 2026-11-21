@@ -685,6 +685,16 @@ sein ULA-Netz, und die App schickt ihre eigene ULA-Adresse mit. Der Server
 wertet das ab dieser Fassung aus; eine App, die nur IPv4-Adressen mitschickt,
 gilt in einem reinen IPv6-Netz weiter als unterwegs.
 
+Auch Pools gehen: Fällt ein Gateway aus, dessen Route auf einen Dienst des
+eigenen Rechners zeigt (`127.0.0.1`), leitet die Reserve an seine private
+IPv6-Adresse weiter – dafür braucht die Reserve eine Gateway-Fassung, die
+„Heimnetz nur mit IPv6“ kennt, sonst zeigt die Route bis zur Rückkehr die
+Wartungsseite. Gateways mit gemeinsamem ULA-Netz schlägt GateControl als
+Pool-Partner vor. Unter „Gerät & Software“ steht bei „Heimnetz“ die
+ULA-Adresse und – wenn das Gateway ihn meldet – sein Name im Heimnetz
+(z. B. `pi-keller.local`); die Einrichtungsseite erreichst du dann unter
+`http://[fd00::…]:8642`.
+
 Nur mit IPv4 arbeiten weiterhin: Netzwerk-Wächter, Anwesenheit im WLAN und
 LAN-Erkennung (sie durchsuchen ein IPv4-Subnetz), die Internetqualität
 (Messziele und Router über IPv4), MQTT-Broker und Edge-Plugins im Heimnetz,

@@ -54,3 +54,12 @@ test('resolveForPeer builds hub-target + near_peers', () => {
   assert.deepEqual(out[0].near_peers, ['192.168.2.151']); // sibling 84
   assert.equal(out[0].vip_ip, '192.168.2.250');
 });
+
+test('resolveForPeer: a pool member with only a ULA LAN IP (no IPv4) is no unicast peer of the IPv4 virtual IP', () => {
+  const db = seed();
+  db.prepare("INSERT INTO gateway_pool_members VALUES (1,85)").run();
+  db.prepare("INSERT INTO gateway_meta VALUES (85,'{\"telemetry\":{\"lan_ip\":null,\"lan_ip6\":\"fd00:db8::5\"}}','fd00:db8::5')").run();
+  db.prepare("INSERT INTO egress_routes (name,near_peer_id,vip_ip,vip_prefix,lan_listen_port,target_route_id,allowed_source_ips,enabled) VALUES ('printer',79,'192.168.2.250',24,14450,41,'[]',1)").run();
+  const out = svc.resolveForPeer(79, db, { hubIp: '10.8.0.1' });
+  assert.deepEqual(out[0].near_peers, ['192.168.2.151']);
+});

@@ -35,6 +35,14 @@ If the home gateway's LAN IP is unknown (no heartbeat received yet, or gateway o
 - **HTTP routes**: Return HTTP 502 (maintenance page).
 - **L4 routes**: The listener is omitted (no service exposure), preventing misrouting.
 
+### Home Network Without IPv4
+
+A home gateway without a private IPv4 address reports its unique local IPv6 address (ULA, `fc00::/7`) as `telemetry.lan_ip6` (gateway capability `ipv6-lan`). The heartbeat stores it in `gateway_meta.lan_ip` only when there is no RFC 1918 address — never a global or link-local (`fe80::/10`, needs an interface zone) address. The rewrite then uses that ULA:
+
+- Only a serving sibling with the capability `ipv6-lan` gets it in its config pull — an older gateway would put the address into a backend URL without brackets. For an older sibling the route stays fail closed (HTTP: maintenance page, L4: no listener), as with an unknown LAN IP.
+- `X-Gateway-Target` carries the address in brackets (`[fd00::10]:8096`).
+- Egress `near_peers` (unicast peers of the IPv4 virtual IP) list IPv4 addresses only.
+
 ### Automatic Failback
 
 When the home gateway recovers and the route is restored to it, the system nulls `original_peer_id`. The target reverts to `127.0.0.1` automatically.
