@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.317.2] — 2026-11-22
+
+### Fixes
+- automatische Updates nicht wegen optionaler Edge-Fähigkeiten oder Texten anhalten (#568)
+
+---
+
 ## [1.317.1] — 2026-11-22
 
 ### Fixes
