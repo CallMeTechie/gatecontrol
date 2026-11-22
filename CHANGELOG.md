@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.317.4] — 2026-11-22
+
+### Fixes
+- gewollt beendete Speedtest-Uploads nicht als Warnung oder Fehler werten (#570)
+
+---
+
 ## [1.317.3] — 2026-11-22
 
 ### Fixes
