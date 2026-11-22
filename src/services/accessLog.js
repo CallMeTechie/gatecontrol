@@ -226,4 +226,21 @@ async function entries() {
   return cache.entries;
 }
 
-module.exports = { getRecent, getAllFiltered, applyFilters, statusClasses, entries, lineHash, LOG_FILE };
+// The upload of a gateway's speed test (POST /api/v1/gateway/speedtest/up, services/inetq.js speedUp):
+// the gateway measures 10 s per direction and then ends the uploads still running mid-body
+// (gatecontrol-gateway src/inetq/speedtest.js) — measured on its side by what it sent, so the result
+// is right. Caddy logs such a request as 499 (client closed) or, when the broken body is noticed
+// before the cancelled request, 502 — both with size 0. That is the end of a measurement, not a
+// failure: no warning in the logs, no problem, no "server unreachable".
+const SPEED_UP_PATH = '/api/v1/gateway/speedtest/up';
+
+/** Is this access-log entry an upload of a speed test the gateway ended on purpose? */
+function speedtestCut(method, uri, status) {
+  const s = Number(status);
+  if (method !== 'POST' || (s !== 499 && s !== 502)) return false;
+  const u = String(uri || '');
+  const q = u.indexOf('?');
+  return (q === -1 ? u : u.slice(0, q)) === SPEED_UP_PATH;
+}
+
+module.exports = { speedtestCut, getRecent, getAllFiltered, applyFilters, statusClasses, entries, lineHash, LOG_FILE };

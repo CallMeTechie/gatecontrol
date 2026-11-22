@@ -17,6 +17,7 @@
 const { getDb } = require('../db/connection');
 const logEvents = require('./logEvents');
 const logger = require('../utils/logger');
+const { speedtestCut } = require('./accessLog');
 
 const STATUSES = ['open', 'watch', 'resolved', 'muted'];
 const MUTE_MS = 7 * 86400e3;
@@ -45,7 +46,10 @@ function normalise(msg) {
 /** Problem key of an entry (null for entries that are no problem). */
 function keyOf(e) {
   if (e.source === 'access') {
-    return e.fields && e.fields.status >= 500 ? `h:${e.fields.status}:${String(e.fields.host || '').toLowerCase()}` : null;
+    if (!e.fields || !(e.fields.status >= 500)) return null;
+    // the end of a gateway's speed test upload, not a failure (accessLog.speedtestCut)
+    if (speedtestCut(e.fields.method, e.fields.uri, e.fields.status)) return null;
+    return `h:${e.fields.status}:${String(e.fields.host || '').toLowerCase()}`;
   }
   if (e.code) return `c:${e.code}`;
   return `m:${normalise(e.msg)}`;

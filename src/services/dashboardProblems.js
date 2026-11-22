@@ -47,6 +47,7 @@ const path = require('node:path');
 const config = require('../../config/default');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
+const { speedtestCut } = require('./accessLog');
 
 // Bounded tail of the access log, like the WAF assistant (wafAssistant.js).
 const ACCESS_TAIL_BYTES = 2 * 1024 * 1024;
@@ -128,6 +129,8 @@ async function scanAccessLog(now = Date.now()) {
         if (!Number.isFinite(ts) || ts < from) continue;
         const host = e.request && e.request.host ? normHost(e.request.host) : null;
         if (!host) continue;
+        // the end of a gateway's speed test upload says nothing about the upstream (accessLog.speedtestCut)
+        if (speedtestCut(e.request.method, e.request.uri, e.status)) continue;
         const cls = classifyLine(e.status, e.duration);
         if (!cls) continue;
         const iso = new Date(ts * 1000).toISOString();
