@@ -239,12 +239,12 @@ const AC_WIDGET = {
   ],
 };
 // a sanitised widget: every key, with the defaults for what the plugin left out
-const W = (over = {}) => ({ label: null, value: null, unit: null, icon: null, status: null, state: null, readings: [], controls: [], power: true, badge: null, ...over });
+const W = (over = {}) => ({ label: null, value: null, unit: null, icon: null, status: null, state: null, readings: [], controls: [], power: true, badge: null, timeline: null, ...over });
 const AC_SANITISED = {
-  label: null, value: '21,5', unit: '°C', icon: null, status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true, badge: null,
+  label: null, value: '21,5', unit: '°C', icon: null, status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true, badge: null, timeline: null,
   controls: [
-    { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
-    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: null }] },
+    { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C', disabled: false },
+    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: null }], disabled: false },
   ],
 };
 const stepper = (over = {}) => ({ id: 'target', kind: 'stepper', value: 22, min: 16, max: 30, step: 0.5, ...over });
@@ -298,7 +298,7 @@ describe('widget sanitiser (sanitizeWidget)', () => {
 
   it('stepper / slider: finite numbers, min < max, step > 0, value clamped, label ≤ 20, unit ≤ 8', () => {
     const ok = (over) => sanitizeWidget({ controls: [stepper(over)] });
-    assert.deepEqual(ok({}).controls, [{ id: 'target', kind: 'stepper', label: null, value: 22, min: 16, max: 30, step: 0.5, unit: null }]);
+    assert.deepEqual(ok({}).controls, [{ id: 'target', kind: 'stepper', label: null, value: 22, min: 16, max: 30, step: 0.5, unit: null, disabled: false }]);
     assert.equal(ok({ kind: 'slider', value: 50, min: 1, max: 100, step: 1 }).controls[0].kind, 'slider');
     assert.equal(ok({ value: 99 }).controls[0].value, 30, 'clamped to max');
     assert.equal(ok({ value: -5 }).controls[0].value, 16, 'clamped to min');
@@ -315,7 +315,7 @@ describe('widget sanitiser (sanitizeWidget)', () => {
 
   it('choice: 2–8 options with valid unique ids and labels; an unknown value falls back to the first option', () => {
     const ok = (over) => sanitizeWidget({ controls: [choice(over)] });
-    assert.deepEqual(ok({}).controls, [{ id: 'mode', kind: 'choice', label: null, value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: null }] }]);
+    assert.deepEqual(ok({}).controls, [{ id: 'mode', kind: 'choice', label: null, value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: null }], disabled: false }]);
     assert.equal(ok({ value: 'heat' }).controls[0].value, 'auto', 'not an option → first option');
     assert.equal(ok({ value: 3 }).controls[0].value, 'auto');
     assert.equal(ok({ value: undefined }).controls[0].value, 'auto');
@@ -394,7 +394,7 @@ describe('widgets in the list and control runs', () => {
     const r = await list(annaDev).expect(200);
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('ac:7').widget, AC_SANITISED);
-    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, icon: null, status: null, state: 'off', readings: [], power: true, badge: null, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%' }] });
+    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, icon: null, status: null, state: 'off', readings: [], power: true, badge: null, timeline: null, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%', disabled: false }] });
     assert.equal(by('broken').widget, null, 'invalid widget → null, the action stays');
     assert.equal(by('broken').title, 'Kaputt');
     assert.equal(by('plain').widget, null);
@@ -406,7 +406,7 @@ describe('widgets in the list and control runs', () => {
     const r = await runCtl('ac:7', { control: 'target', value: 23 }).expect(200);
     assert.deepEqual(r.body, {
       ok: true, message: 'Ziel 23', state: 'on',
-      widget: W({ value: 23, unit: '°C', status: 'S'.repeat(60), state: 'on', controls: [{ id: 'target', kind: 'stepper', label: 'Ziel', value: 23, min: 16, max: 30, step: 0.5, unit: '°C' }] }),
+      widget: W({ value: 23, unit: '°C', status: 'S'.repeat(60), state: 'on', controls: [{ id: 'target', kind: 'stepper', label: 'Ziel', value: 23, min: 16, max: 30, step: 0.5, unit: '°C', disabled: false }] }),
       unchanged: false,
     });
     const last = await kvGet('hello', 'quick-last');
@@ -637,7 +637,7 @@ describe('widget label, readings and power (sanitizeWidget)', () => {
   it('a widget with only readings is valid; every key always present', () => {
     const w = sanitizeWidget({ readings: [reading()] });
     assert.deepEqual(w, W({ readings: [{ id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: 'M4 12h16', state: 'good' }] }));
-    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'icon', 'status', 'state', 'readings', 'controls', 'power', 'badge']);
+    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'icon', 'status', 'state', 'readings', 'controls', 'power', 'badge', 'timeline']);
   });
 
   it('icon beside the value (1.187): an SVG path, anything else null', () => {
@@ -832,7 +832,7 @@ describe('target states: runs with state (client API)', () => {
     const r = await runS('lamp:on', { state: 'on' }).expect(200);
     assert.deepEqual(r.body, {
       ok: true, message: null, state: 'on', unchanged: true,
-      widget: W({ value: 'An', state: 'on', controls: [{ id: 'bri', kind: 'slider', label: null, value: 50, min: 1, max: 100, step: 1, unit: null }] }),
+      widget: W({ value: 'An', state: 'on', controls: [{ id: 'bri', kind: 'slider', label: null, value: 50, min: 1, max: 100, step: 1, unit: null, disabled: false }] }),
     });
     assert.deepEqual((await runS('lamp:off', { state: 'off' }).expect(200)).body, { ok: true, message: null, state: 'off', widget: null, unchanged: true });
     assert.equal(await kvGet('hello', 'quick-last'), null, 'the plugin was not asked to run');
@@ -903,6 +903,131 @@ describe('target states: runs with state (client API)', () => {
     assert.equal(await kvGet('hello', 'quick-last'), null);
     const r = await quickActions.run('hello', 'lock:1', user, 'de', { state: 'off' });
     assert.deepEqual([r.status, r.body.unchanged, (await kvGet('hello', 'quick-last')).target], [200, false, 'off']);
+  });
+});
+
+describe('choice without a selection, timeline and disabled controls (thermostats)', () => {
+  const { sanitizeWidget, sanitizeTimeline, MAX_SEGMENTS } = require('../src/services/plugins/quickActions');
+  const seg = (from, to, over = {}) => ({ from, to, ...over });
+  const S = (from, to, over = {}) => ({ from, to, tone: null, color: null, label: null, ...over });
+  const PLAN = { from: 0, to: 24, now: 6.87, segments: [seg(0, 6, { tone: 'neutral', label: 'Nacht' }), seg(6, 8, { color: '#F59E0B', label: 'Komfort' }), seg(8, 22, { tone: 'good' }), seg(22, 24, { color: '#abc' })] };
+
+  it('choice value null: no option is active; an unknown value still becomes the first option', () => {
+    const c = (value) => sanitizeWidget({ controls: [choice({ value })] }).controls[0].value;
+    assert.equal(c(null), null, 'null stays null');
+    assert.equal(c('cool'), 'cool');
+    for (const v of [undefined, 'heat', '', 7, false, {}, ['cool']]) assert.equal(c(v), 'auto', JSON.stringify(v));
+    assert.deepEqual(sanitizeWidget({ controls: [choice({ value: null })] }).controls[0], {
+      id: 'mode', kind: 'choice', label: null, value: null, options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: null }], disabled: false,
+    });
+  });
+
+  it('control.disabled: only true disables, anything else is false; every control has the key', () => {
+    for (const make of [stepper, choice]) {
+      assert.equal(sanitizeWidget({ controls: [make({ disabled: true })] }).controls[0].disabled, true);
+      for (const v of [undefined, null, false, 'true', 1, {}]) assert.equal(sanitizeWidget({ controls: [make({ disabled: v })] }).controls[0].disabled, false, JSON.stringify(v));
+    }
+    assert.equal(sanitizeWidget({ controls: [stepper({ kind: 'slider', disabled: true })] }).controls[0].disabled, true);
+  });
+
+  it('timeline: a valid plan is kept (colours lowercased), from / to default to 0 / 24, now optional', () => {
+    assert.deepEqual(sanitizeTimeline(PLAN), {
+      from: 0, to: 24, now: 6.87,
+      segments: [S(0, 6, { tone: 'neutral', label: 'Nacht' }), S(6, 8, { color: '#f59e0b', label: 'Komfort' }), S(8, 22, { tone: 'good' }), S(22, 24, { color: '#abc' })],
+    });
+    assert.deepEqual(sanitizeTimeline({ segments: [seg(6, 8)] }), { from: 0, to: 24, now: null, segments: [S(6, 8)] }, 'defaults, gaps allowed');
+    assert.deepEqual(sanitizeTimeline({ from: 0, to: 168, now: 0, segments: [seg(0, 1), seg(1, 168, { tone: 'crit', color: '#000000' })] }).segments[1], S(1, 168, { tone: 'crit', color: '#000000' }), 'another range, tone and colour together');
+    assert.equal(sanitizeTimeline({ now: 24, segments: [seg(0, 24)] }).now, 24, 'now at the end');
+    assert.equal(sanitizeTimeline({ segments: [seg(0, 1, { label: '  Eco  ' })] }).segments[0].label, 'Eco', 'label trimmed');
+    const twelve = Array.from({ length: MAX_SEGMENTS }, (_, i) => seg(i * 2, i * 2 + 2));
+    assert.equal(sanitizeTimeline({ segments: twelve }).segments.length, 12);
+    assert.equal(sanitizeTimeline({ segments: [...twelve.slice(0, 11), seg(22, 23), seg(23, 24)] }), null, '13 segments');
+  });
+
+  it('timeline: anything invalid makes it null', () => {
+    const bad = [
+      undefined, null, 'x', 7, [], [PLAN],
+      { segments: [] }, { segments: 'x' }, { segments: {} }, {},
+      { from: 24, to: 0, segments: [seg(0, 1)] }, { from: 5, to: 5, segments: [seg(5, 5)] }, { from: '0', segments: [seg(0, 1)] }, { to: Infinity, segments: [seg(0, 1)] },
+      { now: 25, segments: [seg(0, 1)] }, { now: -1, segments: [seg(0, 1)] }, { now: '6', segments: [seg(0, 1)] }, { now: NaN, segments: [seg(0, 1)] },
+      { segments: [seg(0, 6), seg(5, 8)] }, { segments: [seg(8, 10), seg(0, 6)] }, { segments: [seg(6, 6)] }, { segments: [seg(7, 6)] },
+      { segments: [seg(-1, 6)] }, { segments: [seg(20, 25)] }, { segments: [seg('0', 6)] }, { segments: [seg(0, null)] }, { segments: [null] }, { segments: ['x'] },
+      { segments: [seg(0, 6, { tone: 'red' })] }, { segments: [seg(0, 6, { tone: 1 })] }, { segments: [seg(0, 6, { tone: 'on' })] },
+      { segments: [seg(0, 6, { label: 'x'.repeat(21) })] }, { segments: [seg(0, 6, { label: 'a\nb' })] }, { segments: [seg(0, 6, { label: '   ' })] }, { segments: [seg(0, 6, { label: 5 })] },
+    ];
+    for (const t of bad) assert.equal(sanitizeTimeline(t), null, JSON.stringify(t));
+    for (const color of ['red', '#ffff', '#fffff', '#gggggg', 'fff', '#ff0000ff', 'rgb(1,2,3)', '#fff;', '#fff ', ' #fff', 'url(x)', '#fff\n', 0xffffff, {}, '']) {
+      assert.equal(sanitizeTimeline({ segments: [seg(0, 6, { color })] }), null, JSON.stringify(color));
+    }
+  });
+
+  it('timeline in a widget: always a key, an invalid one never makes the widget null', () => {
+    assert.equal(sanitizeWidget({ value: 20.5 }).timeline, null);
+    assert.deepEqual(sanitizeWidget({ value: 20.5, timeline: PLAN }).timeline.segments.length, 4);
+    const w = sanitizeWidget({ value: 20.5, unit: '°C', timeline: { segments: [seg(0, 6, { color: 'javascript:x' })] } });
+    assert.deepEqual(w, W({ value: 20.5, unit: '°C' }));
+  });
+
+  describe('through the client API', () => {
+    const ROOM = {
+      id: 'heat:room:3', title: 'Wohnzimmer', device: { id: 'heat:3', title: 'Wohnzimmer' },
+      widget: {
+        label: 'Ist', value: 20.5, unit: '°C', status: 'Komfort · bis 08:00, dann Eco 18 °C', timeline: PLAN,
+        controls: [
+          { id: 'sp', kind: 'stepper', label: 'Soll', value: 21, min: 5, max: 30, step: 0.5, unit: '°C' },
+          { id: 'preset', kind: 'choice', value: null, options: [{ id: 'comfort', label: 'Komfort' }, { id: 'eco', label: 'Eco' }] },
+        ],
+      },
+    };
+    const OFFLINE = {
+      id: 'heat:room:4', title: 'Hobbyraum', device: { id: 'heat:4', title: 'Hobbyraum' },
+      widget: {
+        status: 'Nicht erreichbar · zuletzt 17,0 °C vor 2 h',
+        controls: [
+          { id: 'sp', kind: 'stepper', value: 17, min: 5, max: 30, step: 0.5, disabled: true },
+          { id: 'preset', kind: 'choice', value: 'eco', options: [{ id: 'comfort', label: 'Komfort' }, { id: 'eco', label: 'Eco' }], disabled: true },
+        ],
+      },
+    };
+    let dev;
+    const run = (id, body) => supertest(app).post(`${LIST}/hello/${encodeURIComponent(id)}`).set('X-API-Token', dev.raw).send(body);
+    before(async () => {
+      dev = H.makeDevice(anna, { name: 'qa-thermostat' });
+      await kv('hello', 'quick-actions', [ROOM, OFFLINE]);
+      await kv('hello', 'quick-mode', null);
+      await kv('hello', 'quick-run-mode', null);
+      await kv('hello', 'quick-result', null);
+    });
+    after(async () => {
+      await kv('hello', 'quick-result', null);
+      await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', kind: 'toggle', state: 'off' }, { id: 'scene.evening', title: 'Abend' }]);
+    });
+
+    it('GET lists the timeline, a choice without a selection and disabled controls', async () => {
+      const r = await list(dev).expect(200);
+      const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
+      assert.equal(by('heat:room:3').widget.timeline.now, 6.87);
+      assert.equal(by('heat:room:3').widget.timeline.segments[1].color, '#f59e0b');
+      assert.deepEqual(by('heat:room:3').widget.controls.map((c) => [c.id, c.value, c.disabled]), [['sp', 21, false], ['preset', null, false]]);
+      assert.deepEqual(by('heat:room:4').widget.controls.map((c) => [c.id, c.value, c.disabled]), [['sp', 17, true], ['preset', 'eco', true]]);
+      assert.equal(by('heat:room:4').widget.timeline, null);
+    });
+
+    it('a choice without a selection takes a run with an option id; a disabled control answers 409 control_disabled without asking the plugin', async () => {
+      await run('heat:room:3', { control: 'preset', value: 'eco' }).expect(200);
+      assert.deepEqual([(await kvGet('hello', 'quick-last')).control, (await kvGet('hello', 'quick-last')).value], ['preset', 'eco']);
+      await run('heat:room:3', { control: 'sp', value: 21.5 }).expect(200);
+      assert.equal((await kvGet('hello', 'quick-last')).value, 21.5);
+      await kv('hello', 'quick-last', null);
+      for (const [control, value] of [['sp', 20], ['preset', 'comfort'], ['sp', 99]]) {
+        const r = await run('heat:room:4', { control, value });
+        assert.equal(r.status, 409, `${control} ${value}`);
+        assert.deepEqual(r.body, { ok: false, error: 'control_disabled' });
+      }
+      assert.equal(await kvGet('hello', 'quick-last'), null, 'the plugin was not asked');
+      await run('heat:room:4', {}).expect(200);
+      assert.ok(!('control' in await kvGet('hello', 'quick-last')), 'a plain run of the action still works');
+    });
   });
 });
 

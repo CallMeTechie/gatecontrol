@@ -49,13 +49,18 @@
 //             icon?,                    (1.187: an SVG path beside the value, e.g. a calendar for „this month“;
 //                                       an invalid one becomes null)
 //             readings?: [{ id, label, value?, unit?, icon?, state? }],   (≤ 4, invalid ones dropped)
-//             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
-//                         { id, kind: 'choice', label?, value, options: [{ id, label, icon? }] }],
+//             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit?, disabled? },
+//                         { id, kind: 'choice', label?, value: string|null, options: [{ id, label, icon? }], disabled? }],
 //             power?: boolean,                                         (default true)
-//             badge?: { icon, value?, unit?, state?: 'good'|'warn'|'crit', label? } }
-// Anything invalid in it (but a reading or the badge) makes the whole widget null;
-// the action stays. An invalid badge becomes null (badge: one small value in the
-// card's head, right of the device name, e.g. a car's battery).
+//             badge?: { icon, value?, unit?, state?: 'good'|'warn'|'crit', label? },
+//             timeline?: { from?, to?, now?, segments: [{ from, to, tone?, color?, label? }] } }
+// Anything invalid in it (but a reading, the badge or the timeline) makes the whole
+// widget null; the action stays. An invalid badge becomes null (badge: one small value
+// in the card's head, right of the device name, e.g. a car's battery), an invalid
+// timeline as well (a day bar, display only: ≤ 12 segments, tone or a #rgb/#rrggbb colour).
+// choice value null: no option is active (e.g. a thermostat in boost); control.disabled:
+// the app shows the control greyed out (the reason goes into status) and the host
+// refuses runs of it (409 control_disabled).
 //
 // Asked like the portal hooks (src/services/plugins/portal.js): only plugins
 // that may run, are running and have `permissions.portal` (the actions run as
@@ -95,6 +100,9 @@ const MAX_BADGE_LABEL = 20;
 const CTRL_RE = /[\0-\x1f\x7f]/;
 const SCREEN_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const MAX_REF = 80;
+const MAX_SEGMENTS = 12;
+const MAX_SEGMENT_LABEL = 20;
+const COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -249,6 +257,7 @@ function sanitizeControl(c) {
   if (typeof c.id !== 'string' || !CONTROL_ID_RE.test(c.id)) return null;
   if (typeof c.kind !== 'string' || !CONTROL_KINDS.has(c.kind)) return null;
   const label = text(c.label, 20);
+  const disabled = c.disabled === true;
   if (c.kind === 'choice') {
     if (!Array.isArray(c.options) || c.options.length < MIN_OPTIONS || c.options.length > MAX_OPTIONS) return null;
     const options = [];
@@ -261,26 +270,92 @@ function sanitizeControl(c) {
       seen.add(o.id);
       options.push({ id: o.id, label: l, icon: icon(o.icon) }); // invalid icon → null, the option stays
     }
-    const value = typeof c.value === 'string' && seen.has(c.value) ? c.value : options[0].id;
-    return { id: c.id, kind: 'choice', label, value, options };
+    // null: no option is active (e.g. boost, a value set by hand); any other unknown value → the first option
+    let value;
+    if (c.value === null) value = null;
+    else value = typeof c.value === 'string' && seen.has(c.value) ? c.value : options[0].id;
+    return { id: c.id, kind: 'choice', label, value, options, disabled };
   }
   const min = num(c.min);
   const max = num(c.max);
   const step = num(c.step);
   const value = num(c.value);
   if (min === null || max === null || step === null || value === null || !(min < max) || !(step > 0)) return null;
-  return { id: c.id, kind: c.kind, label, value: Math.min(max, Math.max(min, value)), min, max, step, unit: text(c.unit, 8) };
+  return { id: c.id, kind: c.kind, label, value: Math.min(max, Math.max(min, value)), min, max, step, unit: text(c.unit, 8), disabled };
+}
+
+/**
+ * One segment of a timeline → { from, to, tone, color, label }, or null
+ * (invalid): from < to, both finite and within the timeline's [lo, hi];
+ * tone one of the tones, color '#rgb' | '#rrggbb' (lowercased), label a
+ * string of 1–20 characters without control characters — each optional,
+ * but a present field that is invalid makes the segment invalid.
+ */
+function sanitizeSegment(s, lo, hi) {
+  if (!isObj(s)) return null;
+  const from = num(s.from);
+  const to = num(s.to);
+  if (from === null || to === null || !(from < to) || from < lo || to > hi) return null;
+  let tone = null;
+  if (s.tone != null) {
+    if (typeof s.tone !== 'string' || !TONES.has(s.tone)) return null;
+    tone = s.tone;
+  }
+  let color = null;
+  if (s.color != null) {
+    if (typeof s.color !== 'string' || !COLOR_RE.test(s.color)) return null;
+    color = s.color.toLowerCase();
+  }
+  let label = null;
+  if (s.label != null) {
+    label = shortText(s.label, MAX_SEGMENT_LABEL);
+    if (label === null) return null;
+  }
+  return { from, to, tone, color, label };
+}
+
+/**
+ * timeline of a widget (a bar, e.g. a heating plan over the day; display
+ * only) → { from, to, now, segments }, or null when there is none or
+ * anything in it is invalid — it never makes the widget null. from / to:
+ * finite numbers, from < to (default 0 and 24); now: a finite number within
+ * [from, to] or null (missing → null, anything else → invalid); segments:
+ * 1–12, each valid (sanitizeSegment), in order and not overlapping (gaps
+ * are allowed).
+ */
+function sanitizeTimeline(t) {
+  if (!isObj(t)) return null;
+  const from = t.from == null ? 0 : num(t.from);
+  const to = t.to == null ? 24 : num(t.to);
+  if (from === null || to === null || !(from < to)) return null;
+  let now = null;
+  if (t.now != null) {
+    now = num(t.now);
+    if (now === null || now < from || now > to) return null;
+  }
+  if (!Array.isArray(t.segments) || t.segments.length < 1 || t.segments.length > MAX_SEGMENTS) return null;
+  const segments = [];
+  let end = from;
+  for (const raw of t.segments) {
+    const s = sanitizeSegment(raw, from, to);
+    if (!s || s.from < end) return null;
+    end = s.to;
+    segments.push(s);
+  }
+  return { from, to, now, segments };
 }
 
 /**
  * The `widget` of a quick action (listed or in a run's answer) → the sanitised
  * widget, or null when there is none or anything in it is invalid.
  * Readings are dropped one by one and an invalid badge becomes null — they
- * never make the widget null. A widget without a value (value: null) is valid.
+ * never make the widget null; an invalid timeline becomes null as well.
+ * A widget without a value (value: null) is valid.
  * @returns {null | { label: string|null, value: string|number|null, unit: string|null, icon: string|null,
  *   status: string|null, state: string|null, readings: object[], controls: object[], power: boolean,
  *   badge: { icon: string, value: string|number|null, unit: string|null, state: string|null,
- *   label: string|null } | null }}
+ *   label: string|null } | null,
+ *   timeline: { from: number, to: number, now: number|null, segments: object[] } | null }}
  */
 function sanitizeWidget(w) {
   if (!w || typeof w !== 'object' || Array.isArray(w)) return null;
@@ -309,6 +384,7 @@ function sanitizeWidget(w) {
     controls,
     power: w.power !== false,
     badge: sanitizeBadge(w.badge),
+    timeline: sanitizeTimeline(w.timeline),
   };
 }
 
@@ -430,7 +506,8 @@ function controlValue(c, v) {
  *   (no run when already there, a flip when in the other state).
  * @returns {Promise<{status: number, body: object}>}
  *   200 { ok, message, state, widget, unchanged } · 400 invalid_state |
- *   invalid_control | invalid_value · 404 not_found · 409 state_unknown ·
+ *   invalid_control | invalid_value · 404 not_found · 409 state_unknown |
+ *   control_disabled (the listed control is disabled; nothing reaches the plugin) ·
  *   502 plugin_error · 504 timeout
  */
 async function run(pluginId, actionId, user, lang, opts = {}) {
@@ -469,6 +546,7 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
     const c = typeof opts.control === 'string' && action.widget
       ? action.widget.controls.find((x) => x.id === opts.control) : undefined;
     if (!c) return { status: 400, body: { ok: false, error: 'invalid_control' } };
+    if (c.disabled) return { status: 409, body: { ok: false, error: 'control_disabled' } };
     const value = controlValue(c, opts.value);
     if (value === undefined) return { status: 400, body: { ok: false, error: 'invalid_value' } };
     payload.control = c.id;
@@ -485,6 +563,6 @@ function _setRunTimeoutForTest(ms) {
 }
 
 module.exports = {
-  list, listOf, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow, sanitizeBadge,
-  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, BADGE_STATES, _setRunTimeoutForTest,
+  list, listOf, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow, sanitizeBadge, sanitizeTimeline,
+  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, BADGE_STATES, MAX_SEGMENTS, _setRunTimeoutForTest,
 };
