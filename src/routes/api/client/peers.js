@@ -123,7 +123,7 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
       peer = await peers.create({
         name: uniqueName,
         description: `${clientLabel(platform)} (${platform || 'unknown'}, v${clientVersion || '?'})`,
-        tags: platform === 'android' ? 'mobile-client' : 'desktop-client',
+        tags: platform === 'android-tv' ? 'tv-client' : platform === 'android' ? 'mobile-client' : 'desktop-client',
       });
       isNew = true;
 

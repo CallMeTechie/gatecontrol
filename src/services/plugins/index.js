@@ -190,6 +190,39 @@ function permissionSummary(m, lang) {
   };
 }
 
+/**
+ * What a plugin may do, without anything that only describes it — the automatic update compares this
+ * (services/plugins/updates.js samePermissions), not the shown summary: translated labels, page titles,
+ * tab names and topic names change with a new version without granting anything, and
+ * `edge.optionalCapabilities` is never granted by installing (only later per gateway, one by one).
+ * Purposes (ai / mail / cloudImport) stay in: they are what an administrator agreed to.
+ */
+function permissionRights(m) {
+  const s = permissionSummary(m, 'de');
+  const p = m.permissions;
+  const topics = (f) => (p.notify ? (m.notifyTopics || []).filter(f).map((t) => t.id).sort() : []);
+  return {
+    ...s,
+    network: { ...s.network, homeTargets: s.network.homeTargets.map(({ id, protocols, multiple }) => ({ id, protocols, multiple })) },
+    criticalTopics: topics((t) => t.allowCritical === true),
+    chatTopics: topics((t) => t.chat === true),
+    emailTopics: topics((t) => t.email === true),
+    appTab: !!m.ui.app,
+    pages: undefined, settings: undefined,
+    portalTab: !!(m.ui.portal && m.ui.portal.label),
+    portalSections: undefined,
+    servicesProvided: m.services && m.services.provides ? Object.keys(m.services.provides).sort() : [],
+    cloudImport: p.cloudImport ? { purpose: p.cloudImport.purpose } : null,
+    ai: p.ai ? { purpose: p.ai.purpose, capabilities: p.ai.capabilities.slice().sort() } : null,
+    mail: p.mail ? { purpose: p.mail.purpose, maxConnections: p.mail.maxConnections, ...(p.mail.dav ? { dav: { purpose: p.mail.dav.purpose } } : {}) } : null,
+    edge: m.edge ? { memoryMb: m.edge.memoryMb, minGateway: m.edge.minGateway, capabilities: require('../edge/manifest').capabilityList(m.edge.capabilities) } : null,
+  };
+}
+
+function existingRights(p) {
+  try { return p.manifest && p.manifest.permissions && p.manifest.ui ? permissionRights(p.manifest) : null; } catch { return null; }
+}
+
 function existingPermissions(p, lang) {
   try { return p.manifest && p.manifest.permissions && p.manifest.ui ? permissionSummary(p.manifest, lang) : null; } catch { return null; }
 }
@@ -236,12 +269,15 @@ function inspect(buf, lang, opts = {}) {
       verified: a.sig.status === 'trusted', signature: a.sig.status,
       license: { required: m.license.required, kind: a.sig.status === 'trusted' ? 'first_party' : 'third_party', server: m.license.server },
       permissions: permissionSummary(m, lang),
+      // what it may do, without labels — compared by the automatic update
+      rights: m.permissions && m.ui ? permissionRights(m) : null,
       migrations: a.migrations.length,
     } : null,
     existing: a.existing ? {
       version: a.existing.version, enabled: a.existing.enabled,
       // what the installed version may do — the update dialog shows the difference
       permissions: existingPermissions(a.existing, lang),
+      rights: existingRights(a.existing),
     } : null,
     origin: opts.origin === 'catalog' ? 'catalog' : 'upload',
   };
@@ -935,6 +971,6 @@ async function stop() {
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
   setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, settingsPageIds, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, publicRequest, render, settingsChanged, settingsStatus, storageBytes,
-  serverVersion, start, stop, extract, readManifest, removeNotIn,
+  serverVersion, start, stop, extract, readManifest, removeNotIn, permissionRights,
   _staging: staging,
 };

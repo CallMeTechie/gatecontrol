@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.318.0] — 2026-11-22
+
+### Features
+- GateControl TV – eigene Update-APK und Kopplung per Handy (#571)
+
+---
+
+## [1.317.4] — 2026-11-22
+
+### Fixes
+- gewollt beendete Speedtest-Uploads nicht als Warnung oder Fehler werten (#570)
+
+---
+
+## [1.317.3] — 2026-11-22
+
+### Fixes
+- nach Ablauf der Anmeldung nicht weiter abfragen, zur Anmeldung führen (#569)
+
+---
+
+## [1.317.2] — 2026-11-22
+
+### Fixes
+- automatische Updates nicht wegen optionaler Edge-Fähigkeiten oder Texten anhalten (#568)
+
+---
+
 ## [1.317.1] — 2026-11-22
 
 ### Fixes

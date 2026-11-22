@@ -260,15 +260,23 @@ function _platformOf(platform) {
   return p || null;
 }
 
+/** GateControl TV (Fire TV): reports the platform android-tv. */
+function _isTv(platform) {
+  return String(platform || '').toLowerCase() === 'android-tv';
+}
+
+/** A device of the Android apps — the phone app and GateControl TV. */
 function _isAndroid(platform) {
-  return String(platform || '').toLowerCase() === 'android';
+  const p = String(platform || '').toLowerCase();
+  return p === 'android' || p === 'android-tv';
 }
 
 function _clientLabel(platform, clientVersion) {
   const p = String(platform || 'unknown').substring(0, 20);
-  const label = _isAndroid(p) ? 'Android Client'
-    : /^win/i.test(p) ? 'Desktop Client'
-      : p.toLowerCase() === 'linux' ? 'Linux Agent' : 'Client';
+  const label = _isTv(p) ? 'TV Client'
+    : _isAndroid(p) ? 'Android Client'
+      : /^win/i.test(p) ? 'Desktop Client'
+        : p.toLowerCase() === 'linux' ? 'Linux Agent' : 'Client';
   return `${label} (${p}, v${String(clientVersion || '?').substring(0, 20)})`;
 }
 
@@ -376,7 +384,7 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
       peer = await peers.create({
         name: _uniquePeerName(hostname),
         description: _clientLabel(platform, clientVersion),
-        tags: _isAndroid(platform) ? 'mobile-client' : 'desktop-client',
+        tags: _isTv(platform) ? 'tv-client' : _isAndroid(platform) ? 'mobile-client' : 'desktop-client',
         userId: row.user_id,
       });
       createdPeerId = peer.id;
@@ -460,6 +468,9 @@ module.exports = {
   resolveScopes,
   purgeExpired,
   hashCode: _hashCode,
+  // the label and the platform a redeem keeps (tests, routes/api/client/pair.js)
+  _clientLabel,
+  _platformOf,
   defaultScopesFor,
   ENROLLABLE_SCOPES,
   DEFAULT_SCOPES,

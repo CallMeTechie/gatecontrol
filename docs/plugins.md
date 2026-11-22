@@ -236,7 +236,14 @@ licence key, "gleich einrichten") → **Installieren** → done.
   (download, sha256, `inspect()` with the trusted-signature requirement,
   `install()`), logged as `plugin_auto_updated`. An update that asks for other
   permissions is never installed automatically: `plugin_update_needs_approval`
-  once per version, the Updates page marks it.
+  once per version, the Updates page marks it. "Other permissions" compares
+  what the manifests grant (`inspect()` → `plugin.rights` / `existing.rights`),
+  not the shown texts: renamed or added pages, labels of tabs, home targets
+  and notification topics, and `edge.optionalCapabilities` (confirmed later
+  per gateway) never hold an update back. Permissions, internet hosts,
+  protocols, topic flags, edge `capabilities`, purposes and AI capabilities do.
+  A version waiting for approval that turns out to grant the same is installed
+  by the next run.
 * **History** (setting `plugins.history`, the last 100): install, update and
   uninstall with versions, `by: admin|auto` and the administrator.
 

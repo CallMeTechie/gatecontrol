@@ -31,6 +31,8 @@ function db() { return require('../../db/connection').getDb(); }
 function platformOf(v) {
   const s = String(v || '').trim().toLowerCase();
   if (s === 'win32') return 'windows';
+  // GateControl TV: an Android device for the plugins (the platform list of gc.devices.list stays as documented)
+  if (s === 'android-tv') return 'android';
   return PLATFORMS.has(s) ? s : null;
 }
 

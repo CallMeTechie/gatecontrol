@@ -805,6 +805,11 @@ router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Rou
 const { clientEnrollLimiter } = require('../middleware/rateLimit');
 router.use('/api/v1/client/enroll', clientEnrollLimiter, require('./api/client/enroll'));
 
+// Pairing of GateControl TV with a signed-in phone, from anywhere
+// (services/clientPairing.js): start/poll public like the redeem, approve
+// with the phone's device token. Each endpoint has its own limiter.
+router.use('/api/v1/client/pair', require('./api/client/pair'));
+
 // Sign-in in the apps with the own account (docs/groups.md "Anmeldung in den
 // Apps") — public like the redeem: password or the handoff after "Mit
 // Microsoft anmelden" in the browser → an ordinary setup code. Each endpoint
