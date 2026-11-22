@@ -117,10 +117,14 @@ function cachedCount() {
   try { return available(cat).length; } catch { return 0; }
 }
 
-/** Do the inspected update and the installed version ask for the same permissions? */
+/**
+ * Do the inspected update and the installed version ask for the same permissions? Compares what the
+ * manifests grant (plugins.permissionRights), not the shown texts: a renamed page or label and optional
+ * edge capabilities (confirmed later per gateway) never hold an automatic update back.
+ */
 function samePermissions(info) {
-  if (!info || !info.plugin || !info.existing || !info.existing.permissions) return false;
-  return JSON.stringify(info.plugin.permissions) === JSON.stringify(info.existing.permissions);
+  if (!info || !info.plugin || !info.existing || !info.plugin.rights || !info.existing.rights) return false;
+  return JSON.stringify(info.plugin.rights) === JSON.stringify(info.existing.rights);
 }
 
 /**
