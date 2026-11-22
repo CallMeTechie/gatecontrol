@@ -11,6 +11,9 @@
 //   node run.js many N    N plugins written in the same moment: when each one's log was checkpointed
 //   node run.js kill      rows written one after the other, each printed once stored — until the test kills the process
 //
+// plugin / quiet: `windows` — when each measured write began and was answered, [from, to] in ns of process.hrtime
+// (CLOCK_MONOTONIC, as the shim's FAKE_FSYNC_LOG), as strings: the test counts the syncs inside each.
+//
 // quiet / many / kill: with GC_PLUGIN_CHECKPOINT=worker the host's checkpoint thread serves the files
 // (services/plugins/checkpointService.js), else each storage thread checkpoints itself (GC_PLUGIN_CHECKPOINT=inline).
 
@@ -21,6 +24,7 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 
 const WRITES = Number(process.argv[3]) || 10;
+const hr = () => process.hrtime.bigint();
 
 function median(list) {
   const s = [...list].sort((a, b) => a - b);
@@ -33,16 +37,20 @@ async function plugin() {
   await db.call('exec', { sql: 'CREATE TABLE resources (id INTEGER PRIMARY KEY, state_json TEXT)' });
   await db.call('exec', { sql: "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 20) INSERT INTO resources SELECT x, '{}' FROM c" });
   const ms = [];
+  const windows = [];
   for (let i = 0; i < WRITES; i++) {
     const t0 = performance.now();
+    const h0 = hr();
     await db.call('query', { sql: 'UPDATE resources SET state_json = ? WHERE id = ?', params: [JSON.stringify({ on: i }), 1 + (i % 20)], mode: 'run' });
+    const h1 = hr();
     await db.call('kv.set', { key: 'last', value: i });
+    windows.push([String(h0), String(h1)], [String(h1), String(hr())]);
     ms.push((performance.now() - t0) / 2);
   }
   const still = await db.call('query', { sql: 'SELECT 1 AS one', mode: 'get' });
   await storage.closeAll();
   const dir = path.join(require('../../../src/services/plugins/constants').dbDir('slow-disk'));
-  return { medianMs: median(ms), maxMs: Math.max(...ms), open: !!still.row, files: fs.readdirSync(dir).sort() };
+  return { medianMs: median(ms), maxMs: Math.max(...ms), windows, open: !!still.row, files: fs.readdirSync(dir).sort() };
 }
 
 function rollbackJournal() {
@@ -91,6 +99,7 @@ async function quiet() {
   await db.call('query', { sql: "INSERT INTO t VALUES (1, 'a')", mode: 'run' });
   const sync = Number(process.env.FAKE_FSYNC_MS) || 0;
   const first = [];
+  const windows = [];
   const reads = [];
   for (let i = 0; i < WRITES; i++) {
     // reads all through the quiet time and the checkpoint in it (two syncs, and the new start of the log)
@@ -118,7 +127,9 @@ async function quiet() {
       await sleep(process.env.QUIET_READS === 'one' ? Math.max(1, until - performance.now()) : 7);
     }
     const t0 = performance.now();
+    const h0 = hr();
     await db.call('query', { sql: 'UPDATE t SET v = ? WHERE id = 1', params: ['v' + i], mode: 'run' });
+    windows.push([String(h0), String(hr())]);
     first.push(performance.now() - t0);
   }
   const row = await db.call('query', { sql: 'SELECT v FROM t WHERE id = 1', mode: 'get' });
@@ -134,7 +145,7 @@ async function quiet() {
   const during = seen.map((c) => reads.filter((r) => r.from >= c.from && r.to < c.to).length);
   const held = seen.reduce((n, c) => n + reads.filter((r) => r.from >= c.from && r.from < c.from + (c.to - c.from) / 2 && r.to >= c.to).length, 0);
   return {
-    firstWriteMaxMs: Math.max(...first), readMaxMs: Math.max(...reads.map((r) => r.ms)), reads: reads.length,
+    firstWriteMaxMs: Math.max(...first), firstWriteMs: first, windows, readMaxMs: Math.max(...reads.map((r) => r.ms)), reads: reads.length,
     checkpoints: seen.length, checkpointMinMs: seen.length ? Math.min(...seen.map((c) => c.to - c.from)) : null, readsDuring: during, readsHeld: held,
     served, value: row.row.v, files: fs.readdirSync(dir).sort(),
   };
