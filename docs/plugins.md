@@ -2833,8 +2833,9 @@ administrator step like "Übernehmen": pairing is that step):
 
 ```js
 const { gateways, devices } = await gc.radio.zigbee();
-// gateways: [{ id: 7, name: 'Pi Keller', reportedAt: '…' }]  — these report their complete list:
-//           a device of such a gateway that is missing in `devices` is gone (removed from the network)
+// gateways: [{ id: 7, name: 'Pi Keller', reportedAt: '…', capabilities: ['radio', 'radio-stacks', 'z2m-thermostat-ext'] }]
+//           — these report their complete list: a device of such a gateway that is missing in `devices` is gone
+//           (removed from the network)
 // devices:  [{ id: 'z2m:001788010b2c3d4e', gatewayId: 7, gateway: 'Pi Keller', ieee: '00:17:88:01:0b:2c:3d:4e',
 //              name: 'Wohnzimmer/Decke', model: '9290012573A', vendor: 'Philips',
 //              kind: 'light', caps: { bri: true, ct: true, color: 'xy' },
@@ -2866,6 +2867,23 @@ With a gateway newer than 1.34.2 (older ones report none of this — check `caps
   progress (%, while updating), installed, latest, checked (ISO time of the last search), error: 'check_failed' |
   'update_failed' }`. `command(id, { ota: 'check' })` asks zigbee2mqtt whether there is an update,
   `{ ota: 'update' }` starts it (10–60 minutes); `ota` stands alone in a command.
+
+`gateways[].capabilities` (GateControl newer than 1.317.1) lists the radio capabilities the gateway names in its
+heartbeat — only `radio…` and `z2m-…` ones, `[]` when it names none (an older GateControl leaves the field out).
+
+**Preset, boost and window of a thermostat** (gateway 1.47.0 and newer: its `gateways[].capabilities` contain
+`z2m-thermostat-ext`; older ones report none of this, and the fields are missing too when the device's exposes
+do not name them):
+
+* `caps` names what can be set: `presets` (1–16 names `[a-z0-9_]{1,24}`, the device's own), `boost: true`,
+  `boostTime` `{ min, max, step, unit? }` (the length of the device's own boost, in its `unit`, e.g. `'s'` or
+  `'min'`), `windowDetection: true`, `windowOpen: true`.
+* `values` (also for fields the device only reports): `preset` (one of `caps.presets` when it has them),
+  `boost`, `window_detection`, `window_open` (`true`/`false`), `boost_time` (a number, the device's unit).
+* `command(id, { preset: 'eco' })`, `{ boost: true, boost_time: 600 }`, `{ boost: false }`,
+  `{ window_detection: true }`, `{ window_open: true }` — also together with `setpoint` / `mode`. Only what
+  `caps` of the device allow (`preset` one of `caps.presets`, `boost_time` within `caps.boostTime`); anything
+  else is `ERR_INVALID` and never reaches the gateway.
 
 Only gateways with
 “zigbee2mqtt” chosen count; switched back to deCONZ, their devices are gone

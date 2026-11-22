@@ -68,6 +68,15 @@ const Z_OTA_STATES = ['idle', 'available', 'updating', 'scheduled'];
 const Z_OTA_ERRORS = ['check_failed', 'update_failed'];
 const Z_OTA_ACTIONS = ['check', 'update'];
 const Z_VERSION_RE = /^[\w.+-]{1,32}$/;
+// thermostats of a gateway with z2m-thermostat-ext (gateway 1.47.0, its docs/radio.md): preset, boost, window
+const Z_PRESET_RE = /^[a-z0-9_]{1,24}$/;
+const Z_MAX_PRESETS = 16;
+const Z_UNIT_RE = /^[A-Za-z]{1,8}$/;
+const Z_BOOST_MAX = 86400;
+// boolean values and commands of such a thermostat → the name in caps that allows setting them
+const Z_THERMO_BOOL = { boost: 'boost', window_detection: 'windowDetection', window_open: 'windowOpen' };
+// the capabilities of a gateway that gc.radio.zigbee().gateways[] names (radio and zigbee2mqtt ones only)
+const Z_GW_CAP_RE = /^(radio|z2m)(-[a-z0-9]{1,24}){0,4}$/;
 // values of a zigbee2mqtt device besides those of the Bluetooth sensors
 const Z_VALUES = { on: 'bool', bri: [0, 100], ct: [100, 1000], pos: [0, 100], linkquality: [0, 255] };
 const ZB_STATES = ['off', 'no_stick', 'stick_missing', 'unsupported', 'service_missing', 'starting', 'running', 'key_needed', 'error'];
@@ -457,7 +466,7 @@ function keysFor(peerId) {
 
 const IEEE_MAC_RE = ZB_MAC_RE;
 
-function cleanZigbeeValues(v) {
+function cleanZigbeeValues(v, caps = {}, kind = null) {
   const out = cleanValues(v);
   if (!v || typeof v !== 'object') return out;
   for (const [k, rule] of Object.entries(Z_VALUES)) {
@@ -478,6 +487,13 @@ function cleanZigbeeValues(v) {
   if (Z_MODES.includes(v.mode)) out.mode = v.mode;
   if (typeof v.heating === 'boolean') out.heating = v.heating;
   if (typeof v.valve === 'number' && Number.isFinite(v.valve) && v.valve >= 0 && v.valve <= 100) out.valve = Math.round(v.valve);
+  // z2m-thermostat-ext: preset (one the device names), boost, window, boost length — only of a thermostat
+  if (kind === 'climate') {
+    const c = caps && typeof caps === 'object' ? caps : {};
+    if (typeof v.preset === 'string' && Z_PRESET_RE.test(v.preset) && (!Array.isArray(c.presets) || c.presets.includes(v.preset))) out.preset = v.preset;
+    for (const k of Object.keys(Z_THERMO_BOOL)) if (typeof v[k] === 'boolean') out[k] = v[k];
+    if (typeof v.boost_time === 'number' && Number.isFinite(v.boost_time) && v.boost_time >= 0 && v.boost_time <= Z_BOOST_MAX) out.boost_time = Math.round(v.boost_time * 100) / 100;
+  }
   // firmware over the air
   if (v.ota && typeof v.ota === 'object' && !Array.isArray(v.ota)) {
     const o = { state: oneOf(v.ota.state, Z_OTA_STATES, 'idle') };
@@ -507,6 +523,17 @@ function cleanZigbeeCaps(c) {
     const modes = Z_MODES.filter((m) => o.modes.includes(m));
     if (modes.length) out.modes = modes;
   }
+  // z2m-thermostat-ext: what the thermostat can set (gateway 1.47.0)
+  if (Array.isArray(o.presets) && o.presets.length <= 64) {
+    const presets = [...new Set(o.presets.filter((x) => typeof x === 'string' && Z_PRESET_RE.test(x)))].slice(0, Z_MAX_PRESETS);
+    if (presets.length) out.presets = presets;
+  }
+  for (const k of Object.values(Z_THERMO_BOOL)) if (o[k] === true) out[k] = true;
+  const bt = o.boostTime && typeof o.boostTime === 'object' && !Array.isArray(o.boostTime) ? o.boostTime : null;
+  if (bt && n(bt.min, 0, Z_BOOST_MAX) && n(bt.max, 0, Z_BOOST_MAX) && bt.max > bt.min && n(bt.step, Number.MIN_VALUE, bt.max - bt.min)) {
+    out.boostTime = { min: bt.min, max: bt.max, step: bt.step };
+    if (typeof bt.unit === 'string' && Z_UNIT_RE.test(bt.unit)) out.boostTime.unit = bt.unit;
+  }
   return out;
 }
 
@@ -516,15 +543,17 @@ function cleanZigbeeDevice(d) {
   const ieee = d.ieee.toLowerCase();
   if (!IEEE_MAC_RE.test(ieee)) return null;
   const seen = Date.parse(d.seenAt);
+  const kind = oneOf(d.kind, Z_KINDS, 'other');
+  const caps = cleanZigbeeCaps(d.caps);
   return {
     ieee,
     name: clean(d.name, 64) || null,
     model: clean(d.model, 48) || null,
     vendor: clean(d.vendor, 48) || null,
     description: clean(d.description, 80) || null,
-    kind: oneOf(d.kind, Z_KINDS, 'other'),
-    caps: cleanZigbeeCaps(d.caps),
-    values: cleanZigbeeValues(d.values),
+    kind,
+    caps,
+    values: cleanZigbeeValues(d.values, caps, kind),
     type: d.type === 'router' ? 'router' : 'end_device',
     power: clean(d.power, 24) || null,
     supported: d.supported !== false,
@@ -578,16 +607,17 @@ function zigbeeDevicesOf(peerId, now = Date.now()) {
 
 /**
  * gc.radio.zigbee(): the zigbee2mqtt devices of every gateway that runs zigbee2mqtt —
- * { gateways: [{ id, name, reportedAt }], devices: [{ id: 'z2m:<ieee hex>', gatewayId, gateway, ieee, name, model, vendor, kind, caps, values, online, seenAt }] }.
- * A gateway listed under `gateways` reports its complete list (a device missing there is gone).
+ * { gateways: [{ id, name, reportedAt, capabilities }], devices: [{ id: 'z2m:<ieee hex>', gatewayId, gateway, ieee, name, model, vendor, kind, caps, values, online, seenAt }] }.
+ * A gateway listed under `gateways` reports its complete list (a device missing there is gone); its `capabilities`
+ * are the radio ones of its heartbeat (radio*, z2m-*, e.g. z2m-thermostat-ext), [] for one that names none.
  */
 function pluginZigbee(now = Date.now()) {
-  const gws = db().prepare(`SELECT p.id, p.name FROM peers p JOIN gateway_meta m ON m.peer_id = p.id WHERE p.enabled = 1 AND p.peer_type = 'gateway' ORDER BY p.name`).all()
+  const gws = db().prepare(`SELECT p.id, p.name, m.last_health FROM peers p JOIN gateway_meta m ON m.peer_id = p.id WHERE p.enabled = 1 AND p.peer_type = 'gateway' ORDER BY p.name`).all()
     .filter((g) => { try { return z2mWanted(settingsOf(g.id)); } catch { return false; } });
   const out = { gateways: [], devices: [] };
   for (const g of gws) {
     const last = db().prepare('SELECT MAX(reported_at) AS at FROM gateway_zigbee_devices WHERE peer_id = ?').get(g.id);
-    out.gateways.push({ id: g.id, name: g.name, reportedAt: iso(last && last.at) });
+    out.gateways.push({ id: g.id, name: g.name, reportedAt: iso(last && last.at), capabilities: gatewayRadioCaps(g) });
     for (const v of zigbeeDevicesOf(g.id, now)) {
       if (!v.supported || v.interview !== 'done' || v.kind === 'other') continue;
       out.devices.push({ id: 'z2m:' + v.ieee.replace(/:/g, ''), gatewayId: g.id, gateway: g.name, ieee: v.ieee, name: v.name || v.model || v.ieee, model: v.model, vendor: v.vendor,
@@ -597,12 +627,21 @@ function pluginZigbee(now = Date.now()) {
   return out;
 }
 
+/** The radio capabilities a gateway names in its heartbeat (telemetry.capabilities) → a clean list, [] without. */
+function gatewayRadioCaps(g) {
+  let caps;
+  try { caps = require('./gatewayFeatures').telemetryOf(g).capabilities; } catch { return []; }
+  if (!Array.isArray(caps)) return [];
+  return [...new Set(caps.slice(0, 128).filter((c) => typeof c === 'string' && c.length <= 48 && Z_GW_CAP_RE.test(c)))].slice(0, 32);
+}
+
 /**
  * The command of a plugin { on, bri, ct, xy, hue, sat, cover, pos } → only these keys, checked. Also: one channel of a
  * device with several ({ on, channel }), a thermostat ({ setpoint, mode }) and firmware ({ ota: 'check' | 'update' },
- * alone).
+ * alone). A thermostat of a gateway with z2m-thermostat-ext also takes { preset, boost, boost_time, window_detection,
+ * window_open } (with setpoint/mode too) — only what `caps` (the stored caps of the device) allow.
  */
-function cleanCommand(set) {
+function cleanCommand(set, caps = {}) {
   if (!set || typeof set !== 'object' || Array.isArray(set)) throw new RadioError('invalid', 'set must be an object');
   const out = {};
   const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
@@ -620,6 +659,24 @@ function cleanCommand(set) {
   }
   if ('setpoint' in set) { if (!num(set.setpoint, 0, 50)) throw new RadioError('invalid', 'setpoint: 0…50 °C'); out.setpoint = set.setpoint; }
   if ('mode' in set) { if (!Z_MODES.includes(set.mode)) throw new RadioError('invalid', 'mode: ' + Z_MODES.join(' | ')); out.mode = set.mode; }
+  const c = caps && typeof caps === 'object' ? caps : {};
+  if ('preset' in set) {
+    if (!Array.isArray(c.presets)) throw new RadioError('invalid', 'the device has no presets');
+    if (typeof set.preset !== 'string' || !c.presets.includes(set.preset)) throw new RadioError('invalid', 'preset: ' + c.presets.join(' | '));
+    out.preset = set.preset;
+  }
+  for (const [k, capName] of Object.entries(Z_THERMO_BOOL)) {
+    if (!(k in set)) continue;
+    if (c[capName] !== true) throw new RadioError('invalid', 'the device cannot set ' + k);
+    if (typeof set[k] !== 'boolean') throw new RadioError('invalid', k + ' must be true or false');
+    out[k] = set[k];
+  }
+  if ('boost_time' in set) {
+    const bt = c.boostTime;
+    if (!bt || typeof bt !== 'object') throw new RadioError('invalid', 'the device cannot set boost_time');
+    if (!num(set.boost_time, bt.min, bt.max)) throw new RadioError('invalid', 'boost_time: ' + bt.min + '…' + bt.max + (bt.unit ? ' ' + bt.unit : ''));
+    out.boost_time = set.boost_time;
+  }
   if ('ota' in set) {
     if (!Z_OTA_ACTIONS.includes(set.ota) || Object.keys(out).length) throw new RadioError('invalid', 'ota: check | update, nothing else with it');
     out.ota = set.ota;
@@ -633,9 +690,9 @@ async function zigbeeCommand(id, set) {
   const m = /^z2m:([0-9a-f]{16})$/.exec(String(id || ''));
   if (!m) throw new RadioError('invalid', 'id: z2m:<16 hex digits>');
   const ieee = m[1].match(/../g).join(':');
-  const row = db().prepare(`SELECT z.peer_id FROM gateway_zigbee_devices z JOIN peers p ON p.id = z.peer_id AND p.enabled = 1 WHERE z.ieee = ? ORDER BY z.reported_at DESC LIMIT 1`).get(ieee);
+  const row = db().prepare(`SELECT z.peer_id, z.caps FROM gateway_zigbee_devices z JOIN peers p ON p.id = z.peer_id AND p.enabled = 1 WHERE z.ieee = ? ORDER BY z.reported_at DESC LIMIT 1`).get(ieee);
   if (!row || !z2mWanted(settingsOf(row.peer_id))) throw new RadioError('not_found', 'no such device');
-  const body = { ieee, set: cleanCommand(set) };
+  const body = { ieee, set: cleanCommand(set, json(row.caps) || {}) };
   const r = await mgmt(row.peer_id, '/api/radio/zigbee/set', body, 8000);
   if (!r) throw new RadioError('gateway_unreachable', 'the gateway does not answer');
   if (r.status === 202) return { accepted: true };
