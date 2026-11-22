@@ -705,6 +705,7 @@
   }
   function platformLabel(p) {
     if (!p) return null;
+    if (p.platform === 'android-tv') return T('us.dev.tv');
     if (p.platform === 'android') return 'Android';
     if (p.platform === 'windows') return 'Windows';
     return null;
@@ -1010,7 +1011,7 @@
   function clientText(peer) {
     if (!peer) return '';
     const p = String(peer.platform || '').toLowerCase();
-    const kind = p === 'android' ? T('us.dev.android') : /^win/.test(p) ? T('us.dev.windows') : (peer.platform ? peer.platform : '');
+    const kind = p === 'android-tv' ? T('us.dev.tv') : p === 'android' ? T('us.dev.android') : /^win/.test(p) ? T('us.dev.windows') : (peer.platform ? peer.platform : '');
     return [kind, peer.client_version ? peer.client_version : null].filter(Boolean).join(' ');
   }
 

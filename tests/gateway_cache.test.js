@@ -277,3 +277,54 @@ describe('reports and the lan hint', () => {
     assert.equal(g.support.cache, true);
   });
 });
+
+describe('GateControl TV: its own APK in the stock', () => {
+  const TV = crypto.randomBytes(200 * 1024);
+  const TV_SHA = crypto.createHash('sha256').update(TV).digest('hex');
+  // the TV APK first: the phone must still get its own
+  const assets = () => [
+    { id: 21, name: 'GateControl-TV-1.81.0.apk', size: TV.length, updated_at: '2026-11-01T00:00:00Z', digest: 'sha256:' + TV_SHA, browser_download_url: 'https://example.invalid/tv.apk' },
+    { id: 11, name: 'GateControl-1.81.0.apk', size: APK.length, updated_at: '2026-11-01T00:00:00Z', digest: 'sha256:' + APK_SHA, browser_download_url: 'https://example.invalid/a.apk' },
+  ];
+
+  it('refreshUpdates keeps the TV APK as an entry of its own next to the phone APK', async () => {
+    const peers = require('../src/services/peers');
+    const tv = await peers.create({ name: 'wohnzimmer-tv' });
+    db.prepare("UPDATE peers SET client_product = 'android-tv', client_version = '1.80.0' WHERE id = ?").run(tv.id);
+    const asked = [];
+    const r = await hc.refreshUpdates({
+      fetchRelease: async (product) => { asked.push(product); return release('v1.81.0', assets()); },
+      signedOf: async () => { throw new Error('no signed manifest for Android'); },
+      download: async (asset, dest) => {
+        assert.equal(asset.name, 'GateControl-TV-1.81.0.apk', 'the phone APK is in the stock already');
+        fs.writeFileSync(dest, TV);
+        return { sha256: TV_SHA, size: TV.length };
+      },
+    });
+    assert.equal(r.fetched, 1);
+    assert.deepEqual(asked.sort(), ['android', 'android-tv']);
+    const tvBlob = db.prepare('SELECT * FROM home_cache_blobs WHERE sha256 = ?').get(TV_SHA);
+    assert.equal(tvBlob.label, 'android-tv 1.81.0');
+    assert.match(tvBlob.ref, /^android-tv:21:/);
+    assert.ok(db.prepare('SELECT 1 FROM home_cache_blobs WHERE sha256 = ?').get(APK_SHA), 'the phone APK stays');
+  });
+
+  it('the update check: lan of the TV APK for the TV, of the phone APK for the phone', async () => {
+    await gwReq('post', '/cache').send({ have: [APK_SHA, TV_SHA], hits: 0, misses: 0, bytesServed: 0, bytesFetched: 0 }).expect(200);
+    const upd = require('../src/routes/api/client/update');
+    upd._resetCache();
+    upd._setReleaseForTest('android', 'stable', release('v1.81.0', assets()));
+    const hn = require('../src/services/homeNetwork');
+    const orig = hn.check;
+    hn.check = async () => ({ same_lan: true, site: { type: 'gateway', gatewayId: gw.peer.id, name: 'NAS Buero' } });
+    try {
+      const tvRes = await supertest(app).get('/api/v1/client/update/check?version=1.80.0&client=android-tv&local=192.168.1.50').expect(200);
+      assert.equal(tvRes.body.fileName, 'GateControl-TV-1.81.0.apk');
+      assert.equal(tvRes.body.sha256, TV_SHA);
+      assert.equal(tvRes.body.lan.sha256, TV_SHA);
+      const phone = await supertest(app).get('/api/v1/client/update/check?version=1.80.0&client=android&local=192.168.1.50').expect(200);
+      assert.equal(phone.body.fileName, 'GateControl-1.81.0.apk');
+      assert.equal(phone.body.lan.sha256, APK_SHA);
+    } finally { hn.check = orig; upd._resetCache(); }
+  });
+});

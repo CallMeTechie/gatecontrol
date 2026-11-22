@@ -538,7 +538,7 @@
   function platformText(p) {
     if (!p || !p.platform) return '';
     var pl = String(p.platform).toLowerCase();
-    var name = pl === 'android' ? T('portal.devices.android') : (/^win/.test(pl) ? T('portal.devices.windows') : String(p.platform));
+    var name = pl === 'android-tv' ? T('portal.devices.tv') : pl === 'android' ? T('portal.devices.android') : (/^win/.test(pl) ? T('portal.devices.windows') : String(p.platform));
     return name + (p.client_version ? ' ' + p.client_version : '');
   }
   function deviceMeta(d) {
@@ -613,12 +613,40 @@
       var create = el('button', { type: 'button', class: 'pt-btn pt-btn-primary' }, T('portal.devices.enroll_create'));
       var closeBtn = el('button', { type: 'button', class: 'pt-btn' }, T('portal.close'));
       var timer = null;
+      // GateControl TV: the code the TV shows couples it to this account (POST me/pair/approve)
+      var tvCode = el('input', { type: 'text', class: 'pt-grp-input', id: 'pt-tv-code', autocomplete: 'off', autocapitalize: 'characters', maxlength: '9', placeholder: 'ABCD-EFGH' });
+      var tvName = el('input', { type: 'text', class: 'pt-grp-input', id: 'pt-tv-name', autocomplete: 'off', maxlength: '50', placeholder: T('portal.devices.tv_name_ph') });
+      var tvBtn = el('button', { type: 'button', class: 'pt-btn' }, T('portal.devices.tv_pair'));
+      var tvMsg = el('div', { class: 'pt-small', role: 'status', 'aria-live': 'polite' });
+      var tvBox = el('div', { class: 'pt-tv-pair' }, [
+        el('b', null, T('portal.devices.tv_title')),
+        el('p', { class: 'pt-small pt-muted' }, T('portal.devices.tv_text')),
+        el('label', { class: 'pt-field-label' }, [T('portal.devices.tv_code'), tvCode]),
+        el('label', { class: 'pt-field-label' }, [T('portal.devices.tv_name'), tvName]),
+        el('div', { class: 'pt-dialog-foot' }, [tvBtn]), tvMsg,
+      ]);
       var box = el('div', { class: 'pt-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
         el('h2', { class: 'pt-h2', id: titleId }, T('portal.devices.new')),
         el('p', { class: 'pt-dialog-text' }, T('portal.devices.enroll_text')),
         codeBox, err,
         el('div', { class: 'pt-dialog-foot' }, [closeBtn, create]),
+        tvBox,
       ]);
+      tvBtn.addEventListener('click', function () {
+        if (!tvCode.value.trim()) { tvCode.focus(); return; }
+        tvBtn.disabled = true;
+        tvMsg.textContent = '';
+        send('POST', '/api/v1/portal/me/pair/approve', { code: tvCode.value, name: tvName.value || undefined }).then(function (res) {
+          tvBtn.disabled = false;
+          var b = res.body || {};
+          if (res.status === 200 && b.ok) {
+            tvMsg.textContent = T('portal.devices.tv_ok', { name: b.name || '' });
+            tvCode.value = '';
+            return;
+          }
+          tvMsg.textContent = b.error === 'locked' ? T('portal.devices.tv_locked') : b.error === 'invalid_code' ? T('portal.devices.tv_wrong') : T('portal.devices.tv_failed');
+        }).catch(function () { tvBtn.disabled = false; tvMsg.textContent = T('portal.devices.tv_failed'); });
+      });
       var overlay = el('div', { class: 'pt-overlay' }, box);
       function close() {
         if (timer) clearInterval(timer);

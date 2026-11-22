@@ -29,7 +29,9 @@ const { compareVersions, compareSemver } = require('../utils/version');
 const releaseWatch = require('./releaseWatch');
 const pkg = require('../../package.json');
 
-const APP_PRODUCTS = Object.freeze(['android', 'pro', 'community']);
+const APP_PRODUCTS = Object.freeze(['android', 'android-tv', 'pro', 'community']);
+// GateControl TV is released together with the Android app: its devices compare with that release
+const releaseOf = (product) => (product === 'android-tv' ? 'android' : product);
 // the plugin catalogue is asked again from here when its copy is older than this
 const CATALOG_AGE_MS = 60 * 60 * 1000;
 const FORCE_MIN_MS = 60 * 1000;
@@ -191,7 +193,7 @@ function compareApps(groups, unreported, latestOf) {
 
 function appsField() {
   const { groups, unreported } = appGroups();
-  return compareApps(groups, unreported, (product, channel) => releaseWatch.get(product, channel));
+  return compareApps(groups, unreported, (product, channel) => releaseWatch.get(releaseOf(product), channel));
 }
 
 // ─── The four fields together ───────────────────
@@ -235,7 +237,7 @@ function summary({ lang = 'de' } = {}) {
 function wantedKeys() {
   const keys = new Set([releaseWatch.keyOf('server', 'stable')]);
   for (const g of appGroups().groups) {
-    if (APP_PRODUCTS.includes(g.product)) keys.add(releaseWatch.keyOf(g.product, g.channel));
+    if (APP_PRODUCTS.includes(g.product)) keys.add(releaseWatch.keyOf(releaseOf(g.product), g.channel));
   }
   return [...keys];
 }

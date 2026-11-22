@@ -26,7 +26,8 @@ const logger = require('../utils/logger');
 const CHANNELS = Object.freeze(['stable', 'beta']);
 const DEFAULT_CHANNEL = 'stable';
 const MIN_VERSION_PRODUCTS = Object.freeze(['pro', 'community']);
-const PRODUCTS = Object.freeze(['pro', 'community', 'android']);
+// android-tv: GateControl TV (Fire TV), released together with the Android app
+const PRODUCTS = Object.freeze(['pro', 'community', 'android', 'android-tv']);
 
 const KEY_DEFAULT_CHANNEL = 'client_update.default_channel';
 const minVersionKey = (product) => `client_update.min_version.${product}`;
@@ -74,7 +75,13 @@ function normalizeProduct(p) {
   if (s === 'pro' || s === 'gatecontrol-pro') return 'pro';
   if (s === 'community' || s === 'gatecontrol-community') return 'community';
   if (s === 'android' || s === 'gatecontrol-android') return 'android';
+  if (s === 'android-tv' || s === 'gatecontrol-android-tv' || s === 'gatecontrol-tv') return 'android-tv';
   return null;
+}
+
+/** The product whose release a product's devices compare with: GateControl TV ships with the Android app. */
+function releaseProductOf(product) {
+  return product === 'android-tv' ? 'android' : product;
 }
 
 function normalizePlatform(p) {
@@ -200,8 +207,9 @@ function recordClientVersion(peerId, { version, product, platform } = {}, now = 
   if (!Number.isInteger(id) || id <= 0) return false;
   const v = normalizeReportedVersion(version);
   if (!v) return false;
-  const prod = normalizeProduct(product) || (normalizePlatform(platform) === 'android' ? 'android' : null);
-  const plat = normalizePlatform(platform) || (prod === 'android' ? 'android' : prod ? 'windows' : null);
+  const reported = normalizePlatform(platform);
+  const prod = normalizeProduct(product) || (reported === 'android' || reported === 'android-tv' ? reported : null);
+  const plat = reported || (prod === 'android' || prod === 'android-tv' ? prod : prod ? 'windows' : null);
 
   const sig = `${v}|${prod || ''}|${plat || ''}`;
   const last = _recorded.get(id);
@@ -312,8 +320,9 @@ function decoratePeer(peer, policy = getPolicy()) {
   if (peer.client_version && PRODUCTS.includes(peer.client_product)) {
     try {
       const watch = require('./releaseWatch');
-      latest = watch.latestVersion(peer.client_product, channel);
-      outdated = watch.isOutdated(peer.client_product, channel, peer.client_version) === true;
+      const source = releaseProductOf(peer.client_product);
+      latest = watch.latestVersion(source, channel);
+      outdated = watch.isOutdated(source, channel, peer.client_version) === true;
     } catch (err) {
       logger.debug({ err: err.message }, 'newest app release unavailable');
     }
@@ -358,6 +367,7 @@ module.exports = {
   DEFAULT_CHANNEL,
   MIN_VERSION_PRODUCTS,
   PRODUCTS,
+  releaseProductOf,
   KEY_DEFAULT_CHANNEL,
   minVersionKey,
   parseVersion,

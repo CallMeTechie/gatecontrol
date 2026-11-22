@@ -238,12 +238,14 @@ var DT = function (k, p) { return D.t(k, p); };
     if (product === 'pro') return 'Pro';
     if (product === 'community') return 'Community';
     if (product === 'android') return 'Android';
+    if (product === 'android-tv') return 'TV';
     return '';
   }
 
   // ─── Peer facts ──────────────────────────────────────────
   function stateOf(p) { return !p.enabled ? 'disabled' : (p.isOnline ? 'online' : 'offline'); }
-  function platformOf(p) { return p.client_platform === 'android' ? 'android' : p.client_platform === 'windows' ? 'windows' : 'none'; }
+  // GateControl TV (android-tv) is an Android device for the filter and the avatar
+  function platformOf(p) { return p.client_platform === 'android' || p.client_platform === 'android-tv' ? 'android' : p.client_platform === 'windows' ? 'windows' : 'none'; }
   function ipOf(p) { return p.allowed_ips ? String(p.allowed_ips).split('/')[0] : ''; }
   function rx(p) { return Number(p.transferRx != null ? p.transferRx : p.transfer_rx) || 0; }
   function tx(p) { return Number(p.transferTx != null ? p.transferTx : p.transfer_tx) || 0; }
@@ -264,6 +266,7 @@ var DT = function (k, p) { return D.t(k, p); };
   }
   function appLabel(p) {
     if (!p.client_version) return L('pl.app_none');
+    if (p.client_product === 'android-tv' || p.client_platform === 'android-tv') return L('pl.app_tv', { v: p.client_version });
     if (p.client_product === 'android' || p.client_platform === 'android') return L('pl.app_android', { v: p.client_version });
     if (p.client_product === 'pro') return L('pl.app_pro', { v: p.client_version });
     if (p.client_product === 'community') return L('pl.app_community', { v: p.client_version });

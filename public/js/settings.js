@@ -1891,8 +1891,8 @@
   };
 
   // ── Client-Updates ──
-  const PRODUCT_KEYS = { pro: 'client_updates.product_pro', community: 'client_updates.product_community', android: 'client_updates.product_android', unknown: 'client_updates.product_unknown' };
-  const PRODUCT_TONES = { pro: 'violet', community: 'blue', android: 'good', unknown: '' };
+  const PRODUCT_KEYS = { pro: 'client_updates.product_pro', community: 'client_updates.product_community', android: 'client_updates.product_android', 'android-tv': 'client_updates.product_android_tv', unknown: 'client_updates.product_unknown' };
+  const PRODUCT_TONES = { pro: 'violet', community: 'blue', android: 'good', 'android-tv': 'good', unknown: '' };
   function renderVersions(ov) {
     const tiles = $('st-cu-overview');
     const box = $('st-cu-versions');

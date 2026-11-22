@@ -80,6 +80,8 @@ function netOf(ip, via) {
 function platformOf(h) {
   const s = String(h || '').trim().toLowerCase();
   if (s === 'win32' || s === 'windows') return 'windows';
+  // GateControl TV is an Android device for the notification center and the plugins
+  if (s === 'android-tv') return 'android';
   // linux: the Linux agent of "Fernzugriff" (gatecontrol-agent, stage 4) — gc.devices.list shows it as linux
   return s === 'android' || s === 'linux' ? s : null;
 }
