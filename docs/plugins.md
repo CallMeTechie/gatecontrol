@@ -5200,7 +5200,7 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
   403 { ok: false, error: 'no_user' }          token without an owner
   404 { ok: false, error: 'not_found' }        unknown plugin / action
   409 { ok: false, error: 'state_unknown' }    state for a toggle without targets that lists no state
-  409 { ok: false, error: 'control_disabled' } the control is listed with disabled: true (≥ 1.318.0)
+  409 { ok: false, error: 'control_disabled' } the control is listed with disabled: true (≥ 1.317.1)
   502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
   504 { ok: false, error: 'timeout' }          no answer in time
   429 { ok: false, error: 'rate_limited' }
@@ -5396,20 +5396,20 @@ hosts drop the field, older apps ignore it.
     data `d` for a 24×24 viewBox like the action's `icon` — an invalid icon
     becomes `null`, the option stays; a sanitised option always has all
     three keys); `value` is an option id or `null` — `null` (GateControl
-    ≥ 1.318.0) means **no option is active** (e.g. a thermostat in boost or
+    ≥ 1.317.1) means **no option is active** (e.g. a thermostat in boost or
     with a target set by hand, where no preset fits) and stays `null`; any
     other value that is not an option id becomes the first option, as
     before. The apps draw the options as icon buttons (the label as the
     accessible name) and fall back to the label for an option without an
     icon.
-  * `disabled` (boolean, optional, GateControl ≥ 1.318.0): `true` shows the
+  * `disabled` (boolean, optional, GateControl ≥ 1.317.1): `true` shows the
     control greyed out instead of leaving it away (the card keeps its
     height) — e.g. a thermostat that is not reachable or a window that is
     open; say why in the widget's `status`. Only `true` disables, anything
     else is `false`; a sanitised control always has the key. The host
     refuses a run of a disabled control with 409 `control_disabled` without
     asking the plugin; plain runs of the action are not affected.
-* `timeline` (optional, GateControl ≥ 1.318.0): a bar of segments, e.g. a
+* `timeline` (optional, GateControl ≥ 1.317.1): a bar of segments, e.g. a
   heating plan over the day — **display only**, nothing on it can be
   tapped:
 
@@ -5440,7 +5440,7 @@ hosts drop the field, older apps ignore it.
 * Older hosts drop `timeline` and `disabled` and turn `value: null` of a
   choice into the first option; older apps ignore `timeline` / `disabled`
   and show the first option of a choice without a selection as chosen. A
-  plugin that relies on them declares `"gatecontrol": ">=1.318.0"`.
+  plugin that relies on them declares `"gatecontrol": ">=1.317.1"`.
 * Anything invalid (a bad control, too many of them, duplicate ids …) makes
   the whole `widget` `null` in the host's answer; the action itself stays.
   An entry without a `widget` lists `widget: null` as well.
