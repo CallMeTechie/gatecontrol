@@ -14,9 +14,19 @@
 //   * closing the storage leaves plugin.db alone (log copied back, -wal gone);
 //   * a quiet plugin's log is checkpointed (idle checkpoint);
 //   * a plugin backup of a WAL file restores (header patched for memory);
-//   * slow disk simulated (LD_PRELOAD, every sync 50 ms): a write through the
-//     plugin storage takes milliseconds, with the pragmas of before ≥ 150 ms;
+//   * slow disk simulated (LD_PRELOAD, every sync 50 ms): no sync inside a
+//     write through the plugin storage, with the pragmas of before ≥ 150 ms;
 //     the probe measures the delay and reports the disk as slow.
+//
+// Whether a write waited for the disk is read from the shim's log of syncs
+// (FAKE_FSYNC_LOG: begin and end of each on CLOCK_MONOTONIC, the clock of
+// process.hrtime): a sync inside the write's time — not from the write's
+// duration. A duration measures the machine as well: on a busy CI runner the
+// write after a checkpoint took 335 ms (release run of 2ddc5b5, 22. 11.)
+// against a limit of 50 ms read as "it waited for a sync" — a thread not
+// scheduled for a while, a write() held by the file system's journal on a
+// disk that other jobs keep busy take that long without any sync; the limit
+// could not tell the two apart, the log can.
 
 require('./helpers/test-env');
 const { describe, it, after } = require('node:test');
@@ -35,6 +45,18 @@ after(() => storage.closeAll());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const files = (id) => fs.readdirSync(dbDir(id)).sort();
+/** The shim's log: [{ from, to (BigInt ns; a sync still running at the end: never ends), path }], null: none. */
+function syncLog(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return null; } // read once (no exists-check before)
+  return text.split('\n').filter(Boolean).map((line) => {
+    const [from, to, ...p] = line.split(' ');
+    return { from: BigInt(from), to: BigInt(to) || 1n << 62n, path: p.join(' ') };
+  });
+}
+/** The syncs that ran while a statement did — begun before it and not yet ended count too (it waited for them). */
+const syncsIn = (log, [from, to]) => log.filter((s) => s.from < BigInt(to) && s.to > BigInt(from));
+const names = (list) => list.map((s) => path.basename(s.path)).join(', ') || 'none';
 const mode = (id) => {
   const c = new Database(path.join(dbDir(id), 'plugin.db'), { readonly: true, fileMustExist: true });
   try { return c.pragma('journal_mode', { simple: true }); } finally { c.close(); }
@@ -121,7 +143,7 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     }
     const report = path.join(tmp, `syncs-${what}-${delayMs}-${n || 0}`);
     const dataDir = fs.mkdtempSync(path.join(tmp, 'data-'));
-    const env = { ...process.env, LD_PRELOAD: shim, FAKE_FSYNC_MS: String(delayMs), FAKE_FSYNC_REPORT: report, NODE_ENV: 'test' };
+    const env = { ...process.env, LD_PRELOAD: shim, FAKE_FSYNC_MS: String(delayMs), FAKE_FSYNC_REPORT: report, FAKE_FSYNC_LOG: report + '.log', NODE_ENV: 'test' };
     for (const k of Object.keys(env)) if (/^GC_/.test(k)) delete env[k]; // the child's own temp data folder (test-env)
     env.TMPDIR = dataDir;
     Object.assign(env, extra);
@@ -129,6 +151,10 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout.trim().split('\n').pop());
     try { out.syncs = Number(fs.readFileSync(report, 'utf8')); } catch { out.syncs = null; } // read once (no exists-check before)
+    // not enumerable: the assertions below print `out` as JSON (BigInt has none)
+    Object.defineProperty(out, 'log', { value: syncLog(report + '.log'), enumerable: false });
+    // the log is whole (the shim keeps 4096): a sync missing in it could be the one inside a write
+    assert.ok(out.log && out.log.length === out.syncs, `log of syncs: ${out.log && out.log.length} of ${out.syncs}`);
     return out;
   };
 
@@ -139,8 +165,14 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     const wal4 = child('plugin', 50, 40);
     const before = child('delete', 50);
     t.diagnostic(`50 ms per sync — WAL: median ${wal.medianMs.toFixed(1)} ms per write; ${wal.syncs} syncs in all with 20 writes, ${wal4.syncs} with 80 (creating the file, closing it); rollback journal: median ${before.medianMs.toFixed(1)} ms per UPDATE, ${before.syncs} syncs for 10`);
-    assert.ok(wal.medianMs < 25, `WAL write ${wal.medianMs} ms`);
-    assert.ok(wal4.medianMs < 25, `WAL write ${wal4.medianMs} ms`);
+    // no sync inside any of the writes (an UPDATE, a kv.set each) — in their time, not by their duration
+    for (const [run, n] of [[wal, 10], [wal4, 40]]) {
+      assert.equal(run.windows.length, 2 * n);
+      run.windows.forEach((w, i) => {
+        const inside = syncsIn(run.log, w);
+        assert.equal(inside.length, 0, `WAL: write ${i + 1} of ${2 * n} waited for a sync (${names(inside)})`);
+      });
+    }
     assert.ok(before.medianMs >= 150, `rollback journal write ${before.medianMs} ms (≥ 3 syncs of 50 ms)`);
     assert.ok(before.syncs >= 30, `rollback journal: ${before.syncs} syncs`);
     assert.ok(wal.syncs != null && wal.syncs === wal4.syncs, `WAL: a write adds no sync (${wal.syncs} with 20 writes, ${wal4.syncs} with 80)`);
@@ -157,7 +189,15 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     t.diagnostic(`${SYNC} ms per sync, checkpoint thread: first write after a checkpoint ≤ ${now.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${now.readMaxMs.toFixed(1)} ms (${now.reads} reads), ${now.checkpoints} checkpoints of ≥ ${now.checkpointMinMs} ms, reads answered during each: ${now.readsDuring.join(', ')}`);
     assert.equal(now.served, true);
     assert.ok(now.checkpoints >= 5, `a checkpoint in every quiet time (${now.checkpoints})`);
-    assert.ok(now.firstWriteMaxMs < SYNC / 2, `the write after a checkpoint took ${now.firstWriteMaxMs} ms — it waited for a sync`);
+    // The first write after each checkpoint: no sync in its time (the new start of the log was synced before, by
+    // the storage thread between two calls). Not a limit in ms: the write's duration measures the runner as well
+    // (335 ms on a busy one, 22. 11., against SYNC / 2). Shown the other way below: with the storage threads
+    // checkpointing themselves the same log has the sync of plugin.db-wal inside every such write.
+    assert.equal(now.windows.length, 5);
+    now.windows.forEach((w, i) => {
+      const inside = syncsIn(now.log, w);
+      assert.equal(inside.length, 0, `the write after checkpoint ${i + 1} (${now.firstWriteMs[i].toFixed(1)} ms) waited for a sync: ${names(inside)}`);
+    });
     assert.ok(now.checkpointMinMs >= SYNC * 2 - 10, `a checkpoint with two syncs of ${SYNC} ms (${now.checkpointMinMs} ms)`);
     // A read never waits for the checkpoint (two syncs and the copying, in the host's thread): reads are answered
     // WHILE every checkpoint runs, and none that began in its first half is still open at its end. An order on one
@@ -173,6 +213,11 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     t.diagnostic(`${SYNC} ms per sync, storage threads themselves: first write ≤ ${before.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${before.readMaxMs.toFixed(1)} ms`);
     assert.equal(before.served, false);
     assert.ok(before.firstWriteMaxMs >= SYNC, `without the thread the write pays the sync (${before.firstWriteMaxMs} ms)`);
+    // … seen in the log: the sync of the log's new header inside each of these writes (the signal above sees it)
+    before.windows.forEach((w, i) => {
+      const inside = syncsIn(before.log, w);
+      assert.ok(inside.some((s) => s.path.endsWith('plugin.db-wal')), `without the thread write ${i + 1} syncs plugin.db-wal (${names(inside)})`);
+    });
     assert.ok(before.readMaxMs >= SYNC * 1.5, `without the thread a read waits for the checkpoint (${before.readMaxMs} ms)`);
     assert.equal(before.value, 'v4');
     assert.deepEqual(before.files, ['plugin.db']);
