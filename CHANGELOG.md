@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.317.1] — 2026-11-22
+
+### Fixes
+- Schreibvorgang nach Checkpoint über Sync-Protokoll prüfen statt Wanduhr (#566)
+
+---
+
 ## [1.317.0] — 2026-11-22
 
 ### Features
