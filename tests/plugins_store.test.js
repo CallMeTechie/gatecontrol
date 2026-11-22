@@ -232,6 +232,27 @@ describe('updates, history, restart', () => {
     await agent.put(API + '/policy').set('X-CSRF-Token', csrf).send({ autoUpdate: 'off' }).expect(200);
   });
 
+  it('automatic update: renamed pages and labels only → installed, a waiting approval does not hold it back', async () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(HELLO, 'plugin.json'), 'utf8'));
+    const perms = JSON.parse(JSON.stringify(raw.permissions));
+    perms.network.internet.push('new.example.com:443');
+    perms.network.homeTargets[0].label = { de: 'Heim-Gateway', en: 'Home gateway' };
+    const ui = { ...raw.ui, pages: [...raw.ui.pages.map((x) => ({ ...x, title: { de: x.title.de + '!', en: x.title.en + '!' } })), { id: 'more', title: { de: 'Mehr', en: 'More' } }],
+      portal: { ...raw.ui.portal, label: { de: 'Hallo!', en: 'Hello!' } } };
+    const v112 = helloPackage({ overrides: { version: '1.1.2', permissions: perms, ui } });
+    const e = entry('1.1.2', v112);
+    serve(doc([e, entry('1.1.1', v111perm)]), [[e, v112]]);
+    // left over from a run that compared the shown texts: waiting for an administrator
+    require('../src/services/settings').set('plugins.update_approval', JSON.stringify({ hello: '1.1.2' }));
+    await agent.put(API + '/policy').set('X-CSRF-Token', csrf).send({ autoUpdate: 'all' }).expect(200);
+    const res = await updates.runAutoUpdate('all');
+    assert.deepEqual(res.map((r) => [r.id, r.result, r.to]), [['hello', 'updated', '1.1.2']]);
+    assert.equal(plugins.get('hello').version, '1.1.2');
+    assert.equal(JSON.parse(require('../src/services/settings').get('plugins.update_approval', '{}')).hello, undefined);
+    await agent.put(API + '/policy').set('X-CSRF-Token', csrf).send({ autoUpdate: 'off' }).expect(200);
+    assert.equal(await runtime.waitRunning('hello'), true);
+  });
+
   it('POST /:id/restart stops and starts the plugin again', async () => {
     assert.equal(await runtime.waitRunning('hello'), true);
     const pid = runtime.info('hello').pid;
@@ -247,7 +268,7 @@ describe('updates, history, restart', () => {
     assert.match(html, /data-view="manage" data-target="hello"/);
     await agent.post(API + '/hello/uninstall').set('X-CSRF-Token', csrf).send({ mode: 'keep' }).expect(200);
     const h = (await agent.get(API + '/history').expect(200)).body.history[0];
-    assert.deepEqual([h.action, h.from, h.to, h.mode], ['uninstall', '1.1.1', null, 'keep']);
+    assert.deepEqual([h.action, h.from, h.to, h.mode], ['uninstall', '1.1.2', null, 'keep']);
     await agent.get('/settings/plugins/manage/hello').expect(404);
   });
 });
@@ -293,5 +314,46 @@ describe('reserved path segments', () => {
       assert.equal(r.ok, false);
       assert.ok(r.errors.includes('id: reserved'), id);
     }
+  });
+});
+
+describe('automatic update: which differences count as other permissions', () => {
+  const manifestLib = require('../src/services/plugins/manifest');
+  const files = new Set(['server/index.js', 'edge/index.js', 'plugin.json', 'migrations/001_init.sql']);
+  const raw = () => JSON.parse(fs.readFileSync(path.join(HELLO, 'plugin.json'), 'utf8'));
+  const edge = (extra) => ({ entry: 'edge/index.js', minGateway: '1.20.0', memoryMb: 48, capabilities: { mqtt: { topics: ['shellies/#'] } }, ...extra });
+  const rightsOf = (m) => {
+    const r = manifestLib.validate({ ...m, migrations: undefined }, { files });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+    return plugins.permissionRights(r.manifest);
+  };
+  const same = (a, b) => updates.samePermissions({ plugin: { rights: rightsOf(b) }, existing: { rights: rightsOf(a) } });
+
+  it('optional edge capabilities added → same permissions (they are confirmed later per gateway)', () => {
+    const a = { ...raw(), edge: edge() };
+    const b = { ...raw(), version: '1.1.0', edge: edge({ optionalCapabilities: { mqtt: { topics: ['zigbee2mqtt/#'] } } }) };
+    assert.equal(same(a, b), true);
+  });
+  it('a required edge capability added → other permissions', () => {
+    const a = { ...raw(), edge: edge() };
+    const b = { ...raw(), version: '1.1.0', edge: edge({ capabilities: { mqtt: { topics: ['shellies/#', 'zigbee2mqtt/#'] } } }) };
+    assert.equal(same(a, b), false);
+    assert.equal(same(raw(), { ...raw(), edge: edge() }), false, 'an edge part at all');
+  });
+  it('a new permission or internet host → other permissions; texts only → same', () => {
+    assert.equal(same(raw(), { ...raw(), permissions: { ...raw().permissions, events: true } }), false);
+    const b = raw();
+    b.permissions.network.internet.push('new.example.com:443');
+    assert.equal(same(raw(), b), false);
+    const c = raw();
+    c.ui.pages[0].title = { de: 'Start', en: 'Start' };
+    c.permissions.network.homeTargets[1].label = { de: 'Steckdose', en: 'Plug' };
+    assert.equal(same(raw(), c), true);
+    const d = raw();
+    d.permissions.network.homeTargets[1].protocols.push('http');
+    assert.equal(same(raw(), d), false, 'a protocol of a home target is a permission');
+  });
+  it('no rights to compare (an inspect result without them) → never the same', () => {
+    assert.equal(updates.samePermissions({ plugin: { permissions: {} }, existing: { permissions: {} } }), false);
   });
 });
