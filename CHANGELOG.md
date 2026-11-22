@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.317.3] — 2026-11-22
+
+### Fixes
+- nach Ablauf der Anmeldung nicht weiter abfragen, zur Anmeldung führen (#569)
+
+---
+
 ## [1.317.2] — 2026-11-22
 
 ### Fixes
