@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.317.0] — 2026-11-22
+
+### Features
+- optionale Fähigkeiten für Edge-Plugins (erst bei Bedarf bestätigen) (#564)
+
+---
+
 ## [1.316.0] — 2026-11-21
 
 ### Features
