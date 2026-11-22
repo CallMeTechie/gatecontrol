@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.318.0] — 2026-11-22
+
+### Features
+- GateControl TV – eigene Update-APK und Kopplung per Handy (#571)
+
+---
+
 ## [1.317.4] — 2026-11-22
 
 ### Fixes
