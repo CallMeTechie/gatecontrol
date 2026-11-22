@@ -41,15 +41,31 @@ const RELEASE_REPOS = {
   server: process.env.GC_SERVER_REPO || 'CallMeTechie/gatecontrol',
 };
 
+// GateControl TV (Fire TV, Android 9): its own app from the same repository
+// and the same release as the phone app, its own APK (ASSET NAMES below).
+const TV_TYPES = new Set(['android-tv', 'gatecontrol-android-tv', 'gatecontrol-tv']);
+
+/** The repository/release a client type is published in: the TV app ships with the phone app. */
+function releaseSourceOf(clientType) {
+  return clientType === 'android-tv' ? 'android' : clientType;
+}
+
+/** An Android app (phone or TV): APK, no signed Windows manifest. */
+function isAndroidType(clientType) {
+  return clientType === 'android' || clientType === 'android-tv';
+}
+
 function resolveClientType(req) {
   // 1. Expliziter Parameter (neue Clients)
   const param = (req.query.client || req.headers['x-client-type'] || '').toLowerCase().trim();
+  if (TV_TYPES.has(param)) return 'android-tv';
   if (param === 'android' || param === 'gatecontrol-android') return 'android';
   if (param === 'pro' || param === 'gatecontrol-pro') return 'pro';
   if (param === 'community' || param === 'gatecontrol-community') return 'community';
 
   // 2. Platform header / query (Android client sends X-Client-Platform: android)
-  const platform = (req.query.platform || req.headers['x-client-platform'] || '').toLowerCase();
+  const platform = (req.query.platform || req.headers['x-client-platform'] || '').toLowerCase().trim();
+  if (platform === 'android-tv') return 'android-tv';
   if (platform === 'android') return 'android';
 
   // 3. App-Name Header (ab Core v1.2.4+)
@@ -175,7 +191,9 @@ async function ghGet(startUrl, { headers, auth = '', timeoutMs, maxBytes, onFirs
  * is used up, else null on a failure); `reason` names the failure
  * ('rate_limited' | 'unreachable' | 'http_<status>' | 'invalid').
  */
-async function fetchReleaseResult(clientType = 'community', channel = 'stable') {
+async function fetchReleaseResult(type = 'community', channel = 'stable') {
+  // the TV app has no repository of its own: one fetch and one cache entry for phone and TV
+  const clientType = releaseSourceOf(type);
   const cacheKey = `${clientType}:${channel}`;
   const cached = releaseCache[cacheKey];
   if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
@@ -285,7 +303,7 @@ async function fetchSmallAsset(asset, maxBytes = MAX_MANIFEST_BYTES) {
  * failed.
  */
 async function fetchSignedManifest(clientType, release, channel = 'stable') {
-  if (clientType === 'android' || !release) return null;
+  if (isAndroidType(clientType) || !release) return null;
   const assets = release.assets || [];
   const manifestAsset = assets.find(a => a.name === MANIFEST_ASSET);
   const signatureAsset = assets.find(a => a.name === SIGNATURE_ASSET);
@@ -307,15 +325,48 @@ async function fetchSignedManifest(clientType, release, channel = 'stable') {
   return value;
 }
 
+/*
+ * ASSET NAMES of an Android release (GateControl-Android-Client
+ * .github/workflows/release.yml):
+ *   phone  GateControl-Android-<version>.apk   (as since the first release)
+ *   TV     GateControl-TV-<version>.apk        (GateControl TV, armeabi-v7a + arm64)
+ * The TV name deliberately does not start with "GateControl-Android-": the
+ * release step attaches the phone APK with the glob GateControl-Android-*.apk,
+ * and an older server that takes the first .apk must not see a second
+ * "Android" APK. A TV APK is any APK whose name has "TV" as a word of its own
+ * (GateControl-TV-…, …-tv-release.apk): the phone never gets one of those —
+ * whatever the order of the assets — and the TV only ever gets one of those.
+ */
+const TV_APK_RE = /(?:^|[-_. ])tv(?:[-_. ]|$)/i;
+const PHONE_APK_PREFIX = 'gatecontrol-android-';
+
+function isApk(a) {
+  return !!a && typeof a.name === 'string' && /\.apk$/i.test(a.name) && !/debug/i.test(a.name);
+}
+function isTvApk(a) { return isApk(a) && TV_APK_RE.test(a.name.replace(/\.apk$/i, '')); }
+
+/** Name of the installer when the release does not name one (the field fileName of /check). */
+function defaultFileNameOf(clientType, version) {
+  if (clientType === 'android-tv') return `GateControl-TV-${version}.apk`;
+  if (clientType === 'android') return `GateControl-Android-${version}.apk`;
+  return `GateControl-Setup-${version}.exe`;
+}
+
 /**
- * Installer asset of a release. For Windows clients with a signed manifest
- * the asset named in the manifest wins; otherwise (old releases, Android) the
- * previous heuristic applies.
+ * Installer asset of a release. Android: the phone APK (named as above, else
+ * the first other APK that is not a TV APK — old releases) or the TV APK; no
+ * TV APK in the release → none for the TV (it cannot run the phone APK: other
+ * ABI, other app). For Windows clients with a signed manifest the asset named
+ * in the manifest wins; otherwise (old releases) the previous heuristic applies.
  */
 function pickInstallerAsset(clientType, release, signed) {
   const assets = release.assets || [];
+  if (clientType === 'android-tv') {
+    return assets.find(isTvApk);
+  }
   if (clientType === 'android') {
-    return assets.find(a => a.name.endsWith('.apk') && !a.name.includes('debug'));
+    const phone = assets.filter(a => isApk(a) && !isTvApk(a));
+    return phone.find(a => a.name.toLowerCase().startsWith(PHONE_APK_PREFIX)) || phone[0];
   }
   if (signed) {
     let fileName = null;
@@ -365,7 +416,9 @@ const updateRouter = Router();
 
 /**
  * GET /api/v1/client/update/check
- * Query: ?version=1.2.1&platform=windows&client=pro|community
+ * Query: ?version=1.2.1&platform=windows&client=pro|community|android|android-tv
+ *        (GateControl TV: client=android-tv or X-Client-Platform: android-tv →
+ *        only ever the TV APK; the phone app only ever the phone APK)
  * Returns: { ok, available, version?, downloadUrl?, releaseNotes?,
  *            manifest?, signature?, channel, minVersion, mandatory, lan? }
  *
@@ -413,6 +466,10 @@ updateRouter.get('/check', async (req, res) => {
 
     // Find installer asset based on client type
     const installerAsset = pickInstallerAsset(clientType, release, signed);
+    // A release without a TV build (all releases before GateControl TV) is no update for the TV.
+    if (clientType === 'android-tv' && !installerAsset) {
+      return res.json({ ok: true, available: false, ...policyFields, mandatory: false });
+    }
 
     // For public repos, link directly to GitHub; for private, proxy through server
     let downloadUrl = null;
@@ -422,9 +479,7 @@ updateRouter.get('/check', async (req, res) => {
         : installerAsset.browser_download_url;
     }
 
-    const defaultFileName = clientType === 'android'
-      ? `GateControl-Android-${latestVersion}.apk`
-      : `GateControl-Setup-${latestVersion}.exe`;
+    const defaultFileName = defaultFileNameOf(clientType, latestVersion);
 
     const body = {
       ok: true,
@@ -546,7 +601,7 @@ function isNewerVersion(latest, current) {
 module.exports = updateRouter;
 module.exports._pickBetaRelease = pickBetaRelease;
 // The home cache (services/homeCache.js refreshUpdates) keeps the installers the clients get here.
-module.exports._internals = { fetchLatestRelease, fetchReleaseResult, fetchSignedManifest, pickInstallerAsset, resolveClientType, RELEASE_REPOS };
+module.exports._internals = { fetchLatestRelease, fetchReleaseResult, fetchSignedManifest, pickInstallerAsset, resolveClientType, releaseSourceOf, isAndroidType, RELEASE_REPOS };
 // Test hook: a release as if GitHub had answered it (cached like a real one).
 module.exports._setReleaseForTest = (clientType, channel, data) => { releaseCache[`${clientType}:${channel}`] = { data, fetchedAt: Date.now() }; };
 // Test hook: drop cached releases/manifests.

@@ -864,6 +864,38 @@ module.exports.appSigninInfoLimiter = appSigninInfoLimiter;
 module.exports.appSigninLimiter = appSigninLimiter;
 module.exports.appHandoffLimiter = appHandoffLimiter;
 
+// Pairing of GateControl TV (routes/api/client/pair.js, services/clientPairing.js).
+// start: a TV starts one pairing per try, a few per quarter hour per address.
+const clientPairStartLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitEnroll),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `pair-start:${ipKeyGenerator(req.ip)}`,
+  handler: appRateLimited,
+});
+// poll: one request every 5 s for up to 10 minutes (120), with room for two TVs behind one address.
+const clientPairPollLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `pair-poll:${ipKeyGenerator(req.ip)}`,
+  handler: appRateLimited,
+});
+// approve from a phone app: per device token (the account's lockout after wrong codes applies on top).
+const clientPairApproveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `pair-approve:t${req.tokenId}` : `pair-approve:${ipKeyGenerator(req.ip)}`),
+  handler: appRateLimited,
+});
+module.exports.clientPairStartLimiter = clientPairStartLimiter;
+module.exports.clientPairPollLimiter = clientPairPollLimiter;
+module.exports.clientPairApproveLimiter = clientPairApproveLimiter;
+
 // /plugin-public/<id>/* — public endpoints of plugins (docs/plugins.md "Public endpoints", since 1.211.0): no
 // session, a token of the plugin per request. Per address: an office server calls from one address for every person
 // editing (WOPI: file info, content, locks, saves), so 1200 per minute; requests without a valid token (401) or to

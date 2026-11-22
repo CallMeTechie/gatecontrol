@@ -150,6 +150,7 @@
   function nameOf(u) { return (u && (u.display_name || u.username)) || ''; }
   function platformLabel(p) {
     if (!p) return null;
+    if (p.platform === 'android-tv') return T('up.dev.tv');
     if (p.platform === 'android') return 'Android';
     if (p.platform === 'windows') return 'Windows';
     return null;

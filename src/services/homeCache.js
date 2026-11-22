@@ -745,7 +745,8 @@ function updatesWanted() {
 function productsInUse() {
   const cu = require('./clientUpdates');
   const policy = cu.getPolicy();
-  const rows = db().prepare("SELECT client_product, update_channel FROM peers WHERE client_product IN ('android', 'pro', 'community')").all();
+  // android-tv: GateControl TV — its own APK of the Android release, its own entry in the stock
+  const rows = db().prepare("SELECT client_product, update_channel FROM peers WHERE client_product IN ('android', 'android-tv', 'pro', 'community')").all();
   const set = new Map();
   for (const r of rows) {
     const ch = cu.effectiveChannel({ update_channel: r.update_channel }, policy);
@@ -837,7 +838,7 @@ function refreshUpdates(deps = {}) {
       try {
         const rel = await fetchRelease(product, channel);
         if (!rel || !rel.tag_name) continue;
-        const signed = product === 'android' ? null : await signedOf(product, rel, channel);
+        const signed = upd._internals.isAndroidType(product) ? null : await signedOf(product, rel, channel);
         const asset = pick(product, rel, signed);
         if (!asset || !asset.name) continue;
         const ref = `${product}:${asset.id || asset.name}:${asset.updated_at || ''}`;

@@ -159,11 +159,7 @@ router.post('/enrollment', selfServiceLimiter, async (req, res) => {
     const enrollment = require('../../services/clientEnrollment');
     const scopes = [...enrollment.DEFAULT_SCOPES];
     const result = enrollment.createCode({ userId: user.id, scopes });
-    let base;
-    try {
-      const u = new URL(config.app.baseUrl);
-      base = u.protocol === 'https:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname) ? u.origin : `https://${req.get('host')}`;
-    } catch { base = `https://${req.get('host')}`; }
+    const base = require('../../utils/appBaseUrl').appBaseUrl(req);
     const link = `gatecontrol://enroll?url=${encodeURIComponent(base)}&code=${result.code}`;
     activity.log('self_enrollment_created', `User "${user.username}" created a setup code for an own device`, {
       source: 'user', ipAddress: req.ip, severity: 'info', details: { userId: user.id, scopes: result.scopes },
@@ -176,6 +172,18 @@ router.post('/enrollment', selfServiceLimiter, async (req, res) => {
     logger.error({ err: err.message }, 'me: creating a setup code failed');
     res.status(500).json({ ok: false, error: req.t('error.enrollment.create_failed') });
   }
+});
+
+/**
+ * POST /api/v1/[portal/]me/pair/approve { code, pairingId?, name? } — couple a
+ * GateControl TV (the code it shows) to this account, from the browser
+ * (services/clientPairing.js; the phone app uses POST /api/v1/client/pair/approve).
+ * Same permission as a setup code; wrong codes count towards the account's lockout.
+ */
+router.post('/pair/approve', selfServiceLimiter, (req, res) => {
+  const user = me(req);
+  if (!user) return res.status(401).json({ ok: false, error: req.t('error.users.unauthorized') });
+  return require('./client/pair').approveAs(user, req, res, req.portalLoggedIn ? 'portal' : 'web');
 });
 
 /**

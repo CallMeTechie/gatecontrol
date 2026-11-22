@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 function clientLabel(platform) {
   switch ((platform || '').toLowerCase()) {
     case 'android': return 'Android Client';
+    case 'android-tv': return 'TV Client';
     case 'win32':
     case 'windows': return 'Desktop Client';
     case 'linux': return 'Linux Agent';

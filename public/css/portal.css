@@ -619,6 +619,8 @@ button, input, select { font: inherit; color: inherit; }
 .pt-grp-select, .pt-grp-input { min-height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--input); color: var(--text); font: 14px var(--font-body); }
 .pt-grp-input { width: 100%; }
 .pt-field-label .pt-grp-select, .pt-field-label .pt-grp-input { display: block; width: 100%; margin-top: 6px; }
+.pt-tv-pair { display: grid; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-2); }
+.pt-tv-pair .pt-dialog-foot { margin-top: 0; }
 .pt-grp-gap { margin-top: 12px; }
 .pt-grp-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .pt-grp-lrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }

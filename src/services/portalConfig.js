@@ -80,7 +80,8 @@ function resolvesZone(req) {
   const h = (req && req.headers) || {};
   const type = String(h['x-client-type'] || '').trim().toLowerCase().replace(/^gatecontrol-/, '');
   const platform = String(h['x-client-platform'] || '').trim().toLowerCase();
-  if (type === 'android' || platform === 'android') return true;
+  // the Android apps: the phone app and GateControl TV (same network core)
+  if (type === 'android' || platform === 'android' || type === 'android-tv' || platform === 'android-tv') return true;
   const min = ZONE_APPS[type];
   if (!min) return false;
   const v = String(h['x-client-version'] || '').trim();
