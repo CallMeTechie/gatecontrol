@@ -94,6 +94,14 @@ test('scanAccessLog groups per host and accessVerdict picks the reason', async (
   assert.ok(problems.accessVerdict(hosts, 'REFUSED.example'));
 });
 
+test('the end of a gateway speed test upload (499 / 502 of POST …/speedtest/up) says nothing about the upstream', async () => {
+  const cut = (status) => ({ ...line('gc.example.test', status, 3.4), request: { host: 'gc.example.test', method: 'POST', uri: '/api/v1/gateway/speedtest/up' } });
+  writeAccessLog([cut(499), cut(502), cut(502), line('other.example', 502, 3.1)]);
+  const hosts = await problems.scanAccessLog();
+  assert.equal(problems.accessVerdict(hosts, 'gc.example.test'), null);
+  assert.equal(problems.accessVerdict(hosts, 'other.example').reason, 'unreachable', 'every other 502 still counts');
+});
+
 test('a later success ends the outage, old lines are outside the window', async () => {
   writeAccessLog([
     line('recovered.example', 502, 0.02, 300),

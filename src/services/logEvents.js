@@ -184,7 +184,9 @@ function fromActivity(row) {
   };
 }
 
-function accessLevel(status) {
+function accessLevel(status, e) {
+  // a speed test upload the gateway ended at the end of its measurement (accessLog.speedtestCut)
+  if (e && accessLog.speedtestCut(e.method, e.uri, status)) return 'info';
   if (status >= 500) return 'error';
   if (status >= 400) return 'warn';
   return 'info';
@@ -200,13 +202,13 @@ function fromAccess(e) {
     source: 'access',
     ts: e.ts,
     time: iso(e.ts),
-    level: accessLevel(e.status),
+    level: accessLevel(e.status, e),
     levelName: String(e.status),
     msg: `${e.method} ${e.host}${e.uri} → ${e.status}`,
     ctx: [e.remote_ip, `${e.duration} ms`, e.user_agent].filter(Boolean).join(' · '),
     plugin: null,
     pluginName: null,
-    code: e.status >= 500 ? `http_${e.status}` : null,
+    code: e.status >= 500 && !accessLog.speedtestCut(e.method, e.uri, e.status) ? `http_${e.status}` : null,
     fields,
     raw: fields,
   };
@@ -714,6 +716,7 @@ async function stats(filter, { bucketMs }) {
 
 module.exports = {
   SOURCES,
+  fromAccess,
   ADMIN_SOURCES,
   LEVELS,
   KNOWN_CODES,
