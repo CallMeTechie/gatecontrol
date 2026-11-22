@@ -211,6 +211,65 @@ describe('zigbee2mqtt devices', () => {
     await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: DEVICES.slice(0, 3) }).expect(200);
   });
 
+  it('z2m-thermostat-ext: preset, boost and window checked, the capability handed to plugins, commands only as caps allow', async () => {
+    setTel(gw, { caps: [...CAPS, 'z2m-thermostat-ext', 'evil cap', 'ai'], version: '1.47.0' });
+    const seen = new Date().toISOString();
+    const ext = [
+      { ieee: '84:fd:27:ff:fe:00:11:22', name: 'Heizung Wohnzimmer', model: 'BTH-RA', vendor: 'Bosch', kind: 'climate', type: 'end_device', power: 'Battery', seenAt: seen,
+        caps: { setpoint: { min: 5, max: 30, step: 0.5 }, modes: ['heat', 'auto'], presets: ['eco', 'comfort', 'eco', 'Bad Preset', 'x'.repeat(25), 7], boost: true,
+          boostTime: { min: 0, max: 900, step: 60, unit: 's' }, windowDetection: true, windowOpen: true, thermoProps: { preset: { prop: 'preset' } }, junk: true },
+        values: { temperature: 20.1, setpoint: 21, mode: 'heat', preset: 'comfort', boost: false, boost_time: 300.123, window_detection: true, window_open: false } },
+      // reads them, sets none of them (read-only exposes)
+      { ieee: '84:fd:27:ff:fe:00:33:44', name: 'Heizung Flur', kind: 'climate', type: 'end_device', seenAt: seen,
+        caps: { setpoint: { min: 5, max: 30, step: 0.5 } },
+        values: { setpoint: 20, preset: 'manual', boost: true, window_open: true } },
+      { ieee: '84:fd:27:ff:fe:00:55:66', name: 'Kaputt Ext', kind: 'climate', type: 'end_device', seenAt: seen,
+        caps: { presets: 'eco', boost: 'yes', boostTime: { min: 10, max: 5, step: 1 }, windowDetection: 1, windowOpen: false },
+        values: { preset: 'Bad Preset', boost: 'on', boost_time: -5, window_detection: 'yes', window_open: 1 } },
+      { ieee: '84:fd:27:ff:fe:00:77:88', name: 'Steckdose Ext', kind: 'plug', type: 'router', seenAt: seen, caps: { boost: true }, values: { on: true, preset: 'eco', boost: true, window_open: true } },
+    ];
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: [...ext, ...DEVICES.slice(0, 3)] }).expect(200);
+    const z = hr.pluginZigbee();
+    assert.deepEqual(z.gateways.find((g) => g.name === 'Pi Keller').capabilities, ['radio', 'radio-stacks', 'z2m-thermostat-ext'], 'radio capabilities only, clean');
+    const by = Object.fromEntries(z.devices.map((d) => [d.name, d]));
+    assert.deepEqual(by['Heizung Wohnzimmer'].caps, { setpoint: { min: 5, max: 30, step: 0.5 }, modes: ['heat', 'auto'], presets: ['eco', 'comfort'], boost: true,
+      windowDetection: true, windowOpen: true, boostTime: { min: 0, max: 900, step: 60, unit: 's' } });
+    assert.deepEqual(by['Heizung Wohnzimmer'].values, { temperature: 20.1, setpoint: 21, mode: 'heat', preset: 'comfort', boost: false, window_detection: true, window_open: false, boost_time: 300.12 });
+    assert.deepEqual(by['Heizung Flur'].values, { setpoint: 20, preset: 'manual', boost: true, window_open: true }, 'read-only fields are reported');
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: [{ ...ext[0], values: { preset: 'manual' } }] }).expect(200);
+    assert.deepEqual(hr.pluginZigbee().devices[0].values, {}, 'a preset the device does not name is dropped');
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: [...ext, ...DEVICES.slice(0, 3)] }).expect(200);
+    assert.deepEqual([by['Kaputt Ext'].caps, by['Kaputt Ext'].values], [{}, {}], 'what does not fit is dropped');
+    assert.deepEqual(by['Steckdose Ext'].values, { on: true }, 'only a thermostat has them');
+    assert.deepEqual(by['Steckdose Ext'].caps, { boost: true });
+
+    // commands: what the caps of the device allow, together with setpoint/mode
+    assert.deepEqual(hr.cleanCommand({ preset: 'eco', boost: true, boost_time: 600, window_detection: false, window_open: true, setpoint: 21, mode: 'heat' }, by['Heizung Wohnzimmer'].caps),
+      { setpoint: 21, mode: 'heat', preset: 'eco', boost: true, window_detection: false, window_open: true, boost_time: 600 });
+    for (const [bad, caps] of [[{ preset: 'eco' }, {}], [{ preset: 'party' }, by['Heizung Wohnzimmer'].caps], [{ preset: 7 }, by['Heizung Wohnzimmer'].caps],
+      [{ boost: true }, {}], [{ boost: 'on' }, by['Heizung Wohnzimmer'].caps], [{ window_open: true }, { windowDetection: true }], [{ window_detection: 1 }, by['Heizung Wohnzimmer'].caps],
+      [{ boost_time: 600 }, { boost: true }], [{ boost_time: 901 }, by['Heizung Wohnzimmer'].caps], [{ boost_time: '60' }, by['Heizung Wohnzimmer'].caps],
+      [{ boost: true }, undefined], [{ ota: 'check', boost: true }, { ota: true, boost: true }]]) {
+      assert.throws(() => hr.cleanCommand(bad, caps), (e) => e.code === 'invalid', JSON.stringify(bad));
+    }
+    mgmt.length = 0;
+    answer = () => ({ status: 202, body: { accepted: true } });
+    await hr.zigbeeCommand('z2m:84fd27fffe001122', { boost: true, boost_time: 300, junk: 1 });
+    assert.deepEqual(mgmt.at(-1).body, { ieee: '84:fd:27:ff:fe:00:11:22', set: { boost: true, boost_time: 300 } });
+    await hr.zigbeeCommand('z2m:84fd27fffe001122', { boost: false, setpoint: 21.5 });
+    assert.deepEqual(mgmt.at(-1).body.set, { setpoint: 21.5, boost: false });
+    await assert.rejects(hr.zigbeeCommand('z2m:84fd27fffe003344', { boost: true }), (e) => e.code === 'invalid', 'read only: not settable');
+    await assert.rejects(hr.zigbeeCommand('z2m:84fd27fffe003344', { preset: 'manual' }), (e) => e.code === 'invalid');
+    assert.equal(mgmt.length, 2, 'a refused command never reaches the gateway');
+
+    // an older gateway (no capability, no fields): as before
+    setTel(gw);
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: DEVICES.slice(0, 3) }).expect(200);
+    const z2 = hr.pluginZigbee();
+    assert.deepEqual(z2.gateways.find((g) => g.name === 'Pi Keller').capabilities, ['radio', 'radio-stacks']);
+    assert.ok(z2.devices.every((d) => !('preset' in d.values) && !('boost' in d.caps)));
+  });
+
   it('"Entfernen" goes to the gateway (checked address), audited', async () => {
     mgmt.length = 0;
     assert.equal((await admin('post', '/radio/zigbee/remove').send({ ieee: '../etc' })).status, 400);
