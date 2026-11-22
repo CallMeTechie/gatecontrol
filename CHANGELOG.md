@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.319.0] — 2026-11-22
+
+### Features
+- Preset, Boost und Fenster der zigbee2mqtt-Thermostate an Plugins durchreichen (#572)
+
+---
+
 ## [1.318.0] — 2026-11-22
 
 ### Features
