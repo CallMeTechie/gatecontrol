@@ -5200,6 +5200,7 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
   403 { ok: false, error: 'no_user' }          token without an owner
   404 { ok: false, error: 'not_found' }        unknown plugin / action
   409 { ok: false, error: 'state_unknown' }    state for a toggle without targets that lists no state
+  409 { ok: false, error: 'control_disabled' } the control is listed with disabled: true (≥ 1.318.0)
   502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
   504 { ok: false, error: 'timeout' }          no answer in time
   429 { ok: false, error: 'rate_limited' }
@@ -5394,16 +5395,58 @@ hosts drop the field, older apps ignore it.
     control id, unique; `label` required, ≤ 20; `icon` optional, SVG path
     data `d` for a 24×24 viewBox like the action's `icon` — an invalid icon
     becomes `null`, the option stays; a sanitised option always has all
-    three keys); `value` is an option id — any other value becomes the first
-    option. The apps draw the options as icon buttons (the label as the
+    three keys); `value` is an option id or `null` — `null` (GateControl
+    ≥ 1.318.0) means **no option is active** (e.g. a thermostat in boost or
+    with a target set by hand, where no preset fits) and stays `null`; any
+    other value that is not an option id becomes the first option, as
+    before. The apps draw the options as icon buttons (the label as the
     accessible name) and fall back to the label for an option without an
     icon.
+  * `disabled` (boolean, optional, GateControl ≥ 1.318.0): `true` shows the
+    control greyed out instead of leaving it away (the card keeps its
+    height) — e.g. a thermostat that is not reachable or a window that is
+    open; say why in the widget's `status`. Only `true` disables, anything
+    else is `false`; a sanitised control always has the key. The host
+    refuses a run of a disabled control with 409 `control_disabled` without
+    asking the plugin; plain runs of the action are not affected.
+* `timeline` (optional, GateControl ≥ 1.318.0): a bar of segments, e.g. a
+  heating plan over the day — **display only**, nothing on it can be
+  tapped:
+
+  ```js
+  timeline: {
+    from: 0, to: 24,                       // optional, default 0 and 24 (hours of the day); finite, from < to
+    now: 6.87,                             // optional: the current position (6:52), within [from, to]
+    segments: [                            // 1–12, in order, not overlapping (gaps are allowed)
+      { from: 0, to: 6, tone: 'neutral', label: 'Nacht' },
+      { from: 6, to: 8, color: '#f59e0b', label: 'Komfort' },
+      { from: 8, to: 22, tone: 'good', label: 'Eco' },
+    ],
+  }
+  ```
+
+  * Each segment: `from < to`, finite numbers within the timeline's
+    `[from, to]`; `tone` `'good'` | `'warn'` | `'crit'` | `'neutral'`;
+    `color` exactly `#rgb` or `#rrggbb` (hex digits only, returned in lower
+    case — no names, no `rgb()`, no alpha); `label` a string, trimmed 1–20
+    characters without control characters (the accessible name). `tone`,
+    `color` and `label` are optional; with both `tone` and `color` the apps
+    use the colour.
+  * Strict: a present field that is invalid, more than 12 segments,
+    segments out of order or overlapping, a `now` outside the range make
+    the whole timeline `null` — it never makes the widget `null`. A
+    sanitised timeline is `{ from, to, now, segments }` (`now: null` when
+    missing), each segment `{ from, to, tone, color, label }`.
+* Older hosts drop `timeline` and `disabled` and turn `value: null` of a
+  choice into the first option; older apps ignore `timeline` / `disabled`
+  and show the first option of a choice without a selection as chosen. A
+  plugin that relies on them declares `"gatecontrol": ">=1.318.0"`.
 * Anything invalid (a bad control, too many of them, duplicate ids …) makes
   the whole `widget` `null` in the host's answer; the action itself stays.
   An entry without a `widget` lists `widget: null` as well.
 * A sanitised widget always has every key:
-  `{ label, value, unit, status, state, readings, controls, power, badge }`
-  (`badge` is `null` without a valid one).
+  `{ label, value, unit, status, state, readings, controls, power, badge, timeline }`
+  (`badge` and `timeline` are `null` without a valid one).
 * **One widget per device**: when a device has several actions, give the
   `widget` to one of them (the device's "carrier"); control runs go to that
   action. The apps build the card from the carrier's widget and the
@@ -5413,9 +5456,10 @@ hosts drop the field, older apps ignore it.
 with `control` (the control's id) and `value` in the body. The host looks
 the control up in the widget the plugin lists for that action at that
 moment and validates the value — a finite number within `[min, max]` for a
-stepper / slider, one of the option ids for a choice — and answers 400
-`invalid_control` / `invalid_value` otherwise; nothing reaches the plugin
-then. A valid run reaches `runQuickAction` with `control` and `value` (the
+stepper / slider, one of the option ids for a choice (also when its listed
+`value` is `null`) — and answers 400 `invalid_control` / `invalid_value`
+otherwise, 409 `control_disabled` for a control listed with `disabled: true`;
+nothing reaches the plugin then. A valid run reaches `runQuickAction` with `control` and `value` (the
 validated number or option id); a plain run (tap, tile, shortcut,
 notification, `gc.actions.run`) has neither — `control` is `undefined`,
 so a plugin can tell the two apart. `gc.actions.run` never sends a control:

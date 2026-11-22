@@ -18,6 +18,7 @@
  *     400 { ok: false, error: 'invalid_value' }   value not acceptable for that control
  *     404 { ok: false, error: 'not_found' }       unknown plugin / action
  *     409 { ok: false, error: 'state_unknown' }   state for a toggle without `targets` that lists no state
+ *     409 { ok: false, error: 'control_disabled' } the control is listed with disabled: true
  *     403 { ok: false, error: 'no_user' }         token without an owner
  *     502 { ok: false, error: 'plugin_error' }    the plugin failed
  *     504 { ok: false, error: 'timeout' }         no answer within 10 s
