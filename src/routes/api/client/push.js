@@ -85,9 +85,11 @@ function platformOf(h) {
   // linux: the Linux agent of "Fernzugriff" (gatecontrol-agent, stage 4) — gc.devices.list shows it as linux
   return s === 'android' || s === 'linux' ? s : null;
 }
-function clientTypeOf(h) {
+/** X-Client-Type, else GateControl TV by its X-Client-Platform (gc.devices.list clientType 'android-tv'). */
+function clientTypeOf(h, platformHeader) {
   const s = String(h || '').trim().toLowerCase();
-  return s === 'pro' || s === 'community' ? s : null;
+  if (s === 'pro' || s === 'community') return s;
+  return String(platformHeader || '').trim().toLowerCase() === 'android-tv' ? 'android-tv' : null;
 }
 function versionOf(h) {
   const s = String(h || '').trim();
@@ -110,7 +112,7 @@ function guard(req, res) {
 function recordApp(req, via) {
   store.touchDevice(req.tokenId, {
     platform: platformOf(req.headers['x-client-platform']),
-    clientType: clientTypeOf(req.headers['x-client-type']),
+    clientType: clientTypeOf(req.headers['x-client-type'], req.headers['x-client-platform']),
     appVersion: versionOf(req.headers['x-client-version']),
     via,
   });
@@ -398,3 +400,4 @@ module.exports.viaOf = viaOf;
 module.exports.netOf = netOf;
 module.exports._keepaliveMs = null; // tests only
 module.exports.platformOf = platformOf;
+module.exports.clientTypeOf = clientTypeOf;

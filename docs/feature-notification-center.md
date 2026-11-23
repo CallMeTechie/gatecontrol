@@ -651,7 +651,11 @@ Die fünf offenen Punkte gelten wie empfohlen:
 Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
 
 * Header `X-API-Token`, `X-Client-Version`, `X-Client-Platform` (`android` | `windows`),
-  bei Windows `X-Client-Type` (`pro` | `community`).
+  bei Windows `X-Client-Type` (`pro` | `community`). GateControl TV schickt
+  `X-Client-Platform: android-tv`: gespeichert als `platform = 'android'` und
+  (seit 1.320.0) `client_type = 'android-tv'` – Reiter „Geräte“ zeigt
+  „Android TV“, Plugins bekommen in `gc.devices.list` `clientType:
+  'android-tv'` (docs/plugins.md „Devices“).
 * `X-Machine-Fingerprint`, wenn das Token gebunden ist.
 * Scope `client`.
 

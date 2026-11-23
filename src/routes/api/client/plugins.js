@@ -49,7 +49,8 @@
  * token's owner as `req.user = { id, name, role, portal: true, loggedIn:
  * true, app: true }` and decides itself what an app user may do; a plugin
  * with permissions.devices (since 1.193.0) also gets the asking device as
- * `req.user.device = { id, platform }` (gc.devices.list ids); a plugin with
+ * `req.user.device = { id, platform, clientType? }` (gc.devices.list ids;
+ * clientType only when known, e.g. 'android-tv' since 1.320.0); a plugin with
  * permissions.vpnDns gets the asking device's VPN peer as `req.user.peerId`
  * (the ids of gc.vpnDns.devices; null for a token without a peer); a plugin
  * with permissions.remote gets the device with its VPN address as

@@ -2453,7 +2453,7 @@ single device. Code: `src/services/plugins/devices.js`.
   [{ id: '42',                 // string, stable: the device token's id
      name: 'Pixel 8',          // the token's name
      platform: 'android',      // 'android' | 'windows' | 'ios' | 'web' | 'linux' | null
-     clientType: 'pro',        // 'pro' | 'community' | null (Windows editions)
+     clientType: 'pro',        // 'pro' | 'community' (Windows editions) | 'android-tv' | null
      appVersion: '2.4.0',      // or null
      online: true,             // push stream connected now, or within the last 60 s
      lastSeen: '2026-10-21T09:12:40.000Z',
@@ -2462,11 +2462,23 @@ single device. Code: `src/services/plugins/devices.js`.
 
   `ERR_DEVICES_DENIED` without the permission, `ERR_INVALID` for an unknown or
   disabled person.
+
+  **GateControl TV** (the Fire TV app, `X-Client-Platform: android-tv`): since
+  1.320.0 `clientType: 'android-tv'` — from the push stream, else from the
+  registered peer (`client_platform` / `client_product`). `platform` stays
+  `'android'` (the platform list above is unchanged), so a plugin that knows
+  no TV shows it as an Android device; one that does (GateDrop 1.7.0) shows a
+  TV symbol.
 * **The asking device**: requests of the apps (`/api/v1/client/plugins/<id>/api/…`)
   to a plugin with `permissions.devices` carry `req.user.device = { id,
   platform }` (the same `id` as in the list; `platform` from the app's
   `X-Client-Platform` header, else what it reported). Other plugins never get
-  it.
+  it. Since 1.320.0 also `clientType` (`'pro'` | `'community'` |
+  `'android-tv'`, from `X-Client-Type` / `X-Client-Platform`, else what the
+  app reported) — only when known, otherwise the field is missing.
+* The **push targets** of `gc.notify({ devices })` are the same ids, so a
+  plugin picks the TV from the list by `clientType` (a TV gets plugin
+  notifications like a phone).
 * **To single devices**: `gc.notify({ topic, title, users: [12], devices:
   ['42'], … })` — only these devices (token ids as strings or numbers, ≤ 100)
   get it; each must be an app device of one of `users` (else `ERR_INVALID`,

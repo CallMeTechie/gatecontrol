@@ -12,11 +12,13 @@
 // Online: the push stream, else the last sign of life within a minute.
 //
 //   list(userId)        gc.devices.list — [{ id, name, platform, clientType,
-//                       appVersion, online, lastSeen, via }]
+//                       appVersion, online, lastSeen, via }]; GateControl TV:
+//                       platform 'android', clientType 'android-tv'
 //   ownedBy(users, ids) which of the token ids are such devices of these people
 //                       (gc.notify devices)
-//   viewerDevice(req)   the device of an app request { id, platform }
-//                       (user.device of the client plugin API)
+//   viewerDevice(req)   the device of an app request { id, platform, clientType? }
+//                       (user.device of the client plugin API; clientType only
+//                       when known)
 
 const stream = require('../notify/stream');
 
@@ -34,6 +36,24 @@ function platformOf(v) {
   // GateControl TV: an Android device for the plugins (the platform list of gc.devices.list stays as documented)
   if (s === 'android-tv') return 'android';
   return PLATFORMS.has(s) ? s : null;
+}
+
+// 'pro' | 'community': the Windows editions; 'android-tv': GateControl TV (since 1.320.0)
+const CLIENT_TYPES = new Set(['pro', 'community', 'android-tv']);
+
+function isTv(v) { return String(v || '').trim().toLowerCase() === 'android-tv'; }
+
+/**
+ * 'pro' | 'community' | 'android-tv' | null of a device row: the client type on
+ * the push stream, else the product the registered peer reported, else a TV
+ * by its reported platform.
+ */
+function clientTypeOf(r) {
+  for (const v of [r.client_type, r.client_product]) {
+    const s = String(v || '').trim().toLowerCase();
+    if (CLIENT_TYPES.has(s)) return s;
+  }
+  return isTv(r.platform) || isTv(r.client_platform) ? 'android-tv' : null;
 }
 
 function scopesOf(raw) {
@@ -79,12 +99,11 @@ function list(userId, now = Date.now()) {
     const conn = stream.get(r.id);
     const last = lastSeenOf(r);
     const seen = conn ? now : Date.parse(last || '');
-    const product = r.client_type || (['pro', 'community'].includes(r.client_product) ? r.client_product : null);
     return {
       id: String(r.id),
       name: r.name,
       platform: platformOf(r.platform || r.client_platform),
-      clientType: product,
+      clientType: clientTypeOf(r),
       appVersion: r.app_version || r.client_version || null,
       online: !!conn || (Number.isFinite(seen) && now - seen <= ONLINE_WINDOW_MS),
       lastSeen: conn ? nowIso : last,
@@ -101,15 +120,27 @@ function ownedBy(userIds, ids) {
   return new Set(rows.filter((r) => userIds.includes(r.user_id) && isDevice(r, nowIso)).map((r) => r.id));
 }
 
-/** user.device of an app's plugin request: { id, platform } (X-Client-Platform, else what the app reported). */
+/**
+ * user.device of an app's plugin request: { id, platform, clientType? }
+ * (X-Client-Platform / X-Client-Type, else what the app reported). clientType
+ * ('pro' | 'community' | 'android-tv') only when known, so the shape of other
+ * devices stays { id, platform }.
+ */
 function viewerDevice(req) {
   if (req.tokenId == null) return null;
-  let platform = platformOf(req.headers['x-client-platform']);
-  if (!platform) {
-    const r = db().prepare('SELECT platform FROM notify_device_prefs WHERE token_id = ?').get(req.tokenId);
-    platform = r ? platformOf(r.platform) : null;
+  const header = req.headers['x-client-platform'];
+  let platform = platformOf(header);
+  let clientType = isTv(header) ? 'android-tv' : clientTypeOf({ client_type: req.headers['x-client-type'] });
+  if (!platform || !clientType) {
+    const r = db().prepare(`SELECT dp.platform, dp.client_type, p.client_platform, p.client_product
+      FROM api_tokens t LEFT JOIN notify_device_prefs dp ON dp.token_id = t.id LEFT JOIN peers p ON p.id = t.peer_id
+      WHERE t.id = ?`).get(req.tokenId);
+    if (!platform) platform = r ? platformOf(r.platform) : null;
+    // a stored type only for the same kind of device the request comes from
+    const stored = r ? clientTypeOf(r) : null;
+    if (!clientType && stored && (stored === 'android-tv' ? platform === 'android' : platform !== 'android')) clientType = stored;
   }
-  return { id: String(req.tokenId), platform };
+  return clientType ? { id: String(req.tokenId), platform, clientType } : { id: String(req.tokenId), platform };
 }
 
 module.exports = { list, ownedBy, viewerDevice, idOf, platformOf, ONLINE_WINDOW_MS };
