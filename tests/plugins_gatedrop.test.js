@@ -670,10 +670,47 @@ describe('devices', () => {
   it('app requests carry user.device for plugins with permissions.devices only', async () => {
     let r = await supertest(app).get(`${CLIENT}/gd-drop/api/ping`).set('X-API-Token', annaPc.raw).set('X-Client-Platform', 'win32').expect(200);
     assert.deepEqual(r.body.user.device, { id: String(annaPc.tokenId), platform: 'windows' });
+    r = await supertest(app).get(`${CLIENT}/gd-drop/api/ping`).set('X-API-Token', annaPc.raw).set('X-Client-Platform', 'windows').set('X-Client-Type', 'Pro').expect(200);
+    assert.deepEqual(r.body.user.device, { id: String(annaPc.tokenId), platform: 'windows', clientType: 'pro' });
     r = await supertest(app).get(`${CLIENT}/gd-drop/api/ping`).set('X-API-Token', annaDev.raw).expect(200);
     assert.deepEqual(r.body.user.device, { id: String(annaDev.tokenId), platform: 'android' });
     r = await supertest(app).get(`${CLIENT}/gd-plain/api/ping`).set('X-API-Token', annaDev.raw).expect(200);
     assert.equal(r.body.user.device, undefined);
+  });
+
+  it('GateControl TV: platform android (unchanged list), clientType android-tv', async () => {
+    const conn = require('../src/db/connection').getDb();
+    // the TV opened the push stream: X-Client-Platform android-tv
+    const tv = H.makeDevice(anna, { name: 'gd-anna-tv', app: false });
+    await supertest(app).put('/api/v1/client/push/prefs').set('X-API-Token', tv.raw).set('X-Client-Platform', 'android-tv').set('X-Client-Version', '1.0.0').send({}).expect(200);
+    assert.deepEqual({ ...conn.prepare('SELECT platform, client_type FROM notify_device_prefs WHERE token_id = ?').get(tv.tokenId) }, { platform: 'android', client_type: 'android-tv' });
+    const pushTv = require('../src/routes/api/client/push');
+    assert.equal(pushTv.clientTypeOf(undefined, 'android-tv'), 'android-tv');
+    assert.equal(pushTv.clientTypeOf('pro', 'android-tv'), 'pro');
+    assert.equal(pushTv.clientTypeOf(undefined, 'android'), null);
+    assert.equal(pushTv.platformOf('android-tv'), 'android');
+    // an older TV row: only the registered peer knows it is a TV
+    const oldTv = H.makeDevice(anna, { name: 'gd-anna-tv-old', platform: 'android' });
+    conn.prepare("UPDATE peers SET client_platform = 'android-tv', client_product = 'android-tv' WHERE id = ?").run(oldTv.peerId);
+    try {
+      const byId = new Map((await gcCall('gd-drop', 'devices.list', { userId: anna }).expect(200)).body.result.map((d) => [d.id, d]));
+      for (const t of [tv, oldTv]) {
+        const d = byId.get(String(t.tokenId));
+        assert.deepEqual([d.platform, d.clientType], ['android', 'android-tv'], t.tokenId);
+      }
+      const phone = byId.get(String(annaDev.tokenId));
+      assert.deepEqual([phone.platform, phone.clientType], ['android', null]);
+      // user.device of the TV's own requests
+      let r = await supertest(app).get(`${CLIENT}/gd-drop/api/ping`).set('X-API-Token', tv.raw).set('X-Client-Platform', 'android-tv').expect(200);
+      assert.deepEqual(r.body.user.device, { id: String(tv.tokenId), platform: 'android', clientType: 'android-tv' });
+      r = await supertest(app).get(`${CLIENT}/gd-drop/api/ping`).set('X-API-Token', oldTv.raw).expect(200);
+      assert.deepEqual(r.body.user.device, { id: String(oldTv.tokenId), platform: 'android', clientType: 'android-tv' });
+    } finally {
+      for (const t of [tv, oldTv]) {
+        conn.prepare('DELETE FROM notify_device_prefs WHERE token_id = ?').run(t.tokenId);
+        conn.prepare('DELETE FROM api_tokens WHERE id = ?').run(t.tokenId);
+      }
+    }
   });
 
   it('gc.notify devices: only those devices, which must belong to the listed users', async () => {

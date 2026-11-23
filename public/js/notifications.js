@@ -1158,7 +1158,7 @@
 
   // ─── Geräte ──────────────────────────────────────────────────────────────
   const PLATFORM = { android: 'Android', windows: 'Windows', linux: 'Linux', macos: 'macOS', ios: 'iOS' };
-  const CLIENT = { pro: 'Pro', community: 'Community', wireguard: 'WireGuard' };
+  const CLIENT = { pro: 'Pro', community: 'Community', wireguard: 'WireGuard', 'android-tv': 'TV' };
   function normDevice(d) {
     const o = isObj(d) ? d : {};
     return Object.assign({}, o, {
