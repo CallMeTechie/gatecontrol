@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.0] — 2026-11-23
+
+### Features
+- GateControl TV als clientType 'android-tv' an Plugins melden (#574)
+
+---
+
 ## [1.319.0] — 2026-11-22
 
 ### Features
