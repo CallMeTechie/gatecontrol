@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.6] — 2026-11-24
+
+### Fixes
+- RDP ohne Passwort ohne NLA, Tastaturbelegung nach Gerät oder Browser (#580)
+
+---
+
 ## [1.320.5] — 2026-11-24
 
 ### Fixes
