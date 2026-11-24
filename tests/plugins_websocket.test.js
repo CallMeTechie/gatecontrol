@@ -145,6 +145,17 @@ describe('host side limits', () => {
     await assert.rejects(hostApi.handle(plugin, 'ws.connect', { url: `ws://ws.example:${port}/`, opts: { protocols: ['a', 'a'] } }, ctx), (e) => e.code === 'ERR_INVALID');
   });
 
+  it('a name that does not resolve is ERR_NET (reason dns) for ws.connect and http.fetch — no refusal by the policy', async () => {
+    const before = hostApi._lookup;
+    hostApi._lookup = () => Promise.reject(Object.assign(new Error('getaddrinfo EAI_AGAIN ws.example'), { code: 'EAI_AGAIN' }));
+    try {
+      await assert.rejects(hostApi.handle(plugin, 'ws.connect', { url: `ws://ws.example:${port}/` }, ctx), (e) => e.code === 'ERR_NET' && e.reason === 'dns');
+      await assert.rejects(hostApi.handle(plugin, 'http.fetch', { url: `http://ws.example:${port}/` }, ctx), (e) => e.code === 'ERR_NET' && e.reason === 'dns');
+      // not in plugin.json: still a refusal, with its reason
+      await assert.rejects(hostApi.handle(plugin, 'http.fetch', { url: 'http://other.example/' }, ctx), (e) => e.code === 'ERR_NET_DENIED' && e.reason === 'not_allowed');
+    } finally { hostApi._lookup = before; }
+  });
+
   it('a plugin without internet permission gets nothing', async () => {
     const none = { id: 'ws-none', manifest: { permissions: {} } };
     await assert.rejects(hostApi.handle(none, 'ws.connect', { url: `ws://ws.example:${port}/` }, ctx), (e) => e.code === 'ERR_NET_DENIED');

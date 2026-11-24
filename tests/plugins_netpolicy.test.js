@@ -100,6 +100,19 @@ describe('HTTP client (loopback test server stands in for a public host)', () =>
   it('follow re-checks every hop against the allowlist', async () => {
     await assert.rejects(N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/offsite`, { redirect: 'follow', lookup: look('93.184.216.34') }), (e) => e.code === 'ERR_NET_DENIED');
   });
+  it('a name that does not resolve is a network error (ERR_NET, reason dns), not a refusal by the policy', async () => {
+    const pol = N.compile({ network: ['graph.example.com'] });
+    const failing = () => Promise.reject(Object.assign(new Error('getaddrinfo EAI_AGAIN graph.example.com'), { code: 'EAI_AGAIN' }));
+    await assert.rejects(N.fetchWithPolicy(pol, 'https://graph.example.com/v1.0/me', { lookup: failing }),
+      (e) => e.code === 'ERR_NET' && e.reason === 'dns' && /EAI_AGAIN/.test(e.message));
+    await assert.rejects(N.fetchWithPolicy(pol, 'https://graph.example.com/v1.0/me', { lookup: async () => [] }),
+      (e) => e.code === 'ERR_NET' && e.reason === 'dns');
+    // a refusal stays a refusal, with its reason
+    await assert.rejects(N.fetchWithPolicy(pol, 'https://other.example.com/', { lookup: look('93.184.216.34') }),
+      (e) => e.code === 'ERR_NET_DENIED' && e.reason === 'not_allowed');
+    await assert.rejects(N.fetchWithPolicy(pol, 'https://graph.example.com/', { lookup: look('10.1.2.3') }),
+      (e) => e.code === 'ERR_NET_DENIED' && e.reason === 'not_public');
+  });
   it('deadline (gc.media.fetch): all hops together, a passed deadline → ERR_TIMEOUT before a request', async () => {
     await assert.rejects(N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { deadline: Date.now() - 1 }), (e) => e.code === 'ERR_TIMEOUT');
     const r = await N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { deadline: Date.now() + 5000, timeoutMs: 60000 });

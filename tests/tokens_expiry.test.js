@@ -73,3 +73,32 @@ describe('tokens.create — expiry validation', () => {
     );
   });
 });
+
+describe('tokens.authenticate — last_used_at at most once a minute', () => {
+  it('writes last_used_at on first use and again only when it is a minute old', () => {
+    const { rawToken, token } = tokens.create({ name: 'last-used', scopes: ['read-only'] }, '1.1.1.1');
+    const read = () => getDb().prepare('SELECT last_used_at FROM api_tokens WHERE id = ?').get(token.id).last_used_at;
+    assert.equal(read(), null);
+    assert.ok(tokens.authenticate(rawToken));
+    const first = read();
+    assert.ok(first, 'set at the first use');
+    // a use shortly after: no write (an old value that is still recent stays)
+    getDb().prepare("UPDATE api_tokens SET last_used_at = datetime('now', '-30 seconds') WHERE id = ?").run(token.id);
+    const recent = read();
+    let writes = 0;
+    const orig = getDb().prepare.bind(getDb());
+    const db = getDb();
+    db.prepare = (sql) => { if (/UPDATE api_tokens SET last_used_at/.test(sql)) writes++; return orig(sql); };
+    try {
+      assert.ok(tokens.authenticate(rawToken));
+      assert.equal(writes, 0, 'no write within the minute');
+      assert.equal(read(), recent);
+      // a minute old → written again
+      db.prepare = orig;
+      getDb().prepare("UPDATE api_tokens SET last_used_at = datetime('now', '-61 seconds') WHERE id = ?").run(token.id);
+      const old = read();
+      assert.ok(tokens.authenticate(rawToken));
+      assert.notEqual(read(), old, 'refreshed after a minute');
+    } finally { delete db.prepare; }
+  });
+});

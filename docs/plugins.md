@@ -811,6 +811,14 @@ that 3xx). The result has `status`, `headers` (lower case; `set-cookie` as a
 list), `body` or `bodyBase64`, `url`, `redirects`. Response bodies are capped
 at 5 MB.
 
+Errors of a connection: `ERR_NET_DENIED` when the check refuses it (host not
+in `plugin.json`, an address that is not public, a target nobody assigned);
+the error's `reason` says why (`not_allowed`, `not_public`,
+`blocked_address`, …). A host name that does not resolve — the resolver did
+not answer (retried once) or the name does not exist — is `ERR_NET` with
+`reason: 'dns'`, like a lost connection: retry it later (earlier versions:
+`ERR_NET_DENIED`).
+
 `http.fetch(url, { bodyMedia })` (since 1.217.0) sends one of the plugin's
 **own media files** as the request body — the host streams it from the media
 store (decrypted on the way, never through the plugin process). Made for

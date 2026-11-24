@@ -50,6 +50,18 @@ const REQ_IN_LOG = 6;
 // a request open longer than this (an event stream, a long poll) is no candidate
 const REQ_STALE_MS = 10 * 60 * 1000;
 
+// The start of the server (start({ booting: true }) … bootDone()): loading the code, the migrations,
+// creating the app, starting the plugin processes — all synchronous on this thread, seconds on a small
+// host. A stall in that time is the normal start, not a fault: it is logged as debug (no warning in the
+// log and its export), and bootDone() logs the length of the start once as info. A stall after the
+// start plus BOOT_GRACE_MS (the first timers of the start: WireGuard sync, Caddy, domains) is a
+// warning again. Without bootDone() the start ends after BOOT_MAX_MS at the latest.
+const BOOT_GRACE_MS = 20 * 1000;
+const BOOT_MAX_MS = 3 * 60 * 1000;
+let bootAt = null; // performance.now() of start({ booting: true }); null: no start phase
+let bootEndAt = null; // performance.now() from which a stall is a warning again
+let bootBlockedMs = 0;
+
 let timer = null;
 let lastTick = null;
 let everyMsNow = EVERY_MS;
@@ -345,9 +357,33 @@ function instrumentDb() {
   }
 }
 
-/** Start watching (idempotent). `onStall(ms, tasks)` for tests. */
-function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
+/** Still in the start of the server (a stall then is no warning)? */
+function booting(now = performance.now()) {
+  if (bootAt == null) return false;
+  if (bootEndAt == null) return now - bootAt < BOOT_MAX_MS;
+  return now < bootEndAt;
+}
+
+/**
+ * The server started (it listens, the plugins were started): stalls count as
+ * warnings again after `graceMs`. Logs the length of the start (info). Once.
+ */
+function bootDone({ graceMs = BOOT_GRACE_MS } = {}) {
+  if (bootAt == null || bootEndAt != null) return;
+  const now = performance.now();
+  bootEndAt = now + Math.max(0, graceMs);
+  const fields = { startMs: Math.round(now - bootAt) };
+  if (bootBlockedMs) fields.blockedMs = bootBlockedMs;
+  logger.info(fields, 'server start finished');
+}
+
+/**
+ * Start watching (idempotent). `onStall(ms, tasks)` for tests. `booting`:
+ * the server starts now — stalls are debug until bootDone() (+ grace).
+ */
+function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null, booting: isBoot = false } = {}) {
   if (timer) return;
+  if (isBoot) { bootAt = performance.now(); bootEndAt = null; bootBlockedMs = 0; }
   instrumentSpawn();
   instrumentDb();
   everyMsNow = everyMs;
@@ -370,7 +406,13 @@ function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
     if (sync != null) fields.diskSyncMs = sync;
     if (tasks.length) fields.tasks = describeTasks(tasks);
     if (reqs.length) fields.requests = describeRequests(reqs);
-    logger.warn(fields, 'event loop was blocked');
+    if (booting(now)) {
+      // the normal start (loading, migrations, plugin processes): no warning
+      bootBlockedMs += late;
+      logger.debug({ ...fields, startup: true }, 'event loop busy during server start');
+    } else {
+      logger.warn(fields, 'event loop was blocked');
+    }
     if (onStall) onStall(late, tasks, reqs);
   }, everyMs);
   timer.unref();
@@ -395,6 +437,9 @@ function task(name, fn) {
 function _resetForTest() {
   stop();
   lastUse = null;
+  bootAt = null;
+  bootEndAt = null;
+  bootBlockedMs = 0;
   stalls.length = 0;
   spans.length = 0;
   active.clear();
@@ -404,9 +449,9 @@ function _resetForTest() {
 }
 
 module.exports = {
-  start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
+  start, stop, bootDone, booting, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
   beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn, instrumentDb,
   _setDbMinMsForTest: (ms) => { dbMinMs = ms == null ? DB_MIN_MS : ms; },
   _setSpawnMinMsForTest: (ms) => { spawnMinMs = ms == null ? SPAWN_MIN_MS : ms; },
-  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, DB_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
+  EVERY_MS, WARN_MS, RECORD_MS, BOOT_GRACE_MS, BOOT_MAX_MS, MEASURE_MIN_MS, DB_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
 };

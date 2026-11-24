@@ -934,10 +934,11 @@ function hourly() {
   try { require('./publicLinks').sweep(); } catch (e) { logger.warn({ err: e.message }, 'public link sweep failed'); }
 }
 
+/** → a promise: the first round of starts is done (never rejects). */
 function start() {
-  if (timers.length) return;
+  if (timers.length) return Promise.resolve();
   fs.mkdirSync(pluginsRoot(), { recursive: true });
-  require('../../utils/loopStall').withTask('plugins.start', reconcile).catch((e) => logger.warn({ err: e.message }, 'plugin start failed'));
+  const started = require('../../utils/loopStall').withTask('plugins.start', reconcile).catch((e) => logger.warn({ err: e.message }, 'plugin start failed'));
   // licence states change in the background (daily licence refresh, expiry): look every 5 minutes
   timers.push(setInterval(() => require('../../utils/loopStall').withTask('plugins.reconcile', reconcile).catch(() => {}), 5 * 60 * 1000));
   timers.push(setInterval(() => require('../../utils/loopStall').withTask('plugins.licences', checkThirdPartyLicences).catch(() => {}), 24 * 60 * 60 * 1000));
@@ -953,6 +954,7 @@ function start() {
   require('./mediaAreas').start();
   // person groups: groupsChanged / groupUsage / groupDeleting of plugins with permissions.groups
   try { require('./groups').init(); } catch (e) { logger.warn({ err: e.message }, 'plugin group hooks not wired'); }
+  return started;
 }
 
 async function stop() {

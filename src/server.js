@@ -28,8 +28,10 @@ async function start() {
   logger.info({ name: config.app.name, version: require('../package.json').version }, 'Starting application');
 
   // A blocked main thread shows in the log with its length — from the first
-  // step on, the start steps marked (boot.*): a long start names its step
-  loopStall.start();
+  // step on, the start steps marked (boot.*): a long start names its step.
+  // Until the plugins were started (+ a grace time) a stall is the normal
+  // start — debug, not a warning (loopStall.bootDone() below).
+  loopStall.start({ booting: true });
 
   // Initialize database
   withTask('boot.migrations', () => runMigrations());
@@ -224,8 +226,11 @@ async function start() {
     catch (err) { logger.warn({ err: err.message }, 'log problem check not started'); }
 
     // Plugins (docs/plugins.md): start every plugin that may run. Best-effort.
-    try { require('./services/plugins').start(); }
+    let pluginsStarted = null;
+    try { pluginsStarted = require('./services/plugins').start(); }
     catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }
+    // the start is over once the plugins run: later stalls are warnings again (after a grace time)
+    Promise.resolve(pluginsStarted).catch(() => {}).finally(() => loopStall.bootDone());
 
     // Messenger bridges (docs/feature-messenger-bridges.md, preview): while they are switched on, listen for the
     // events of the internal homeserver. Nothing happens when they are off. Best-effort.
