@@ -252,8 +252,8 @@ after(async () => {
 beforeEach(() => keySetup._resetForTest());
 
 describe('version 9', () => {
-  it('gc.remote.version is 9', async () => {
-    assert.equal((await pget('/has')).version, 9);
+  it('gc.remote.version is 10', async () => {
+    assert.equal((await pget('/has')).version, 10);
   });
 });
 

@@ -69,13 +69,20 @@ describe('rdp network_profile → experience flags', () => {
 });
 
 describe('rdp security + domain', () => {
-  it('nla_enabled=1 → security any (negotiate, preserves working behaviour)', () => {
-    const c = buildConnectionSettings(rdpRoute({ nla_enabled: 1 }), {});
+  it('nla_enabled=1 with credentials → security any (negotiate, preserves working behaviour)', () => {
+    const c = buildConnectionSettings(rdpRoute({ nla_enabled: 1 }), { username: 'u', password: 'p' });
     assert.equal(c.settings.security, 'any');
   });
-  it('nla_enabled=0 → security rdp (user explicitly disabled NLA)', () => {
-    const c = buildConnectionSettings(rdpRoute({ nla_enabled: 0 }), {});
-    assert.equal(c.settings.security, 'rdp');
+  it('nla_enabled=1 without a password → security tls (no NLA with empty credentials; Windows shows its sign-in)', () => {
+    assert.equal(buildConnectionSettings(rdpRoute({ nla_enabled: 1 }), {}).settings.security, 'tls');
+    assert.equal(buildConnectionSettings(rdpRoute(), {}).settings.security, 'tls');
+    const userOnly = buildConnectionSettings(rdpRoute({ nla_enabled: 1 }), { username: 'u' });
+    assert.equal(userOnly.settings.security, 'tls');
+    assert.equal(userOnly.settings.username, 'u');
+  });
+  it('nla_enabled=0 → security rdp (user explicitly disabled NLA), with or without credentials', () => {
+    assert.equal(buildConnectionSettings(rdpRoute({ nla_enabled: 0 }), {}).settings.security, 'rdp');
+    assert.equal(buildConnectionSettings(rdpRoute({ nla_enabled: 0 }), { username: 'u', password: 'p' }).settings.security, 'rdp');
   });
   it('domain is passed when set, omitted when empty', () => {
     assert.equal(buildConnectionSettings(rdpRoute({ domain: 'CORP' }), {}).settings.domain, 'CORP');

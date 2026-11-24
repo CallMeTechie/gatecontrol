@@ -12,6 +12,7 @@ const rdpMonitor = require('../../../services/rdpMonitor');
 const rdpSessions = require('../../../services/rdpSessions');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
 const config = require('../../../../config/default');
+const { requestLanguage } = require('../../../services/guacSettings');
 const guacSession = require('../../../services/guacSession');
 // Once the plugin "Fernzugriff" took over the RDP targets, the plugin answers
 // these endpoints (services/remote/facade.js); without it nothing changes.
@@ -310,7 +311,7 @@ router.post('/rdp/:id/browser-session', facade('browserSession'), (req, res) => 
     // DA-C: tokenName:null keeps the client path byte-identical to pre-refactor
     // (rdp.js:353 never embedded tokenName → rdp_sessions.token_name stays NULL).
     const actor = { kind: 'client', tokenId: req.tokenId, userId: req.tokenUserId, peerId: req.tokenPeerId, tokenName: null };
-    const result = guacSession.mintForRoute(route, { actor });
+    const result = guacSession.mintForRoute(route, { actor, language: requestLanguage(req) });
     if (!result.ok) {
       return res.status(result.status).json({ ok: false, error: req.t('rdp.browser.' + result.code) });
     }

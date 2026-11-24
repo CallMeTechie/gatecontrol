@@ -72,6 +72,8 @@ const OPTION_RULES = Object.freeze({
   resolution_width: 'dim',
   resolution_height: 'dim',
   domain: 'text',
+  // version 10: the keyboard layout guacd assumes at the RDP server (server-layout); without it the person's language decides
+  keyboard_layout: require('../guacSettings').KEYBOARD_LAYOUTS,
 });
 
 const tickets = new Map(); // ref → ticket
@@ -389,7 +391,7 @@ function pluginOf(pluginId) {
  * A guacamole token for a claimed ticket (the session page asks for one per connect / reconnect)
  * → { ok: true, token, wsPath, ttl } | { ok: false, status, code }
  */
-async function mint(t, { clientIp, via = 'browser', role = 'viewer' } = {}) {
+async function mint(t, { clientIp, via = 'browser', role = 'viewer', language = null } = {}) {
   if (!t || t.kind !== 'session') return { ok: false, status: 404, code: 'not_found' };
   const plugin = pluginOf(t.pluginId);
   if (!plugin || !running(plugin.id)) return { ok: false, status: 503, code: 'plugin_unavailable' };
@@ -428,6 +430,7 @@ async function mint(t, { clientIp, via = 'browser', role = 'viewer' } = {}) {
     protocol: t.protocol, host: ep.host, port: ep.port, access_mode: 'internal',
     ...t.options,
     domain: secret.domain || t.options.domain || null,
+    language, // version 10: server-layout from the browser's language when the plugin names no keyboard_layout
   };
   const { buildConnectionSettings } = require('../guacSettings');
   const conn = buildConnectionSettings(route, {

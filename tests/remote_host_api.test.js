@@ -21,6 +21,7 @@ const USERNAME = 'buero-admin';
 const call = async (api, args = {}) => (await agent.post(`/api/v1/plugins/${ID}/api/call`).set('X-CSRF-Token', csrf).send({ api, args }).expect(200)).body;
 const pget = async (p) => (await agent.get(`/api/v1/plugins/${ID}/api${p}`).expect(200)).body;
 const ppost = async (p, body) => (await agent.post(`/api/v1/plugins/${ID}/api${p}`).set('X-CSRF-Token', csrf).send(body).expect(200)).body;
+const v10ok = (r) => (r.ok ? 'ok' : r.code);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const TARGET = { id: 'dev-1', name: 'Büro-PC', host: '10.8.0.44', port: 3389 };
 
@@ -90,12 +91,12 @@ describe('permission remote', () => {
     assert.equal(bad.ok, false);
     assert.ok(bad.errors.includes('permissions.remote: invalid'));
   });
-  it('installs with the permission shown; gc.remote version 9 exists', async () => {
+  it('installs with the permission shown; gc.remote version 10 exists', async () => {
     const r = await install(remotePackage());
     assert.equal(r.plugin.permissions.remote, true, 'shown in the install dialog');
     let has = null;
     for (let i = 0; i < 50 && !has; i++) { try { has = await pget('/has'); } catch { await wait(100); } }
-    assert.deepEqual([has.remote, has.version], [true, 9]);
+    assert.deepEqual([has.remote, has.version], [true, 10]);
   });
 });
 
@@ -193,6 +194,42 @@ describe('sessions: ticket, page, token, tunnel', () => {
     const p2 = await other.get('/dashboard');
     const c2 = (p2.text.match(/csrfToken:\s*'([^']+)'/) || [])[1];
     await other.post(`/remote/session/${ref}/token`).set('X-CSRF-Token', c2).expect(404);
+  });
+  it('version 10: without a password no NLA (security tls), the keyboard layout from the option or the browser', async () => {
+    assert.equal(v10ok(await call('session', { user: adminId, protocol: 'rdp', target: TARGET, options: { keyboard_layout: 'xx-yy' } })), 'ERR_INVALID');
+    const tokenOf = async (options, lang) => {
+      const r = await call('session', { user: adminId, protocol: 'rdp', target: TARGET, options });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      const page = await agent.get(r.result.url).expect(200);
+      const req = agent.post(`/remote/session/${r.result.ref}/token`).set('X-CSRF-Token', pageCsrf(page.text).csrf);
+      if (lang) req.set('Accept-Language', lang);
+      const t = await req.expect(200);
+      await call('end', { ref: r.result.ref });
+      return guacToken.verifyAndConsume(t.body.token).connection.settings;
+    };
+    // a registered Windows PC: no credential, nla_enabled true → tls (Windows shows its sign-in screen)
+    let s = await tokenOf({ nla_enabled: true }, 'de-DE,de;q=0.9,en;q=0.8');
+    assert.equal(s.security, 'tls');
+    assert.equal(s.username, undefined);
+    assert.equal(s['server-layout'], 'de-de-qwertz');
+    s = await tokenOf({ nla_enabled: true }, 'de-CH');
+    assert.equal(s['server-layout'], 'de-ch-qwertz');
+    s = await tokenOf({ nla_enabled: true }, 'en-US,en;q=0.9');
+    assert.equal(s['server-layout'], 'en-us-qwerty');
+    // the device's setting wins over the browser
+    s = await tokenOf({ nla_enabled: true, keyboard_layout: 'fr-fr-azerty' }, 'de-DE');
+    assert.equal(s['server-layout'], 'fr-fr-azerty');
+    // nla_enabled false keeps standard RDP security
+    s = await tokenOf({ nla_enabled: false }, 'de');
+    assert.equal(s.security, 'rdp');
+  });
+  it('version 10: with a stored password the session still negotiates (security any)', async () => {
+    const t = sessions._ticketForTest(ref);
+    const m = await sessions.mint(t, { language: 'de-AT' });
+    const conn = guacToken.verifyAndConsume(m.token).connection;
+    assert.equal(conn.settings.security, 'any');
+    assert.equal(conn.settings.password, PASSWORD);
+    assert.equal(conn.settings['server-layout'], 'de-de-qwertz');
   });
   it('tunnel lifecycle: rows, limits per person, hook remoteSession, gc.remote.end', async () => {
     const t = sessions._ticketForTest(ref);

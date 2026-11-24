@@ -41,6 +41,7 @@ function requiredCredFields(route, failed) {
  *
  * @param {object} route  - Route row from rdp.getById(id, true) — must include decrypted creds.
  * @param {object} opts
+ * @param {string|null} [opts.language] - the browser's language (server-layout of RDP)
  * @param {object} opts.actor
  *   - { kind:'admin', userId }           — ACL skipped; tokenName = 'admin:'+userId
  *   - { kind:'client', tokenId, userId, peerId, tokenName }
@@ -49,7 +50,7 @@ function requiredCredFields(route, failed) {
  * @returns {{ ok:true, token:string, ttlMs:number }}
  *        | {{ ok:false, status:number, code:string }}
  */
-function mintForRoute(route, { actor }) {
+function mintForRoute(route, { actor, language = null }) {
   // 1. Licence gate
   if (!hasFeature('browser_sessions')) {
     return { ok: false, status: 403, code: 'license_required' };
@@ -105,7 +106,7 @@ function mintForRoute(route, { actor }) {
     ssh_private_key: route.ssh_private_key, ssh_passphrase: route.ssh_passphrase,
     sftp_password: route.sftp_password, sftp_private_key: route.sftp_private_key, sftp_passphrase: route.sftp_passphrase,
   };
-  const conn = buildConnectionSettings(route, creds);
+  const conn = buildConnectionSettings({ ...route, language }, creds); // language: server-layout (guacSettings.applyKeyboard)
 
   // DA-C byte-identity (Chain3-C3): client actor keeps tokenName=null so the embedded
   // token and rdp_sessions.token_name stay byte-identical to the pre-refactor behaviour

@@ -686,7 +686,7 @@ function makeRemote() {
   /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
   listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
   return Object.freeze({
-    version: 9,
+    version: 10, // 10: options.keyboard_layout, RDP without a password never tries NLA (src/services/remote/index.js)
     /** session({ user, target, protocol: rdp|vnc|ssh|telnet, engine?: guac|term, mode?: view|control, record?, credential?, options?: { …, tmux? }, ttlS? }) → { ref, url, expiresAt, mode, protocol, engine, record, from } */
     session: (opts) => hostCall('remote.session', o(opts), 30000),
     /** screen({ viewer, sender: { user, device }, target: { id, name? }, mode?: 'view'|'control' (control: version 5), ttlS? }) → { ref, url, expiresAt, senderRef, senderExpiresAt, mode, protocol: 'screen', engine: 'screen', record } (version 4) */

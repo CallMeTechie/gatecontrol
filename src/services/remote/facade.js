@@ -176,7 +176,7 @@ async function browserSession(plugin, req, g) {
     return { status, body: { ok: false, error: (e && e.code) || 'mint_failed' } };
   }
   if (!t) return { status: 500, body: { ok: false, error: 'mint_failed' } };
-  const m = await sessions.mint(t, { clientIp: req.ip });
+  const m = await sessions.mint(t, { clientIp: req.ip, language: require('../guacSettings').requestLanguage(req) });
   if (!m.ok) return { status: m.status, body: { ok: false, error: m.code } };
   return { status: 200, body: { ok: true, token: m.token, wsPath: m.wsPath, ttl: m.ttl } };
 }
