@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.321.0] — 2026-11-24
+
+### Features
+- Remote Desktops entfernt – nur noch das Plugin „Fernzugriff“ (#582)
+
+---
+
 ## [1.320.7] — 2026-11-24
 
 ### Fixes
