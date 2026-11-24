@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.3] — 2026-11-24
+
+### Fixes
+- Plugin-Tab darf Fernzugriff-Sitzungen öffnen (GC.openSession) (#577)
+
+---
+
 ## [1.320.2] — 2026-11-24
 
 ### Fixes
