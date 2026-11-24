@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.1] — 2026-11-24
+
+### Fixes
+- Browser-Sitzung zeigt Anmeldefehler statt endloser Wiederverbindung (#575)
+
+---
+
 ## [1.320.0] — 2026-11-23
 
 ### Features
