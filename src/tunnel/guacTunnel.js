@@ -95,6 +95,8 @@ function attachGuacTunnel(httpServer) {
       },
     });
     if (!result.ok) {
+      // the browser only sees a closed WebSocket (and reconnects): the reason is in the log — never the token or the ref
+      logger.warn({ reason: result.reason, path: remote ? 'remote' : 'rdp' }, 'guac tunnel refused');
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -182,8 +184,12 @@ function attachGuacTunnel(httpServer) {
     ws.on('pong', () => { ws._missedPongs = 0; remoteSessions().heartbeat(sid); });
   }
 
-  guac.on('close', (cc) => {
+  guac.on('close', (cc, err) => {
     if (cc.webSocket && cc.webSocket._guacHb) clearInterval(cc.webSocket._guacHb);
+    // guacd not reachable / refused before the session opened: guacamole-lite only writes to stdout
+    if (err && !(cc.webSocket && (cc.webSocket._remoteSessionId || cc.webSocket._guacSessionId))) {
+      logger.warn({ err: String(err.message || err).slice(0, 200), code: err.code || null }, 'guac tunnel closed before guacd connected');
+    }
     const rid = cc.webSocket && cc.webSocket._remoteSessionId;
     if (rid) {
       // ended by the plugin: already recorded; a lost heartbeat is an abort
