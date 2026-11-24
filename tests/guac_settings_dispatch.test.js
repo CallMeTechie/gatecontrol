@@ -21,11 +21,11 @@ describe('guacSettings dispatch + 2a regression', () => {
     assert.equal(c.settings['ignore-cert'], 'true');
     assert.equal(c.settings['disable-audio'], undefined);   // DA-1: nothing emitted at default
     assert.equal(c.settings['enable-sftp'], undefined);
-    // Task-1 display keys (color-depth default + wallpaper/theming/animations enabled by default)
-    assert.equal(c.settings['color-depth'], '32');
-    assert.equal(c.settings['enable-wallpaper'], 'true');
+    // display keys with nothing set: the light browser defaults (16 bpp, no wallpaper/animations, theming on)
+    assert.equal(c.settings['color-depth'], '16');
+    assert.equal(c.settings['enable-wallpaper'], 'false');
     assert.equal(c.settings['enable-theming'], 'true');
-    assert.equal(c.settings['enable-menu-animations'], 'true');
+    assert.equal(c.settings['enable-menu-animations'], 'false');
     // Fix 1: default route (nla_enabled undefined) resolves to security='any'
     assert.equal(c.settings.security, 'any');
   });

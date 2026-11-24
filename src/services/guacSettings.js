@@ -84,14 +84,17 @@ function applyKeyboard(settings, route) {
   settings['server-layout'] = KEYBOARD_LAYOUTS.includes(route.keyboard_layout) ? route.keyboard_layout : layoutForLanguage(route.language);
 }
 
+// Experience of a browser session (guacd → browser): every extra Windows paints is a picture guacd
+// encodes and the browser decodes, so the defaults are the light ones. Only an explicit 'lan' gets
+// full-window drag and desktop composition; 'auto' — and no profile at all (most PCs registered by
+// a plugin bring none) — is treated like 'broadband'; 'modem' drops font smoothing too.
 function applyExperience(settings, route) {
   if (route.protocol !== 'rdp') return;
   const profile = route.network_profile || 'auto';
-  const isLanOrAuto = profile === 'lan' || profile === 'auto';
-  const isBroadband = profile === 'broadband';
-  settings['enable-font-smoothing'] = (isLanOrAuto || isBroadband) ? 'true' : 'false';
-  settings['enable-full-window-drag'] = isLanOrAuto ? 'true' : 'false';
-  settings['enable-desktop-composition'] = isLanOrAuto ? 'true' : 'false';
+  const isLan = profile === 'lan';
+  settings['enable-font-smoothing'] = profile === 'modem' ? 'false' : 'true';
+  settings['enable-full-window-drag'] = isLan ? 'true' : 'false';
+  settings['enable-desktop-composition'] = isLan ? 'true' : 'false';
 }
 
 function applyRedirects(settings, route) {
@@ -103,12 +106,24 @@ function applyRedirects(settings, route) {
   if (route.redirect_printers) settings['enable-printing'] = 'true';
 }
 
+// The disable_* flags: 1 → off, 0 → on — an explicit choice (rdp_routes always stores 0/1 from its
+// form, column default 0; a plugin's false arrives as 0) — NULL/undefined (nothing set: a plugin's
+// target without the option) → the light browser default: no wallpaper, no menu animations, theming
+// on. color_depth: a set value is kept, none → 16 for RDP (VNC keeps 32). With the RDP graphics
+// pipeline (guacd's default) guacd 1.6 always runs 32 bpp and ignores it; it counts without it.
+const BROWSER_DEFAULT_COLOR_DEPTH = 16;
+function flagOn(disableFlag, defaultOn) {
+  if (disableFlag === 1 || disableFlag === true) return 'false';
+  if (disableFlag === 0 || disableFlag === false) return 'true';
+  return defaultOn ? 'true' : 'false';
+}
+
 function applyDisplay(settings, route) {
-  settings['color-depth'] = String(route.color_depth || 32);
+  settings['color-depth'] = String(route.color_depth || (route.protocol === 'vnc' ? 32 : BROWSER_DEFAULT_COLOR_DEPTH));
   if (route.protocol === 'rdp') {
-    settings['enable-wallpaper'] = route.disable_wallpaper ? 'false' : 'true';
-    settings['enable-theming'] = route.disable_themes ? 'false' : 'true';
-    settings['enable-menu-animations'] = route.disable_animations ? 'false' : 'true';
+    settings['enable-wallpaper'] = flagOn(route.disable_wallpaper, false);
+    settings['enable-theming'] = flagOn(route.disable_themes, true);
+    settings['enable-menu-animations'] = flagOn(route.disable_animations, false);
     if (route.resolution_mode === 'dynamic') settings['resize-method'] = 'display-update';
   }
 }
