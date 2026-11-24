@@ -8,7 +8,7 @@
 //   neither                                  → the server's own broadcast (wol.sendMagicPacket)
 //
 // A pool without a live member never falls back to the server: its broadcast lands in the server's own network,
-// not in the home network behind the gateways. Used by the RDP wake (routes/api/rdp.js), the auto-wake of the
+// not in the home network behind the gateways. Used by the auto-wake of the
 // monitor (monitor.js) and gc.remote.wake (remote/targets.js).
 
 const logger = require('../utils/logger');

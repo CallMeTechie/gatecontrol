@@ -56,10 +56,15 @@
       {#- Former built-in integrations whose data waits for the plugin
           (docs/plugins.md "Built-in data import"). -#}
       {%- for mv in builtinMoved or [] %}
-      <div class="pgx-banner" data-tone="warn" role="note" data-builtin-moved="{{ mv.pluginId }}">
+      <div class="pgx-banner" data-tone="warn" role="note" data-builtin-moved="{{ mv.pluginId }}"{% if mv.installed %} data-builtin-pending="{{ mv.reason }}"{% endif %}>
+        {%- if mv.installed %}
+        <span class="pgx-grow">{{ t('plugins.moved.' + mv.dataset + '_pending') }}</span>
+        <a href="{{ mv.manageUrl }}" class="pgx-btn pgx-btn-sm pgx-btn-pri">{{ t('plugins.moved.' + mv.dataset + '_pending_go') }}</a>
+        {%- else %}
         <span class="pgx-grow">{{ t('plugins.moved.' + mv.dataset) }}</span>
         <a href="{{ mv.url }}" class="pgx-btn pgx-btn-sm" target="_blank" rel="noopener noreferrer">{{ t('plugins.moved.download') }}</a>
         {%- if mv.catalog %}<a href="{{ B }}/catalog/{{ mv.pluginId }}" class="pgx-btn pgx-btn-sm pgx-btn-pri">{{ t('plugins.moved.install_now') }}</a>{% endif %}
+        {%- endif %}
       </div>
       {%- endfor %}
       <p class="st-err-block" id="pgx-err" role="alert" hidden></p>

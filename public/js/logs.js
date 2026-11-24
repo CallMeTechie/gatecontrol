@@ -10,7 +10,7 @@
 //                loading; #e/<id> opens an entry ("Was bedeutet das?",
 //                fields as filter, raw data, "Zur selben Zeit").
 //   Probleme     grouped errors/warnings, status, correlation, notify.
-//   Zugriffe     Caddy access log; Sitzungen (rdp-history.js); Gespeicherte Filter.
+//   Zugriffe     Caddy access log; Gespeicherte Filter.
 //   Export       dialog: scope, range, levels, sources, format, columns,
 //                privacy, time zone, preview, templates.
 // APIs: /api/v1/logs/{meta,events,events/stats,events/item,events/export,
@@ -25,7 +25,7 @@
   const LEVELS = ['error', 'warn', 'info', 'debug'];
   const SOURCES = ['server', 'plugins', 'activity', 'access', 'sessions'];
   const RANGES = { '1h': 3600e3, '24h': 86400e3, '7d': 7 * 86400e3, '30d': 30 * 86400e3 };
-  const TABS = ['events', 'problems', 'access', 'sessions', 'saved'];
+  const TABS = ['events', 'problems', 'access', 'saved'];
   const DEFAULTS = { range: '24h', from: null, to: null, levels: ['error', 'warn'], sources: ['server', 'plugins', 'activity'], plugins: [], q: '', problem: '' };
   const PAGE = 100;
   const CLUSTER_MS = 2000;

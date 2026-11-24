@@ -6,7 +6,6 @@ const routesSvc = require('../../services/routes');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const portalConfig = require('../../services/portalConfig');
-const { canAccessRoute } = require('../../services/rdpAcl');
 const { csrfProtection } = require('../../middleware/csrf');
 const { createMeRouter } = require('./me');
 
@@ -130,14 +129,6 @@ router.get('/traffic', (req, res) => {
   }
 });
 
-function parseIdList(json) {
-  if (!json) return null;
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) && v.length ? v : null;
-  } catch { return null; }
-}
-
 // Services the device reaches AND the viewer may see: an entry restricted
 // to persons and/or groups ("Wer darf zugreifen?", docs/groups.md) only for
 // those persons and the effective group members; without a known person
@@ -166,17 +157,8 @@ router.get('/services', (req, res) => {
       domain: r.domain,
       kind: 'http',
     }));
-    let rdp = [];
-    try {
-      const db = getDb();
-      const deviceTokens = db.prepare('SELECT id FROM api_tokens WHERE peer_id = ?').all(req.portalPeerId).map((t) => t.id);
-      rdp = db.prepare('SELECT id, name, host, port, user_ids, group_ids, token_ids FROM rdp_routes WHERE enabled = 1 ORDER BY name').all()
-        .filter((r) => ((parseIdList(r.user_ids) || parseIdList(r.group_ids))
-          ? canAccessRoute(r, null, owner, { groupsOf })
-          : (parseIdList(r.token_ids) ? deviceTokens.some((tid) => canAccessRoute(r, tid, owner)) : true)))
-        .map((r) => ({ id: r.id, name: r.name, host: r.host + (r.port ? ':' + r.port : ''), kind: 'rdp' }));
-    } catch (err) { logger.debug({ err: err.message }, 'portal /services: rdp entries unavailable'); rdp = []; }
-    res.json({ ok: true, data: visible.concat(rdp) });
+    // (the devices of the former Remote Desktops are the plugin „Fernzugriff“'s portal tab now)
+    res.json({ ok: true, data: visible });
   } catch (err) {
     logger.error({ error: err.message }, 'portal /services failed');
     return unidentified(res);

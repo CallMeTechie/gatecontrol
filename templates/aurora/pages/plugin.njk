@@ -26,6 +26,14 @@
     </div>
   </div>
 
+  {#- Old rows of a former built-in feature the plugin has not got yet (Remote Desktops → Fernzugriff,
+      services/plugins/legacy.js pendingImport) -#}
+  {%- if legacyPending and user and user.role == 'admin' %}
+  <div class="pgx-banner" data-tone="warn" role="note" data-builtin-moved="{{ plugin.id }}" data-builtin-pending="{{ legacyPending.reason }}">
+    <span class="pgx-grow">{{ t('plugins.moved.' + legacyPending.dataset + '_pending') }}</span>
+    <a href="{{ legacyPending.manageUrl }}" class="pgx-btn pgx-btn-sm pgx-btn-pri">{{ t('plugins.moved.' + legacyPending.dataset + '_pending_go') }}</a>
+  </div>
+  {%- endif %}
   {% if running %}
     <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}{% if focus %}?focus={{ focus | urlencode }}{% endif %}"
       sandbox="allow-scripts allow-forms{% if plugin.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if plugin.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer"{% if plugin.allow %} allow="{{ plugin.allow }}"{% endif %}

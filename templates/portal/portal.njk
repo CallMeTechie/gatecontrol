@@ -247,10 +247,6 @@
     <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.services') }}</h1>
     <p class="pt-lead">{{ t('portal.services.lead') if viewer.kind == 'person' else t('portal.services.lead_all') }}</p>
     <div class="pt-svc-grid" id="pt-services"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
-    <div id="pt-rdp-wrap" hidden>
-      <h2 class="pt-h2 pt-h2-gap">{{ t('portal.services.rdp') }}</h2>
-      <div class="pt-rdp-list" id="pt-rdp"></div>
-    </div>
   </section>
   {% endif %}
 

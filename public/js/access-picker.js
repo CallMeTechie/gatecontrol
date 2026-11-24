@@ -4,7 +4,7 @@
 // with chips for groups, persons and (HTTP routes) devices, the live list of
 // the people who would get access with the reason per person, and hints for
 // disabled accounts / archived groups. Used by the route editor
-// (entry-editor.js) and the RDP dialog (rdp.js).
+// (entry-editor.js).
 //
 //   const picker = window.GCAccessPicker.mount(container, {
 //     devices: true|false,        // offer devices (HTTP routes with peer ACL licence)

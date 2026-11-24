@@ -60,7 +60,7 @@ describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
       ['/peers', '/gateways', '/plugins/gatecontrol-proxmox'],
-      ['/routes', '/rdp'],
+      ['/routes'],
       ['/users', '/groups', '/directory', '/security', '/certificates', '/waf'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/plugins/gatecontrol-drive'],
@@ -73,7 +73,7 @@ describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
     const g = sidebarGroups(renderLayout('dashboard', {}));
     assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Geräte', 'Dienste', 'Zugriff & Sicherheit', 'Wartung', 'System']);
     assert.deepEqual(g[1].hrefs, ['/peers', '/gateways']);
-    assert.deepEqual(g[2].hrefs, ['/routes', '/rdp']);
+    assert.deepEqual(g[2].hrefs, ['/routes'], 'Remote Desktops is the plugin „Fernzugriff“ (section devices)');
     assert.deepEqual(g[3].hrefs, ['/users', '/groups', '/directory', '/security', '/certificates'], 'Sicherheits-Check needs no licence; Gruppen in every edition');
     // the licence keys of the former built-ins show nothing by themselves
     assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Zuhause' || x.label === 'Apps'), false);
@@ -110,7 +110,7 @@ describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
     assert.match(bn, />\s*Dienste\s*</);
     assert.match(bn, /<button type="button" class="bn-item bn-more\s*" id="bn-more" aria-controls="sidebar"/);
     assert.match(renderLayout('gateways', ALL), /<a href="\/peers" class="bn-item active">/, 'Gateways marks "Geräte"');
-    assert.match(renderLayout('rdp', ALL), /<a href="\/routes" class="bn-item active">/, 'Remote Desktops marks "Dienste"');
+    assert.match(renderLayout('routes', ALL), /<a href="\/routes" class="bn-item active">/, 'Routen marks "Dienste"');
     assert.match(renderLayout('logs', ALL), /class="bn-item bn-more active"/, 'other pages mark "Mehr"');
   });
 

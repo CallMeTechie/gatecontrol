@@ -447,9 +447,11 @@ describe('page /logs', () => {
   const L = require('../public/js/logs.js');
   it('renders the shell with tabs, island and scripts', async () => {
     const r = await getAgent().get('/logs').expect(200);
-    for (const id of ['lg-page', 'lg-range', 'lg-tab-events', 'lg-tab-problems', 'lg-panel-access', 'lg-panel-sessions', 'lg-panel-saved', 'lg-sheet', 'rdp-history-list']) {
+    for (const id of ['lg-page', 'lg-range', 'lg-tab-events', 'lg-tab-problems', 'lg-panel-access', 'lg-panel-saved', 'lg-sheet']) {
       assert.ok(r.text.includes(`id="${id}"`), id);
     }
+    // the tab Sitzungen of the former Remote Desktops is gone (docs/feature-remote-access.md "Remote Desktops removed")
+    assert.ok(!r.text.includes('id="lg-panel-sessions"') && !r.text.includes('rdp-history'));
     assert.match(r.text, /id="lg-i18n" data-prefixes="lg\. common\."/);
     assert.match(r.text, /"lg\.code\.storage_timeout\.text":/);
     assert.match(r.text, /<script src="\/js\/logs\.js/);

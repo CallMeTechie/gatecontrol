@@ -2,9 +2,9 @@
 
 // Built-in → plugin migration (docs/plugins.md "Built-in data import").
 //
-// Smart Home (deCONZ), Klimaanlage (Midea) and Fahrzeuge (Škoda) used to be
-// built into GateControl (Remote Desktops → "Fernzugriff": see `remote` below —
-// that one stays built in for now and is only copied). Their code is gone — the features are the
+// Smart Home (deCONZ), Klimaanlage (Midea), Fahrzeuge (Škoda) and Remote
+// Desktops (→ "Fernzugriff", see `remote` below) used to be built into
+// GateControl. Their code is gone — the features are the
 // first-party plugins listed in DATASETS below — but their tables and
 // settings are kept (never dropped, still in backups) so an existing
 // installation can bring its data into the plugin:
@@ -54,6 +54,13 @@ class LegacyError extends Error {
 function parseJson(s, fallback) {
   if (typeof s !== 'string' || !s) return fallback;
   try { const v = JSON.parse(s); return v && typeof v === 'object' ? v : fallback; } catch { return fallback; }
+}
+
+/** 'YYYY-MM-DD HH:MM:SS' (SQLite, UTC) or an ISO string → ms; 0 when unreadable. */
+function sqliteMs(v) {
+  if (typeof v !== 'string' || !v) return 0;
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
+  return Number.isFinite(t) ? t : 0;
 }
 
 function tableExists(name) {
@@ -214,10 +221,14 @@ const skoda = {
   },
 };
 
-// Remote Desktops → the shop plugin "Fernzugriff" (gatecontrol-remote, gc.remote). Unlike the three
-// above, the built-in feature STAYS in the core while the plugin is new (stage 0/1 of the plan): its tables
-// and API keep working, the import only copies; once taken over, the page /rdp leads to the plugin
-// (routes/index.js) and the old app API is answered by the plugin (services/remote/facade.js). Secrets never go into the snapshot: every credential
+// Remote Desktops → the shop plugin "Fernzugriff" (gatecontrol-remote, gc.remote). Like the three above
+// the built-in feature is gone (docs/feature-remote-access.md "Remote Desktops removed"): no page, no admin
+// API, the old app API is answered by the plugin only (services/remote/facade.js). The tables rdp_routes and
+// rdp_sessions stay as the old stock ("Altbestand": never dropped, still in backups, a restore of an old
+// backup puts its rows back) until the plugin took them over; while rows are there that the installed
+// plugin has not got yet — never imported, changed or restored after the last import (pendingImport) —
+// the dashboard, the plugin area and the plugin's page say "Alte Remote Desktops noch nicht übernommen".
+// Secrets never go into the snapshot: every credential
 // set of a route becomes an entry of the core's key vault (services/remote/vault.js) and the snapshot
 // carries its handle — idempotent per route (source "rdp_route:<id>"), so "Erneut übernehmen" refreshes
 // the same handles. Ids stay (routes[].id = rdp_routes.id, sessions[].route_id), so the plugin's rights and
@@ -225,6 +236,12 @@ const skoda = {
 const REMOTE_SESSIONS_MAX = 20000;
 
 const remote = {
+  /** The latest change of a row (rdp_routes.updated_at, SQLite UTC) as ms, or 0. */
+  changedAt() {
+    if (!tableExists('rdp_routes')) return 0;
+    const r = getDb().prepare('SELECT MAX(COALESCE(updated_at, created_at)) AS t FROM rdp_routes').get();
+    return sqliteMs(r && r.t);
+  },
   counts() {
     if (!tableExists('rdp_routes')) return { routes: 0, sessions: 0, maintenance: 0 };
     const db = getDb();
@@ -303,9 +320,9 @@ const DATASETS = new Map([
   ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', target: 'gateway', source: smarthome })],
   ['gatecontrol-midea', Object.freeze({ dataset: 'midea', target: 'ac', source: midea })],
   ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', target: null, source: skoda })],
-  // the upgrade notice ("Remote Desktops ist jetzt das Plugin „Fernzugriff“", i18n plugins.moved.remote) since stage 1, when
-  // the plugin is in the shop; the built-in feature keeps working, /rdp leads to the plugin once its data was taken over
-  ['gatecontrol-remote', Object.freeze({ dataset: 'remote', target: null, source: remote })],
+  // the upgrade notice ("Remote Desktops ist jetzt das Plugin „Fernzugriff“", i18n plugins.moved.remote); `installedNotice`:
+  // also while the installed plugin has not got the old rows yet (pendingImport, i18n plugins.moved.remote_pending)
+  ['gatecontrol-remote', Object.freeze({ dataset: 'remote', target: null, source: remote, installedNotice: true })],
 ]);
 
 function defOf(pluginId) {
@@ -341,6 +358,13 @@ function installed(pluginId) {
 
 const MARKER_PREFIX = 'plugins.legacy_imported.';
 
+// A restore that put built-in rows back (backup.js): they may be rows the plugin has not got.
+const RESTORED_PREFIX = 'plugins.legacy_restored.';
+
+function markRestored(dataset) {
+  try { require('../settings').set(RESTORED_PREFIX + dataset, new Date().toISOString()); } catch { /* best-effort */ }
+}
+
 function markImported(dataset) {
   try { require('../settings').set(MARKER_PREFIX + dataset, new Date().toISOString()); } catch { /* the record stays the source of truth */ }
 }
@@ -363,6 +387,12 @@ function pendingMoves() {
   const out = [];
   for (const [id, def] of DATASETS) {
     if (def.notice === false) continue;
+    if (def.installedNotice && installed(id)) {
+      let pend = null;
+      try { pend = pendingImport(registry.resolve(id)); } catch { pend = null; }
+      if (pend) out.push({ pluginId: id, dataset: def.dataset, counts: pend.counts, installed: true, reason: pend.reason, manageUrl: pend.manageUrl });
+      continue;
+    }
     if (installed(id) || everImported(id)) continue;
     let counts;
     try { counts = def.source.counts(); } catch { continue; }
@@ -374,6 +404,32 @@ function pendingMoves() {
 
 function catalogEnabled() {
   try { return require('./catalog').enabled(); } catch { return false; }
+}
+
+/**
+ * Built-in rows the INSTALLED plugin `plugin` has not got yet (datasets with
+ * `installedNotice`): null, or { dataset, counts, reason: never | changed,
+ * manageUrl } — never: this plugin never imported (also after "Alles
+ * löschen": its record went with its data); changed: a row changed or a
+ * restore put rows back after its last import. Never throws.
+ */
+function pendingImport(plugin) {
+  try {
+    if (!plugin || !plugin.id) return null;
+    const def = defOf(plugin.id);
+    if (!def || !def.installedNotice) return null;
+    const counts = def.source.counts();
+    if (!Object.values(counts).some((n) => n > 0)) return null;
+    const manageUrl = `/settings/plugins/manage/${encodeURIComponent(plugin.id)}`;
+    const rec = record(plugin.id);
+    const at = rec ? sqliteMs(rec.at) : 0;
+    if (!at) return { dataset: def.dataset, counts, reason: 'never', manageUrl };
+    let restored = 0;
+    try { restored = sqliteMs(require('../settings').get(RESTORED_PREFIX + def.dataset)); } catch { restored = 0; }
+    const changed = typeof def.source.changedAt === 'function' ? def.source.changedAt() : 0;
+    if (Math.max(restored, changed) > at) return { dataset: def.dataset, counts, reason: 'changed', manageUrl };
+    return null;
+  } catch { return null; }
 }
 
 /**
@@ -521,4 +577,4 @@ async function runImport(pluginId, { ip } = {}) {
   }
 }
 
-module.exports = { LegacyError, DATASETS, defOf, status, runImport, forget, eligibility, pendingMoves, everImported, movedPage, releaseUrl };
+module.exports = { LegacyError, DATASETS, defOf, status, runImport, forget, eligibility, pendingMoves, pendingImport, markRestored, everImported, movedPage, releaseUrl };

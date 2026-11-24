@@ -339,6 +339,8 @@ router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => 
     reason: REASON_KEYS.has(reason) ? reason : 'disabled',
     // ?focus=<kind>:<value> (docs/plugins.md "Radio sensors"): handed on to the frame, e.g. "In Smart Home benennen"
     focus: typeof req.query.focus === 'string' && FOCUS_RE.test(req.query.focus) ? req.query.focus : null,
+    // old rows of a former built-in feature this plugin has not got yet ("jetzt übernehmen")
+    legacyPending: require('../services/plugins/legacy').pendingImport(p),
     pagesJson: JSON.stringify(view.pages.map((x) => x.id)),
     settingsPagesJson: JSON.stringify(view.settingsPages.map((x) => x.id)),
   });

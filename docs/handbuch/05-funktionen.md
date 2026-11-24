@@ -42,8 +42,8 @@ und Grund – siehe [FAQ](07-faq.md#gateway-degradiert).
 Unter „Domains / Routen“ öffnet „Optionen“ an einem Eintrag den Editor. Hat
 der Eintrag ein eigenes Ziel (nicht das der Domain), wählst du bei „Ziel-Typ:
 Home Gateway (LAN)“ im Feld „Gateway“ entweder ein einzelnes Gateway oder –
-in der zweiten Gruppe „Gateway-Pools“ – einen Pool. Das ist dieselbe Auswahl
-wie bei einer RDP-Route. Ein Wechsel zwischen Gateway und Pool löst das alte
+in der zweiten Gruppe „Gateway-Pools“ – einen Pool. Ein Wechsel zwischen
+Gateway und Pool löst das alte
 Ziel ganz: Der Eintrag hängt danach nur noch am neuen.
 
 Wurde das Gateway eines Eintrags gelöscht, steht im Editor „Das bisherige

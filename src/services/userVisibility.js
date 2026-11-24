@@ -10,16 +10,15 @@
  *                 entry restricted to persons and/or groups is visible only
  *                 to those persons and the effective group members, an entry
  *                 without either to everybody (enabled HTTP entries only)
- *   RDP           rdpAcl.canAccessRoute: user_ids / group_ids first, then the
- *                 legacy token_ids list, else everybody
+ *   (The devices of the former Remote Desktops are the plugin „Fernzugriff“'s:
+ *   its rights are the plugin's, not listed here.)
  *   Reasons       'all' | 'picked' (named person, names) | 'group' (member
- *                 of a released group, groups: paths) | 'token'
+ *                 of a released group, groups: paths)
  *
  * Never returns credentials: names, hosts and ports only.
  */
 
 const { getDb } = require('../db/connection');
-const { canAccessRoute } = require('./rdpAcl');
 const groupAccess = require('./groupAccess');
 
 function parseIds(json) {
@@ -83,39 +82,9 @@ function httpEntries(userId, byId, ctx = {}) {
   return { visible, hidden, total: rows.length };
 }
 
-function rdpEntries(userId, tokenIds, byId, ctx = {}) {
-  const db = getDb();
-  let rows;
-  try {
-    rows = db.prepare('SELECT id, name, host, port, user_ids, group_ids, token_ids FROM rdp_routes WHERE enabled = 1 ORDER BY name').all();
-  } catch { rows = []; }
-  const userGroups = ctx.userGroups || groupAccess.userGroupSet(userId);
-  const visible = [];
-  let hidden = 0;
-  for (const r of rows) {
-    const userIds = parseIds(r.user_ids);
-    const groups = groupAccess.parseIdList(r.group_ids);
-    const personal = !!userIds || groups.length > 0;
-    const legacy = !personal ? parseIds(r.token_ids) : null;
-    // Same check as the client API: a device sees the entry when the user
-    // (directly or through a group, or, legacy, one of the user's tokens) is
-    // on its list.
-    const reach = personal
-      ? canAccessRoute(r, null, userId, { userGroups })
-      : (legacy ? tokenIds.some((tid) => canAccessRoute(r, tid, userId)) : true);
-    const host = r.host + (r.port ? ':' + r.port : '');
-    if (!reach) { hidden += 1; continue; }
-    if (userIds && userIds.includes(userId)) visible.push({ id: r.id, name: r.name, host, reason: 'picked', names: namesFor(userIds, byId) });
-    else if (personal) visible.push({ id: r.id, name: r.name, host, reason: 'group', names: [], groups: groupPaths(groups, userGroups, ctx) });
-    else if (legacy) visible.push({ id: r.id, name: r.name, host, reason: 'token', names: [] });
-    else visible.push({ id: r.id, name: r.name, host, reason: 'all', names: [] });
-  }
-  return { visible, hidden, total: rows.length };
-}
-
 /**
  * Full picture for the admin tab.
- * Returns { user, role, web, services, rdp } — `web` is
+ * Returns { user, role, web, services } — `web` is
  * 'all' (admin), 'self_service' (member with "Mein Bereich") or 'none'.
  */
 function forUser(userId) {
@@ -125,8 +94,6 @@ function forUser(userId) {
   if (!user) return null;
   const all = db.prepare('SELECT id, username, display_name FROM users').all();
   const byId = new Map(all.map((u) => [u.id, u]));
-  const tokens = db.prepare('SELECT id, name, scopes, peer_id, enrolled FROM api_tokens WHERE user_id = ? ORDER BY name').all(userId);
-  const tokenIds = tokens.map((t) => t.id);
   const ctx = { userGroups: groupAccess.userGroupSet(userId) };
 
   let web = 'none';
@@ -138,22 +105,17 @@ function forUser(userId) {
     role: user.role,
     web,
     services: httpEntries(userId, byId, ctx),
-    rdp: rdpEntries(userId, tokenIds, byId, ctx),
   };
 }
 
 /**
- * The member's own view (/me): HTTP services and RDP entries, names and
- * hosts only — no reasons naming other users, no counts of hidden entries.
+ * The member's own view (/me): HTTP services, names and hosts only — no
+ * reasons naming other users, no counts of hidden entries.
  */
 function servicesForSelf(userId) {
-  const db = getDb();
-  const tokenIds = db.prepare('SELECT id FROM api_tokens WHERE user_id = ?').all(userId).map((t) => t.id);
   const byId = new Map();
   const ctx = { userGroups: groupAccess.userGroupSet(userId) };
-  const http = httpEntries(userId, byId, ctx).visible.map((e) => ({ kind: 'http', name: e.name, host: e.host, url: 'https://' + e.host }));
-  const rdp = rdpEntries(userId, tokenIds, byId, ctx).visible.map((e) => ({ kind: 'rdp', name: e.name, host: e.host }));
-  return http.concat(rdp);
+  return httpEntries(userId, byId, ctx).visible.map((e) => ({ kind: 'http', name: e.name, host: e.host, url: 'https://' + e.host }));
 }
 
 module.exports = { forUser, servicesForSelf, isDeviceToken, firstName, displayName };

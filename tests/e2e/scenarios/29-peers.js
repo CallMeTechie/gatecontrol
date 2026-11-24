@@ -250,7 +250,7 @@ module.exports = (ctx) => {
           return out.map((g) => g.hrefs.join(' '));
         });
         step('sidebar: Geräte (Peers, Gateways) · Dienste · … · Wartung (Logs, Support-Pakete) · System',
-          groups.some((g) => /^\/peers \/gateways/.test(g)) && groups.some((g) => /^\/routes \/rdp/.test(g))
+          groups.some((g) => /^\/peers \/gateways/.test(g)) && groups.some((g) => g === '/routes')
           && groups.some((g) => g === '/logs /support-bundles') && groups.some((g) => g === '/notifications /settings'), groups.join(' | '));
         await theme(page, 'dark');
         await page.click('#pl-view [data-view="cards"]');

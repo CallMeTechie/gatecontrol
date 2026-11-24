@@ -623,9 +623,9 @@ describe('Namen im VPN — what the apps are told', () => {
     assert.match(src, /updated: false, internalDns: internalDns\(\)/);
   });
 
-  it('peer_fqdn stays in the legacy zone, peer_fqdn_primary names the primary one', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'api', 'client', 'rdp.js'), 'utf8');
-    assert.match(src, /peer_fqdn = `\$\{peerRow\.hostname\}\.\$\{configDef\.dns\.domain\}`;/);
-    assert.match(src, /peer_fqdn_primary = `\$\{peerRow\.hostname\}\.\$\{require\('\.\.\/\.\.\/\.\.\/services\/vpnNames'\)\.current\(\)\.primary\}`;/);
+  it('peer_fqdn stays in the legacy zone, peer_fqdn_primary names the primary one (the facade of the old app API)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'remote', 'facade.js'), 'utf8');
+    assert.match(src, /peer_fqdn: `\$\{row\.hostname\}\.\$\{config\.dns\.domain\}`/);
+    assert.match(src, /peer_fqdn_primary: `\$\{row\.hostname\}\.\$\{require\('\.\.\/vpnNames'\)\.current\(\)\.primary\}`/);
   });
 });

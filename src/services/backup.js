@@ -268,7 +268,8 @@ function exportTables(db) {
     return entry;
   });
 
-  // ── rdp_routes (optional feature table) ─────────────────────
+  // ── rdp_routes (the old stock of the former Remote Desktops, kept until the plugin
+  //    „Fernzugriff“ took it over: plugins/legacy.js `remote`) ─────────────────────
   let rdpRoutes = [];
   try {
     const rdpCols = columnsOf(db, 'rdp_routes');
@@ -1405,6 +1406,11 @@ async function restoreBackup(backup) {
 
   restore();
   restoreSecurity(backup.data.security);
+  // Rows of the former Remote Desktops are back (the old stock, plugins/legacy.js `remote`): the plugin
+  // „Fernzugriff“ may not have them — the dashboard offers "jetzt übernehmen" until it has.
+  if (rdpRoutes.length > 0) {
+    try { require('./plugins/legacy').markRestored('remote'); } catch (err) { logger.debug({ err: err.message }, 'backup restore: remote restore marker failed'); }
+  }
 
   logger.info({
     peer_groups: (peerGroups || []).length,

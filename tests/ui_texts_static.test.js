@@ -82,7 +82,6 @@ describe('W1: no browser dialogs in public/js/**', () => {
         'offsite.delete_msg', 'offsite.key_rotate_msg', 'st.cp.inherit_msg', 'st.confirm.req2fa_off', 'st.confirm.lockout_low']],
       ['public/js/users.js', ['us.confirm.revoke_title', 'us.confirm.self_off_title', 'us.sec.passkey_remove_title', 'us.sec.reset_title', 'us.sec.pin_reset_title', 'us.dirty.title']],
       ['public/js/portal.js', ['portal.devices.lock_title']],
-      ['public/js/rdp.js', ['rdp.confirm_delete', 'rdp.confirm_disconnect_all']],
       ['public/js/peers.js', ['pl.confirm_disable_online', 'pl.bulk_confirm_delete', 'pl.bulk_confirm_disable_online']],
       ['public/js/gateway-manage.js', ['gwm.disable_confirm']],
       ['public/js/gateway-pools-ui.js', ['gwp.mem.remove_q']],

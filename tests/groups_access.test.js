@@ -126,7 +126,7 @@ describe('HTTP routes and RDP: persons ∪ group members', () => {
     assert.equal(canAccessRoute({ group_ids: 'not-json' }, null, 5), true, 'malformed → no restriction');
   });
 
-  it('RDP entries: list, by id and the user profile listing follow the same rule', async () => {
+  it('RDP entries (the old stock): list and by id follow the same rule; the user profile lists HTTP services only', async () => {
     const rdp = require('../src/services/rdp');
     const mk = (name, data) => db().prepare(`INSERT INTO rdp_routes (name, host, port, enabled, user_ids, group_ids) VALUES (?, '10.0.0.9', 3389, 1, ?, ?)`)
       .run(name, data.user_ids ? JSON.stringify(data.user_ids) : null, data.group_ids ? JSON.stringify(data.group_ids) : null).lastInsertRowid;
@@ -147,11 +147,9 @@ describe('HTTP routes and RDP: persons ∪ group members', () => {
     const svc = vis.services.visible.find((e) => e.host === 'group.ga.test');
     assert.equal(svc.reason, 'group');
     assert.deepEqual(svc.groups, ['Verwaltung']);
-    const rd = vis.rdp.visible.find((e) => e.name === 'ga-rdp-mixed');
-    assert.equal(rd.reason, 'group');
-    assert.deepEqual(rd.groups, ['Verwaltung › Buchhaltung']);
+    assert.equal(vis.rdp, undefined, 'the devices of „Fernzugriff“ are the plugin\'s (docs/feature-remote-access.md "Remote Desktops removed")');
     const self = require('../src/services/userVisibility').servicesForSelf(anna).map((e) => e.name);
-    assert.ok(self.includes('ga-rdp-group') && self.includes('group.ga.test'));
+    assert.ok(self.includes('group.ga.test') && !self.includes('ga-rdp-group'));
   });
 
   it('RDP create/update validate group ids (exist, not archived; stored ones are kept)', async () => {

@@ -31,27 +31,12 @@ describe('rdpMonitor protocol-aware target', () => {
 });
 
 const { describe: d3, it: it3, before, after } = require('node:test');
-const rdpSvc = require('../src/services/rdp');
-
-let agent, csrf, app;
-before(async () => { const c = await setup(); agent = c.agent; csrf = c.csrfToken; app = c.app; });
+before(async () => { await setup(); });
 after(() => teardown());
-
-d3('native connect is RDP-only', () => {
-  it3('returns 400 for an ssh route', async () => {
-    const r = await rdpSvc.create({ name: 'ssh-box', host: '10.0.0.7', protocol: 'ssh', username: 'root' });
-    const res = await agent.get(`/api/v1/client/rdp/${r.id}/connect`).expect(400);
-    assert.equal(res.body.ok, false);
-  });
-});
 
 const { getDb } = require('../src/db/connection');
 
 d3('existing RDP row is behaviourally unchanged', () => {
-  it3('native connect still works for an rdp route', async () => {
-    const r = await rdpSvc.create({ name: 'rdp-box', host: '10.0.0.8', protocol: 'rdp', port: 3389 });
-    await agent.get(`/api/v1/client/rdp/${r.id}/connect`).expect(200);
-  });
   it3('monitor target unchanged for rdp route', () => {
     const tgt = require('../src/services/rdpMonitor').resolveCheckTarget(
       { protocol: 'rdp', host: '10.0.0.8', port: 3389, access_mode: 'internal' });
@@ -65,20 +50,5 @@ d3('existing RDP row is behaviourally unchanged', () => {
         "INSERT INTO rdp_routes (name, host, port, protocol, browser_enabled, sftp_disable_download) VALUES ('old-backup', '10.0.0.11', 3389, NULL, NULL, NULL)"
       ).run();
     });
-  });
-});
-
-d3('native client list excludes non-RDP protocols', () => {
-  it3('vnc route is hidden but rdp route is visible for native (token) clients', async () => {
-    const supertest = require('supertest');
-    const tokens = require('../src/services/tokens');
-    const apiToken = tokens.create({ name: 'native-client', scopes: ['client:rdp'] }, '127.0.0.1').rawToken;
-    const vnc = await rdpSvc.create({ name: 'vnc-hidden', host: '10.0.0.12', protocol: 'vnc' });
-    const rdpRoute = await rdpSvc.create({ name: 'rdp-visible', host: '10.0.0.13', protocol: 'rdp' });
-    // Use a fresh request (not the session agent) so token auth takes effect
-    const res = await supertest(app).get('/api/v1/client/rdp').set('X-Api-Token', apiToken).expect(200);
-    const ids = (res.body.routes || []).map((x) => x.id);
-    assert.ok(ids.includes(rdpRoute.id), 'rdp route must be visible');
-    assert.ok(!ids.includes(vnc.id), 'vnc route must not appear in native client list');
   });
 });

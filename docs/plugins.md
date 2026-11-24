@@ -3228,16 +3228,17 @@ ignores `signal`: the push is then an ordinary silent data push (the person's sw
 
 ### Facade for the old app API (`clientFacade`)
 
-The apps released before the plugin keep calling `/api/v1/client/rdp*`. Once the plugin of the
-dataset `remote` (`gatecontrol-remote`, or the plugin that replaced it) is installed, trusted,
-holds `permissions.remote` **and its built-in data was taken over**, the core hands each of
-these requests to the plugin's hook
+The apps released before the plugin keep calling `/api/v1/client/rdp*`. The built-in Remote
+Desktops is gone (docs/feature-remote-access.md "Remote Desktops removed"): once the plugin of the
+dataset `remote` (`gatecontrol-remote`, or the plugin that replaced it) is installed, trusted and
+holds `permissions.remote` — whether or not the old rows were taken over yet — the core hands each
+of these requests to the plugin's hook
 
 ```js
 async clientFacade({ op, id, query, body, user: { id, tokenId, peerId, scopes, platform, selfIp }, ip }, gc)
 // op: list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd
 //     version 2: wake | statusAdmin | statusAll (the admin API the Windows app uses, see below)
-// → { handled: false }                       the core answers as before
+// → { handled: false }                       the core answers 403 remote_plugin_required (below)
 //   { status, body }                         sent as it is (credential keys in it are removed)
 //   { status, body, credential: { handle, fields? } }   connect: the core adds connection.credentials_e2ee
 //   { guac: { target, protocol, mode?, credential?, options? } }   browserSession: the core answers { ok, token, wsPath, ttl }
@@ -3260,16 +3261,19 @@ calls with its token (`full-access`) — devices of the plugin (ids ≥ 100000) 
 | `statusAdmin` | `GET /api/v1/rdp/:id/status`, `GET /api/v1/rdp/:id/wol/status` | `{ ok, id, online, responseTime, lastCheck }` (→ `gc.remote.probe`) |
 | `statusAll` | `GET /api/v1/rdp/status` | `{ ok, statuses: { <id>: { online, responseTime, lastCheck } } }` — keyed by id, as the app reads it |
 
-Only token requests go to the plugin; the administrator's browser session keeps the core's answers. The plugin
-answers before the core's feature check (`remote_desktop`) — it has a licence of its own; `{ handled: false }`
-leaves the request to the core as before.
+Only token requests go to the plugin; the rest of `/api/v1/rdp` (and a browser session on these four) answers
+`410 { code: 'moved_to_plugin', plugin: 'gatecontrol-remote' }`. The plugin has a licence of its own.
+
+**Without the plugin** — not installed, not trusted, no hook, or `{ handled: false }` — the core has no answer of
+its own any more: `/api/v1/client/rdp*` and the four app calls of `/api/v1/rdp` answer
+`403 { ok: false, error: 'Remote Desktop feature not available', code: 'remote_plugin_required', plugin }` —
+the answer a server without the feature always gave the apps (Android shows "RDP is not available", Windows an empty
+list).
 
 Credentials never pass through the plugin and only go out with **ECDH** (`ecdhPublicKey` of the
-app): without it the facade answers `400 ecdh_required` — no RSA, no plaintext. A plugin
-without the hook, or without the take-over, changes nothing. A plugin that does not run answers
-`503 plugin_unavailable` (`403 license_required` without a licence) — the core data may be
-outdated by then. The core's own `/connect` still has its plaintext fallback for old apps
-without a key; it is **deprecated** and logged (one warning per token and hour).
+app): without it the facade answers `400 ecdh_required` — no RSA, no plaintext (the plaintext fallback of the
+core's old `/connect` went with it). A plugin that does not run answers `503 plugin_unavailable`
+(`403 license_required` without a licence).
 
 ## Meine Orte (`permissions.places`)
 
@@ -6096,8 +6100,9 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
   | `gatecontrol-remote` | `remote`: `rdp_routes` (credentials as **vault handles**), `rdp_sessions` (newest 20 000), the maintenance windows | — (gateway targets become `gc.remote.listener`s, which reuse the routes' L4 ports) |
 
-  **Remote Desktops is different**: the built-in feature stays in the core while the plugin is
-  new — the import only copies, `/rdp` and `/api/v1/rdp` keep working. Its snapshot is
+  **Remote Desktops** came last: its page `/rdp`, the admin API `/api/v1/rdp` and the core's answers of the
+  old app API are gone (docs/feature-remote-access.md "Remote Desktops removed"); the apps are answered by the
+  plugin only (facade, see "Remote access"). Its snapshot is
   `{ routes, sessions, maintenance }`: `routes[]` = the columns of `rdp_routes` (ids kept;
   `user_ids` / `group_ids` / `token_ids` / `tags` as lists, switches as booleans), without the
   `*_encrypted` columns and `screenshot_data`, plus `credential` (vault handle of username,
@@ -6106,10 +6111,14 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   "Erneut übernehmen" keeps them. `sessions[]` `{ id, route_id, token_id, token_name, peer_id,
   status, started_at, last_heartbeat, ended_at, duration_seconds, end_reason, client_ip, via,
   protocol }`, `maintenance[]` `{ route_id, enabled, schedule }`. The upgrade notice
-  (`plugins.moved.remote`, "Remote Desktops ist jetzt das Plugin „Fernzugriff“") is shown since
-  stage 1 like the others; the page `/rdp` says it as well (installed but not taken over yet: "Daten
-  übernehmen" on the plugin's page) and leads to `/plugins/gatecontrol-remote` once the data was taken over
-  (`movedPage`). `/api/v1/rdp` and the core's tables stay.
+  (`plugins.moved.remote`, "Remote Desktops ist jetzt das Plugin „Fernzugriff“") is shown like the others.
+  Unlike the others it also shows **while the plugin is installed** but has not got the old rows
+  (`installedNotice`, `pendingImport(plugin)`): never imported by this plugin (also after "Alles löschen"),
+  or a row changed / a restore put rows back (`plugins.legacy_restored.remote`, set by the backup restore)
+  after its last import — "Alte Remote Desktops noch nicht übernommen" with "Jetzt übernehmen" (the
+  plugin's settings page) on the dashboard, in the plugin area and above the plugin's own page.
+  `/rdp` and `/rdp/:id/session` lead where `movedPage` says. The tables `rdp_routes` and `rdp_sessions`
+  stay as the old stock: never dropped, in backups, restored from old backups, re-importable.
 * **Upgrade notice** (`pendingMoves()`): while a dataset has data
   (`counts()` > 0), its plugin is not installed and the data was **never
   imported**, the dashboard and the plugin area say that the feature is a
@@ -6126,11 +6135,12 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   import record of the plugin (kept by *Daten behalten*) counts as well
   (imports made before the marker existed).
 * **Former pages and API**: `/smarthome`, `/smarthome/rules`, `/midea`,
-  `/skoda` redirect to `/plugins/<id>` (`…/rules`) when the plugin is
+  `/skoda`, `/rdp` (and `/rdp/:id/session`) redirect to `/plugins/<id>` (`…/rules`) when the plugin is
   installed, else to `/settings#plugins` (`movedPage()`, fixed paths only).
   `/api/v1/smarthome`, `/api/v1/midea`, `/api/v1/skoda` answer
-  `410 { code: 'moved_to_plugin', plugin }`; the built-in portal endpoints
-  are gone (404).
+  `410 { code: 'moved_to_plugin', plugin }`, `/api/v1/rdp` as well except the four calls of the Windows
+  app (facade); the built-in portal endpoints are gone (404), the RDP entries of the portal's
+  "Dienste" and of "Was sieht <Name>?" too.
 * **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
