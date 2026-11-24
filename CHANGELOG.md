@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.321.1] — 2026-11-24
+
+### Fixes
+- kein „event loop was blocked“ beim Start, Namensauflösung kein ERR_NET_DENIED (#583)
+
+---
+
 ## [1.321.0] — 2026-11-24
 
 ### Features
