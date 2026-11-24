@@ -56,6 +56,36 @@ function isStale(session) {
   return Date.now() - last > config.guac.heartbeatMs * config.guac.heartbeatMisses;
 }
 
+// The image types guacd may send: guacamole-lite announces only png + jpeg, guacd 1.6 (its image
+// is built with libwebp) encodes WebP too — smaller than PNG at the same picture, decoded by every
+// current browser through Guacamole.Client's <img>. A guacd without libwebp ignores the type.
+const IMAGE_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp']);
+const connectionDefaultSettings = Object.fromEntries(
+  ['rdp', 'vnc', 'ssh', 'telnet', 'join'].map((t) => [t, { image: [...IMAGE_TYPES] }])
+);
+
+// Once guacd is connected: (1) no Nagle on the socket to guacd — mouse and key events are tiny
+// writes and would otherwise wait for the ACK of the previous one (up to the delayed-ACK time);
+// (2) one WebSocket message per batch of instructions instead of one per instruction — guacamole-
+// lite forwards every parsed instruction on its own (img, blob, end, sync … of a single frame).
+// The batch is what one read from guacd held: it goes out in the microtask after the read, so
+// nothing waits. Guacamole.WebSocketTunnel reads any number of whole instructions per message.
+function tuneConnection(cc) {
+  const g = cc && cc.guacdClient;
+  if (!g) return;
+  const sock = g.guacdConnection;
+  if (sock && typeof sock.setNoDelay === 'function') { try { sock.setNoDelay(true); } catch { /* closed */ } }
+  if (typeof cc.send !== 'function' || typeof g.on !== 'function') return;
+  g.removeAllListeners('data');
+  let pending = '';
+  g.on('data', (data) => {
+    if (pending === '') {
+      queueMicrotask(() => { const out = pending; pending = ''; if (out) cc.send(out); });
+    }
+    pending += data;
+  });
+}
+
 function attachGuacTunnel(httpServer) {
   const guac = new GuacamoleLite(
     // 'server' key must EXIST (undefined ok) so ws accepts noServer; no path
@@ -68,6 +98,7 @@ function attachGuacTunnel(httpServer) {
       // guacamole-lite's internal idle watchdog defaults to 10s — far too low
       // for an interactive browser session. Lift it to the configured idle TTL.
       maxInactivityTime: config.guac.idleTimeoutMs,
+      connectionDefaultSettings, // + image/webp (IMAGE_TYPES)
     }
   );
 
@@ -136,6 +167,7 @@ function attachGuacTunnel(httpServer) {
   // EventEmitter) emits open/close/error with the ClientConnection; cc.webSocket
   // is the ws we stashed meta on.
   guac.on('open', (cc) => {
+    tuneConnection(cc);
     const m = (cc.webSocket && cc.webSocket._guacMeta) || {};
     if (typeof m.remoteRef === 'string') { openRemote(cc, m); return; }
     const session = rdpSessions.startSession(m.rdpRouteId, {
@@ -226,4 +258,4 @@ function attachGuacTunnel(httpServer) {
   return guac;
 }
 
-module.exports = { attachGuacTunnel, evaluateConnection, isStale, PATH, REMOTE_PATH };
+module.exports = { attachGuacTunnel, evaluateConnection, isStale, tuneConnection, IMAGE_TYPES, PATH, REMOTE_PATH };
