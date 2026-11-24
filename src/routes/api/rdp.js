@@ -8,6 +8,7 @@ const { wakeTarget, WakeError } = require('../../services/gatewayWake');
 const { getServerPublicKey, publicKeyEncrypt } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
 const { requireFeature, requireFeatureField } = require('../../middleware/license');
+const { requestLanguage } = require('../../services/guacSettings');
 const guacSession = require('../../services/guacSession');
 const users = require('../../services/users');
 
@@ -542,7 +543,7 @@ router.post('/:id/browser-session', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const route = rdp.getById(id, true); // includeCredentials — same as the connect path
   if (!route) return res.status(404).json({ ok: false, error: req.t('rdp.browser.not_found') });
-  const r = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: actorUser.id } });
+  const r = guacSession.mintForRoute(route, { actor: { kind: 'admin', userId: actorUser.id }, language: requestLanguage(req) });
   if (!r.ok) return res.status(r.status).json({ ok: false, error: req.t('rdp.browser.' + r.code) });
   return res.json({ ok: true, token: r.token, wsPath: '/api/v1/client/rdp/guac-tunnel', ttl: Math.floor(r.ttlMs / 1000) });
 });

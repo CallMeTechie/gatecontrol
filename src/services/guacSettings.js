@@ -36,11 +36,52 @@ function applySftp(settings, route, creds) {
   if (route.sftp_disable_upload) settings['sftp-disable-upload'] = 'true';
 }
 
-function applySecurity(settings, route) {
-  settings.security = route.nla_enabled === 0 ? 'rdp' : 'any';
+// Without a password there is nothing for NLA (CredSSP) to send: with security 'any' FreeRDP asks
+// for HYBRID first, a Windows PC with NLA switched off still offers it (only not required), and
+// CredSSP fails with empty credentials ("Authentication failure") — guacamole-lite does not
+// support guacd's "required" instruction, so the session cannot ask for them either. 'tls' skips
+// NLA and Windows shows its own sign-in screen. nla_enabled=0 keeps standard RDP security.
+function applySecurity(settings, route, creds = {}) {
+  if (route.nla_enabled === 0) settings.security = 'rdp';
+  else settings.security = creds.password ? 'any' : 'tls';
   if (route.domain && typeof route.domain === 'string' && route.domain.length > 0) {
     settings.domain = route.domain;
   }
+}
+
+// The keymaps of guacd 1.6 (server-layout): the layout guacd assumes at the RDP server when it
+// turns key events into scancodes. Without one guacd loads en-us-qwerty — a German PC then
+// gets y/z and the special characters wrong.
+const KEYBOARD_LAYOUTS = Object.freeze([
+  'en-us-qwerty', 'en-gb-qwerty', 'de-de-qwertz', 'de-ch-qwertz', 'fr-fr-azerty', 'fr-be-azerty', 'fr-ch-qwertz',
+  'it-it-qwerty', 'es-es-qwerty', 'pt-br-qwerty', 'sv-se-qwerty', 'da-dk-qwerty', 'no-no-qwerty', 'hu-hu-qwertz',
+  'cs-cz-qwertz', 'pl-pl-qwerty', 'ja-jp-qwerty', 'tr-tr-qwerty',
+]);
+const DEFAULT_KEYBOARD_LAYOUT = 'en-us-qwerty';
+
+/** The layout for a language tag ('de', 'de-CH', 'fr-BE' …) → a KEYBOARD_LAYOUTS entry (default en-us-qwerty). */
+function layoutForLanguage(tag) {
+  if (typeof tag !== 'string') return DEFAULT_KEYBOARD_LAYOUT;
+  const [lang = '', region = ''] = tag.trim().toLowerCase().replace(/_/g, '-').split('-');
+  const byRegion = { 'de-ch': 'de-ch-qwertz', 'fr-ch': 'fr-ch-qwertz', 'fr-be': 'fr-be-azerty', 'en-gb': 'en-gb-qwerty', 'pt-br': 'pt-br-qwerty' };
+  if (byRegion[lang + '-' + region]) return byRegion[lang + '-' + region];
+  const byLang = { de: 'de-de-qwertz', fr: 'fr-fr-azerty', it: 'it-it-qwerty', es: 'es-es-qwerty', sv: 'sv-se-qwerty', da: 'da-dk-qwerty',
+    no: 'no-no-qwerty', nb: 'no-no-qwerty', nn: 'no-no-qwerty', hu: 'hu-hu-qwertz', cs: 'cs-cz-qwertz', pl: 'pl-pl-qwerty', ja: 'ja-jp-qwerty', tr: 'tr-tr-qwerty' };
+  return byLang[lang] || DEFAULT_KEYBOARD_LAYOUT;
+}
+
+/** The language of the person's browser: the first tag of Accept-Language, else the language of the page (i18n). */
+function requestLanguage(req) {
+  const h = req && req.headers ? req.headers['accept-language'] : null;
+  const first = typeof h === 'string' ? h.split(',')[0].split(';')[0].trim() : '';
+  if (/^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/.test(first)) return first;
+  return (req && typeof req.language === 'string' && req.language) || null;
+}
+
+/** server-layout of an RDP session: the device's keyboard_layout, else the person's language (route.language). */
+function applyKeyboard(settings, route) {
+  if (route.protocol && route.protocol !== 'rdp') return;
+  settings['server-layout'] = KEYBOARD_LAYOUTS.includes(route.keyboard_layout) ? route.keyboard_layout : layoutForLanguage(route.language);
 }
 
 function applyExperience(settings, route) {
@@ -75,10 +116,11 @@ function applyDisplay(settings, route) {
 function buildRdp(route, creds) {
   const t = resolveGuacTarget(route);
   const settings = { hostname: t.host, port: String(t.port), 'ignore-cert': 'true' };
-  applySecurity(settings, route);
+  applySecurity(settings, route, creds);
   applyClipboard(settings, route);
   applyDisplay(settings, route);
   applyExperience(settings, route);
+  applyKeyboard(settings, route);
   if (creds.username) settings.username = creds.username;
   if (creds.password) settings.password = creds.password;
   applyAudio(settings, route);
@@ -149,4 +191,5 @@ function buildConnectionSettings(route, creds = {}) {
 // every request between the Task-4 and Task-10 commits (review-chain C3).
 const PHASE2A_PROTOCOLS = SUPPORTED_PROTOCOLS;
 
-module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience, applySecurity, applyRedirects };
+module.exports = { buildConnectionSettings, SUPPORTED_PROTOCOLS, PHASE2A_PROTOCOLS, buildRdp, buildVnc, buildSsh, buildTelnet, applyClipboard, applyDisplay, applyExperience, applySecurity, applyRedirects,
+  applyKeyboard, layoutForLanguage, requestLanguage, KEYBOARD_LAYOUTS };

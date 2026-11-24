@@ -87,7 +87,7 @@ async function token(req, res) {
   const t = ticketOf(req);
   if (!t) return res.status(404).json({ ok: false, error: 'not_found' });
   try {
-    const r = await require('../services/remote/sessions').mint(t, { clientIp: req.ip, via: 'browser' });
+    const r = await require('../services/remote/sessions').mint(t, { clientIp: req.ip, via: 'browser', language: require('../services/guacSettings').requestLanguage(req) });
     if (!r.ok) return res.status(r.status).json({ ok: false, error: r.code });
     return res.json({ ok: true, token: r.token, wsPath: r.wsPath, ttl: r.ttl, engine: r.engine });
   } catch (err) {

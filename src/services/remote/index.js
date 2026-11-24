@@ -1,6 +1,6 @@
 'use strict';
 
-// gc.remote, version 9 — the core part of the plugin "Fernzugriff"
+// gc.remote, version 10 — the core part of the plugin "Fernzugriff"
 // (gatecontrol-remote; docs/plugins.md "Remote access"). A plugin process has
 // no network of its own and its frames have connect-src 'none', so the core
 // keeps the transport (guacd, the tunnels, the session page, the key vault,
@@ -29,7 +29,9 @@
 //    wake by a device of the network watch (target.watch) — the new „Gerät hinzufügen“ of the plugin
 // 8: (with 9, never released alone) hostKeys.scan, installKey, testKey, removeKey — „Schlüssel automatisch einrichten“
 // 9: tmux.list with windows, tmux.kill, enrollment.create / status / revoke — „Linux-Gerät mit Agent“ of the plugin
-const VERSION = 9;
+// 10: session options.keyboard_layout (guacd server-layout; else the browser's language), RDP without a password
+//     never tries NLA (security tls, Windows shows its sign-in screen)
+const VERSION = 10;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
