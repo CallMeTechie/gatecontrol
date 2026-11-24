@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.5] — 2026-11-24
+
+### Fixes
+- Browser-Sitzungen von Fernzugriff scheitern mit 400 am guac-tunnel (#579)
+
+---
+
 ## [1.320.4] — 2026-11-24
 
 ### Fixes
