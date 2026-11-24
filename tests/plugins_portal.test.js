@@ -24,6 +24,11 @@ function sectionOverrides() {
   return { id: 'hello-sec', name: { de: 'Hallo Abschnitt', en: 'Hello section' }, ui };
 }
 
+// "hello-rm": the example plugin with permissions.remote — its own tab may open session pages (GC.openSession)
+function remoteOverrides() {
+  return { id: 'hello-rm', name: { de: 'Hallo Fernzugriff', en: 'Hello remote' }, permissions: { ...helloManifest.permissions, remote: true } };
+}
+
 async function install(buf) {
   const r = await agent.post(API + '/inspect').set('X-CSRF-Token', csrf).set('Content-Type', 'application/octet-stream').send(buf).expect(200);
   assert.equal(r.body.canInstall, true, JSON.stringify(r.body.checks));
@@ -42,8 +47,10 @@ before(async () => {
   adminId = require('../src/db/connection').getDb().prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
   await install(helloPackage());
   await install(helloPackage({ overrides: sectionOverrides() }));
+  await install(helloPackage({ overrides: remoteOverrides() }));
   assert.equal(await runtime.waitRunning('hello'), true);
   assert.equal(await runtime.waitRunning('hello-sec'), true);
+  assert.equal(await runtime.waitRunning('hello-rm'), true);
 });
 after(async () => { await plugins.stop(); teardown(); });
 
@@ -68,10 +75,10 @@ describe('plugin.json ui.portal.sections', () => {
 describe('sections in GateControl tabs', () => {
   it('contributions: own tabs and ordered sections per GateControl tab, for this viewer', async () => {
     const c = await portal.contributions(viewer(), 'en');
-    assert.deepEqual(c.tabs.map((t) => t.key), ['plg-hello']);
+    assert.deepEqual(c.tabs.map((t) => t.key).sort(), ['plg-hello', 'plg-hello-rm']);
     assert.deepEqual(c.sections.home.map((s) => [s.key, s.title, s.goto]), [['plg-hello-sec-garden', 'Garden', 'zuhause']]);
     assert.deepEqual(c.sections.car.map((s) => s.key), ['plg-hello-sec-garage']);
-    assert.deepEqual(plugins.portalTabs('en').map((t) => t.id), ['hello'], 'a plugin with sections only has no tab of its own');
+    assert.deepEqual(plugins.portalTabs('en').map((t) => t.id).sort(), ['hello', 'hello-rm'], 'a plugin with sections only has no tab of its own');
   });
 
   it('the portal shows the sections inside "Zuhause"/"Fahrzeug" — and hides the tab when no contributor has anything', async () => {
@@ -91,6 +98,15 @@ describe('sections in GateControl tabs', () => {
     assert.doesNotMatch(page, /id="tab-zuhause"/, 'nothing for this viewer → no "Zuhause" tab');
     assert.doesNotMatch(page, /pt-sec-plg-hello-sec/);
     await kv('hello-sec', 'section-viewers', null);
+  });
+
+  it('the own tab of a plugin with permissions.remote may open session pages (data-plugin-remote) — others not', async () => {
+    const c = await portal.contributions(viewer(), 'en');
+    assert.equal(c.tabs.find((t) => t.id === 'hello-rm').remote, true);
+    assert.equal(c.tabs.find((t) => t.id === 'hello').remote, undefined);
+    const page = (await agent.get('/portal').expect(200)).text;
+    assert.match(page, /<iframe[^>]* src="\/portal\/plugins\/hello-rm\/frame"[^>]* data-plugin-remote><\/iframe>/);
+    assert.doesNotMatch(page, /<iframe[^>]* src="\/portal\/plugins\/hello\/frame"[^>]* data-plugin-remote/);
   });
 
   it('a section frame is rendered for its section only', async () => {

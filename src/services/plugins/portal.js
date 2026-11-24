@@ -115,7 +115,9 @@ async function contributions(user, lang) {
     tabs: visible.filter((x) => x.kind === 'tab').map((x) => ({ id: x.plugin, key: x.key, label: x.label, icon: x.icon, maps: x.maps,
       ...(x.media ? { media: true } : {}), ...(x.events ? { events: true } : {}),
       ...(x.geolocation ? { geolocation: true } : {}), ...(x.camera ? { camera: true } : {}), ...(x.inbox ? { inbox: true } : {}),
-      ...(x.scanQr ? { scanQr: true, name: x.name } : {}), ...(x.groups ? { groups: true, name: x.name } : {}), ...(x.cloud ? { cloud: true } : {}), allow: x.allow })),
+      ...(x.scanQr ? { scanQr: true, name: x.name } : {}), ...(x.groups ? { groups: true, name: x.name } : {}), ...(x.cloud ? { cloud: true } : {}),
+      // remote: the tab's frame gets data-plugin-remote (GC.openSession) like a section's frame
+      ...(x.remote ? { remote: true } : {}), allow: x.allow })),
     sections,
   };
 }
