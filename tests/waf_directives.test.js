@@ -204,13 +204,13 @@ describe('caddyConfig: waf handler', () => {
   it('WAF in use: its logger is kept out of Caddy\'s default log (matched data would land in the container log)', () => {
     waf._setEngineForTest(true);
     const on = buildCaddyConfig([httpRoute({ waf_enabled: 1, waf_mode: 'detect' })]);
-    assert.deepEqual(on.logging.logs.default, { exclude: ['http.handlers.waf'] });
+    assert.deepEqual(on.logging.logs.default.exclude, ['http.log.access', 'http.handlers.waf']);
     assert.ok(on.logging.logs.access && on.logging.logs.tls, 'access and tls logs untouched');
     const off = buildCaddyConfig([httpRoute({})]);
-    assert.equal(off.logging.logs.default, undefined, 'without WAF the logging block is unchanged');
+    assert.deepEqual(off.logging.logs.default.exclude, ['http.log.access'], 'without WAF only the access lines are excluded');
     waf._setEngineForTest(false);
     const noEngine = buildCaddyConfig([httpRoute({ waf_enabled: 1 })]);
-    assert.equal(noEngine.logging.logs.default, undefined, 'no handler emitted → no exclusion');
+    assert.deepEqual(noEngine.logging.logs.default.exclude, ['http.log.access'], 'no handler emitted → no WAF exclusion');
   });
 
   it('forward-auth chain: waf after request_body and before reverse_proxy', () => {

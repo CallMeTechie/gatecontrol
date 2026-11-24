@@ -73,6 +73,61 @@ const HSTS_HEADER = 'Strict-Transport-Security';
 // of truth. Default: VPN subnet only; GC_HUB_PUBLIC_IP appends a /32.
 const INTERNAL_ONLY_RANGES = config.wireguard.internalOnlyRanges;
 
+// Request headers that carry credentials and must never reach a Caddy log.
+// Caddy itself only redacts Cookie, Set-Cookie, Authorization and
+// Proxy-Authorization (caddyhttp.LoggableHTTPHeader); every other header is
+// logged verbatim — in the access log AND in the warnings/errors of the
+// default log (reverse_proxy "aborting with incomplete response",
+// http.log.error), which land in the unrotated container log.
+//   • our own: X-Api-Token / X-Api-Key (app and desktop tokens, gc_…),
+//     X-Machine-Fingerprint (device binding), X-Gateway-Token (gateway push
+//     token), X-Csrf-Token (UI CSRF token)
+//   • common ones of proxied apps: Csrfpreventiontoken (Proxmox), X-Plex-Token,
+//     X-Emby-*/X-Mediabrowser-Token (Jellyfin/Emby), Private-Token (GitLab),
+//     X-Vault-Token, …
+// Proxy-Authorization is listed although Caddy redacts it already, so the
+// redaction does not hinge on Caddy's built-in list.
+const SENSITIVE_LOG_HEADERS = [
+  'Proxy-Authorization',
+  'X-Api-Token',
+  'X-Api-Key',
+  'X-Machine-Fingerprint',
+  'X-Gateway-Token',
+  'X-Csrf-Token',
+  'X-Xsrf-Token',
+  'X-Csrftoken',
+  'Csrfpreventiontoken',
+  'X-Auth-Token',
+  'X-Access-Token',
+  'X-Plex-Token',
+  'X-Emby-Token',
+  'X-Emby-Authorization',
+  'X-Mediabrowser-Token',
+  'X-Vault-Token',
+  'Private-Token',
+  'X-Goog-Api-Key',
+  'X-Amz-Security-Token',
+];
+
+// Go's textproto.CanonicalMIMEHeaderKey for plain token names: Caddy logs the
+// header map under Go's canonical keys and the filter encoder matches the
+// field path case-sensitively (x-api-token → X-Api-Token).
+function canonicalHeaderKey(name) {
+  return String(name).toLowerCase().replace(/(^|-)([a-z])/g, (m, dash, ch) => dash + ch.toUpperCase());
+}
+
+// Filter-encoder fields that replace the value of every sensitive request
+// header with REDACTED (the header stays visible as present). The path
+// request>headers>… is the same in the access log and in the reverse_proxy /
+// error log entries (both log caddyhttp.LoggableHTTPRequest as "request").
+function sensitiveHeaderLogFields() {
+  const fields = {};
+  for (const h of SENSITIVE_LOG_HEADERS) {
+    fields[`request>headers>${canonicalHeaderKey(h)}`] = { filter: 'replace', value: 'REDACTED' };
+  }
+  return fields;
+}
+
 // Peer ACL that resolves to no device: 0.0.0.0 is never a connection's
 // source address, so the route answers nobody (fail closed).
 const ACL_NOBODY_RANGE = '0.0.0.0/32';
@@ -877,6 +932,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
               // (/route-auth/app/<ticket>, routes/routeAuth.js) and the
               // one-time portal login link of the apps (<portal>/auto?t=…,
               // routes/portal.js).
+              ...sensitiveHeaderLogFields(),
               'request>uri': {
                 filter: 'multi_regexp',
                 operations: [
@@ -888,6 +944,20 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             },
           },
           include: ['http.log.access'],
+        },
+        // Caddy's default log (stderr → container log): warnings and errors of
+        // every other logger, e.g. reverse_proxy "aborting with incomplete
+        // response" with the full request headers. Same header redaction as
+        // the access log; the access lines themselves stay out (they already
+        // have their own rotated file — without the exclude every request was
+        // written twice, once unrotated into the container log).
+        default: {
+          encoder: {
+            format: 'filter',
+            wrap: { format: 'json' },
+            fields: sensitiveHeaderLogFields(),
+          },
+          exclude: ['http.log.access'],
         },
         // ACME activity for the TLS guard (services/tlsGuard.js watches this file).
         tls: {
@@ -1310,7 +1380,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
     // values included) at error level through Caddy's default logger, i.e.
     // into the unrotated container log. The events already reach waf_events
     // via the minimised audit log, so keep them out of the default log.
-    if (wafInUse) caddyConfig.logging.logs.default = { exclude: ['http.handlers.waf'] };
+    if (wafInUse) caddyConfig.logging.logs.default.exclude.push('http.handlers.waf');
     const wafErrorRoutes = blockErrorRoutes(wafBlockHosts);
     if (wafErrorRoutes) {
       caddyConfig.apps.http.servers.srv0.errors = { routes: wafErrorRoutes };
@@ -1611,4 +1681,4 @@ module.exports = {
   buildPoolOutageBlock,
 };
 
-module.exports.__test = Object.assign({}, module.exports.__test, { buildExternalBlockHandler, applyVpnCertTls });
+module.exports.__test = Object.assign({}, module.exports.__test, { buildExternalBlockHandler, applyVpnCertTls, SENSITIVE_LOG_HEADERS, canonicalHeaderKey, sensitiveHeaderLogFields });
