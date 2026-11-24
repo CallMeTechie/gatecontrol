@@ -250,6 +250,17 @@ function getById(id) {
   return row ? formatToken(row) : null;
 }
 
+const LAST_USED_EVERY_MS = 60 * 1000;
+
+/** Was `lastUsedAt` (SQLite datetime, UTC) set less than LAST_USED_EVERY_MS ago? */
+function usedRecently(lastUsedAt, now = Date.now()) {
+  if (!lastUsedAt) return false;
+  const at = Date.parse(String(lastUsedAt).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(lastUsedAt)) ? '' : 'Z'));
+  if (!Number.isFinite(at)) return false;
+  const age = now - at;
+  return age >= 0 && age < LAST_USED_EVERY_MS;
+}
+
 /**
  * Authenticate a raw token
  * Returns the token record if valid, null otherwise
@@ -280,8 +291,13 @@ function authenticate(rawToken) {
     if (expiry <= new Date()) return null;
   }
 
-  // Update last_used_at
-  db.prepare(`UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?`).run(row.id);
+  // last_used_at ("zuletzt benutzt", shown to people) at most once a minute: the apps call the API every few
+  // seconds, and a write per request keeps the checkpoint cycle of the host database going — the first write
+  // after a checkpoint syncs the log on the main thread (db/checkpointWorker.js; seen: 2.4 s for this UPDATE
+  // on a slow disk)
+  if (!usedRecently(row.last_used_at)) {
+    db.prepare(`UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?`).run(row.id);
+  }
 
   return formatToken(row);
 }

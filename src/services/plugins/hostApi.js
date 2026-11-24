@@ -72,8 +72,10 @@ function fetchResult(res, o) {
 }
 
 function netError(e) {
-  const denied = e && (e.code === 'ERR_NET_DENIED' || e instanceof targets.TargetError);
-  return new HostApiError(denied ? 'ERR_NET_DENIED' : 'ERR_NET', String((e && e.message) || e).slice(0, 200));
+  // a name that did not resolve (TargetError 'dns') is a network error, not a refusal (netPolicy.refusal)
+  const denied = e && (e.code === 'ERR_NET_DENIED' || (e instanceof targets.TargetError && e.code !== 'dns'));
+  const reason = e && typeof e.reason === 'string' ? e.reason : (e instanceof targets.TargetError ? e.code : undefined);
+  return new HostApiError(denied ? 'ERR_NET_DENIED' : 'ERR_NET', String((e && e.message) || e).slice(0, 200), reason);
 }
 
 /** gc.http.fetch: internet hosts of plugin.json only, public addresses only. */
@@ -354,7 +356,7 @@ async function wsConnect(plugin, args, ctx) {
   let ws;
   try {
     const target = await netPolicy.checkWebSocket(url, policyOf(plugin), netOpts());
-    if (!target.ok) throw Object.assign(new Error('connection refused by the plugin policy: ' + target.reason), { code: 'ERR_NET_DENIED' });
+    if (!target.ok) throw netPolicy.refusal(target);
     // the check is async: the limit again, so parallel connects cannot pass it together
     need(m.size < MAX_WEBSOCKETS, 'ERR_BUSY', 'too many open websockets');
     ws = await netPolicy.wsConnect(target, { headers, protocols, timeoutMs, maxPayload: WS_MAX_MESSAGE });

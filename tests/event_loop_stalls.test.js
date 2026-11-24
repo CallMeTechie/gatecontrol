@@ -64,6 +64,53 @@ describe('task markers', () => {
   });
 });
 
+describe('server start', () => {
+  async function stallOnce(seen) {
+    const n = seen.length;
+    setImmediate(() => block(450));
+    for (let i = 0; i < 60 && seen.length === n; i++) await sleep(50);
+  }
+
+  it('a stall while the server starts is debug, the length of the start is info; after the grace time a warning again', async () => {
+    const warn = mock.method(logger, 'warn', () => {});
+    const debug = mock.method(logger, 'debug', () => {});
+    const info = mock.method(logger, 'info', () => {});
+    const seen = [];
+    loopStall.start({ everyMs: 50, warnMs: 300, booting: true, onStall: (ms) => seen.push(ms) });
+    await sleep(80);
+    assert.equal(loopStall.booting(), true);
+    await stallOnce(seen);
+    assert.equal(seen.length, 1, 'the stall was seen');
+    assert.ok(!warn.mock.calls.some((c) => c.arguments[1] === 'event loop was blocked'), 'no warning while starting');
+    const d = debug.mock.calls.find((c) => c.arguments[1] === 'event loop busy during server start');
+    assert.ok(d && d.arguments[0].blockedMs >= 300 && d.arguments[0].startup === true);
+
+    loopStall.bootDone({ graceMs: 1500 });
+    const done = info.mock.calls.find((c) => c.arguments[1] === 'server start finished');
+    assert.ok(done, 'start length logged');
+    assert.ok(done.arguments[0].startMs >= 80);
+    assert.ok(done.arguments[0].blockedMs >= 300, 'blocked time of the start');
+    loopStall.bootDone();
+    assert.equal(info.mock.calls.filter((c) => c.arguments[1] === 'server start finished').length, 1, 'once');
+    // still in the grace time
+    await stallOnce(seen);
+    assert.ok(!warn.mock.calls.some((c) => c.arguments[1] === 'event loop was blocked'), 'no warning in the grace time');
+    for (let i = 0; i < 60 && loopStall.booting(); i++) await sleep(50);
+    assert.equal(loopStall.booting(), false);
+    await stallOnce(seen);
+    assert.equal(seen.length, 3);
+    assert.ok(warn.mock.calls.some((c) => c.arguments[1] === 'event loop was blocked'), 'a stall after the start is a warning');
+  });
+
+  it('without booting (tests, a restart of the watch) every stall is a warning; bootDone is then a no-op', () => {
+    const info = mock.method(logger, 'info', () => {});
+    loopStall.start({ everyMs: 50, warnMs: 300 });
+    assert.equal(loopStall.booting(), false);
+    loopStall.bootDone();
+    assert.equal(info.mock.callCount(), 0);
+  });
+});
+
 describe('blockedSince', () => {
   it('counts the stalls seen after a time, and one going on right now', async () => {
     mock.method(logger, 'warn', () => {});

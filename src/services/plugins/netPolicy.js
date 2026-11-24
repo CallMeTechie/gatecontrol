@@ -187,10 +187,36 @@ function inRanges(ranges, port) {
   return Array.isArray(ranges) && ranges.some(([a, b]) => port >= a && port <= b);
 }
 
-function lookupAll(hostname) {
+function lookupOnce(hostname) {
   return new Promise((resolve, reject) => {
     dns.lookup(hostname, { all: true, verbatim: true }, (err, addrs) => (err ? reject(err) : resolve(addrs)));
   });
+}
+
+// a resolver that did not answer this time (EAI_AGAIN: timeout, upstream unreachable for a moment) is asked once more
+const DNS_RETRY_MS = 300;
+
+async function lookupAll(hostname) {
+  try {
+    return await lookupOnce(hostname);
+  } catch (e) {
+    if (!e || e.code !== 'EAI_AGAIN') throw e;
+    await new Promise((r) => setTimeout(r, DNS_RETRY_MS));
+    return lookupOnce(hostname);
+  }
+}
+
+/**
+ * A refusal of the check → the error of a connection. A host name that did
+ * not resolve (reason `dns`: the resolver failed or the name does not exist)
+ * is a network error (ERR_NET), not a refusal by the plugin's policy — a
+ * plugin retries it like a lost connection; every other reason is ERR_NET_DENIED.
+ */
+function refusal(target) {
+  if (target.reason === 'dns') {
+    return Object.assign(new Error(`name does not resolve${target.dnsCode ? ` (${target.dnsCode})` : ''}`), { code: 'ERR_NET', reason: 'dns' });
+  }
+  return Object.assign(new Error('connection refused by the plugin policy: ' + target.reason), { code: 'ERR_NET_DENIED', reason: target.reason });
 }
 
 /** The internet allowlist of a manifest (`permissions.network.internet`). */
@@ -221,7 +247,7 @@ async function checkInternet(policy, host, port, opts = {}) {
     const a = toAddr(h);
     addrs = [{ address: a.toString(), family: a.kind() === 'ipv6' ? 6 : 4 }];
   } else {
-    try { addrs = await (opts.lookup || lookupAll)(h); } catch { return { ok: false, reason: 'dns' }; }
+    try { addrs = await (opts.lookup || lookupAll)(h); } catch (e) { return { ok: false, reason: 'dns', dnsCode: (e && typeof e.code === 'string' && e.code.slice(0, 32)) || undefined }; }
     if (!Array.isArray(addrs) || !addrs.length) return { ok: false, reason: 'dns' };
   }
   const reserved = opts.reserved || hostReserved();
@@ -372,7 +398,7 @@ async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, bod
   const redirects = [];
   for (let hop = 0; ; hop++) {
     const target = check ? await check(current) : await checkTarget(current, policy, { lookup, reserved });
-    if (!target.ok) throw Object.assign(new Error('connection refused by the plugin policy: ' + target.reason), { code: 'ERR_NET_DENIED', reason: target.reason });
+    if (!target.ok) throw refusal(target);
     // `deadline` (epoch ms, optional): every hop together within it (gc.media.fetch)
     const left = deadline ? deadline - Date.now() : null;
     if (left !== null && left <= 0) throw Object.assign(new Error('timeout'), { code: 'ERR_TIMEOUT' });
@@ -550,6 +576,6 @@ function _setReservedForTest(nets) {
 
 module.exports = {
   parseEntry, parseList, parsePorts, compile, anyPublic, classify, isHostReserved, checkInternet, checkTarget, inRanges, toAddr, isIpLiteral,
-  pinnedRequest, fetchWithPolicy, tcpConnect, checkWebSocket, wsConnect, udpExchange, lanBroadcasts, hostReserved, describe, cleanHeaders, lookupAll,
+  pinnedRequest, fetchWithPolicy, refusal, tcpConnect, checkWebSocket, wsConnect, udpExchange, lanBroadcasts, hostReserved, describe, cleanHeaders, lookupAll,
   _setReservedForTest, _setTestPrivateForTest,
 };
