@@ -12,7 +12,10 @@
 //     `upgrade` event, BEFORE guacamole-lite ever touches guacd.
 //   * guacamole-lite@1.2.0 has no clean `noServer`; ws only accepts noServer
 //     when the wsOptions key `server` EXISTS — hence `{ server: undefined,
-//     noServer: true, path }`.
+//     noServer: true }`. NO `path`: ws checks it in handleUpgrade
+//     (shouldHandle) and aborts every other path with a bare 400 — no log, no
+//     guacd — which broke every session of gc.remote on REMOTE_PATH. The
+//     dispatcher below already routes by exact pathname.
 //   * GC has more than one WebSocket endpoint (this tunnel, the sessions of
 //     gc.remote on REMOTE_PATH, the edge channel of the gateways in
 //     services/edge/hub.js). Each registers its path with the shared upgrade
@@ -55,9 +58,9 @@ function isStale(session) {
 
 function attachGuacTunnel(httpServer) {
   const guac = new GuacamoleLite(
-    // 'server' key must EXIST (undefined ok) so ws accepts noServer; path is
-    // passed through to ws but we route upgrades ourselves below.
-    { server: undefined, noServer: true, path: PATH },
+    // 'server' key must EXIST (undefined ok) so ws accepts noServer; no path
+    // (see above): we route upgrades ourselves below, for PATH and REMOTE_PATH.
+    { server: undefined, noServer: true },
     { host: '127.0.0.1', port: 4822 },
     {
       crypt: { cypher: 'AES-256-CBC', key: guacToken.deriveKey() },
@@ -102,7 +105,22 @@ function attachGuacTunnel(httpServer) {
       return;
     }
 
+    // ws answers a handshake it cannot accept (wrong path, bad headers) with a
+    // bare 4xx and destroys the socket without a word: log it — never the
+    // token or the ref — so a refusal of ws is never silent again.
+    const where = remote ? 'remote' : 'rdp';
+    if (!guac.webSocketServer.shouldHandle(req)) {
+      logger.warn({ path: where, reason: 'path_not_handled' }, 'guac tunnel handshake aborted');
+      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    let handedOver = false;
+    socket.once('close', () => {
+      if (!handedOver) logger.warn({ path: where, reason: 'handshake_failed' }, 'guac tunnel handshake aborted');
+    });
     guac.webSocketServer.handleUpgrade(req, socket, head, (ws) => {
+      handedOver = true;
       // Bridge the verified meta to the 'open' event (verified: cc.webSocket is
       // this same ws). clientIp is captured for session auditing.
       ws._guacMeta = { ...result.connection, clientIp: req.socket.remoteAddress };
