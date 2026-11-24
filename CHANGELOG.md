@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.7] — 2026-11-24
+
+### Fixes
+- leichte Standards für Browser-Sitzungen, WebP und ein schnellerer Tunnel (#581)
+
+---
+
 ## [1.320.6] — 2026-11-24
 
 ### Fixes
