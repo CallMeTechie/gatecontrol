@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.2] — 2026-11-24
+
+### Fixes
+- Token-Kopfzeilen in Caddy-Protokollen schwärzen (#576)
+
+---
+
 ## [1.320.1] — 2026-11-24
 
 ### Fixes
