@@ -13,10 +13,10 @@ const { setup, teardown } = require('./helpers/setup');
 let server, port;
 const conns = new Set();
 
-function upgradeStatus(path, { timeoutMs = 1500 } = {}) {
+function upgradeStatus(path, { timeoutMs = 1500, key = 'dGhlIHNhbXBsZSBub25jZQ==' } = {}) {
   return new Promise((resolve) => {
     const s = net.connect(port, '127.0.0.1', () => {
-      s.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
+      s.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\n${key ? `Sec-WebSocket-Key: ${key}\r\n` : ''}\r\n`);
     });
     let buf = '';
     const timer = setTimeout(() => { s.destroy(); resolve('no answer'); }, timeoutMs);
@@ -84,6 +84,50 @@ describe('upgrade dispatcher', () => {
     // a remote token of no live ticket: refused at the right path as well
     const gone = guacToken.mint({ type: 'rdp', settings: {}, remoteRef: 'B'.repeat(43), remotePlugin: 'gatecontrol-remote' }).token;
     assert.equal(await upgradeStatus('/api/v1/remote/guac-tunnel?token=' + encodeURIComponent(gone)), 401);
+  });
+  it('a valid gc.remote token on the remote path reaches guacamole-lite (101), not a silent 400 of ws', async () => {
+    // Field report: every browser session of gc.remote ended in a 400 at /api/v1/remote/guac-tunnel —
+    // no "guac tunnel refused", guacd never saw a connection. ws checked the request path against the
+    // `path` of the guacamole-lite server (the old path) and aborted the handshake.
+    const guacToken = require('../src/services/guacToken');
+    const sessions = require('../src/services/remote/sessions');
+    const prev = sessions.admitTunnel;
+    const admitted = [];
+    sessions.admitTunnel = (conn) => { admitted.push(conn.remoteRef); return { ok: true }; };
+    try {
+      const tok = guacToken.mint({ type: 'rdp', settings: { hostname: '10.8.0.44', port: '3389' }, remoteRef: 'C'.repeat(43), remotePlugin: 'gatecontrol-remote' }).token;
+      assert.equal(await upgradeStatus('/api/v1/remote/guac-tunnel?token=' + encodeURIComponent(tok)), 101);
+      assert.deepEqual(admitted, ['C'.repeat(43)]);
+    } finally {
+      sessions.admitTunnel = prev;
+    }
+  });
+  it('a valid old token on the old path still reaches guacamole-lite (101)', async () => {
+    const guacToken = require('../src/services/guacToken');
+    const tok = guacToken.mint({ type: 'rdp', settings: { hostname: '10.8.0.44', port: '3389' }, rdpRouteId: 1 }).token;
+    assert.equal(await upgradeStatus('/api/v1/client/rdp/guac-tunnel?token=' + encodeURIComponent(tok)), 101);
+  });
+  it('a handshake ws still aborts is logged — without token or ref', async () => {
+    const guacToken = require('../src/services/guacToken');
+    const sessions = require('../src/services/remote/sessions');
+    const logger = require('../src/utils/logger');
+    const prev = [sessions.admitTunnel, logger.warn];
+    const lines = [];
+    sessions.admitTunnel = () => ({ ok: true });
+    logger.warn = (...a) => { lines.push(a); };
+    const ref = 'D'.repeat(43);
+    try {
+      const tok = guacToken.mint({ type: 'rdp', settings: {}, remoteRef: ref, remotePlugin: 'gatecontrol-remote' }).token;
+      assert.equal(await upgradeStatus('/api/v1/remote/guac-tunnel?token=' + encodeURIComponent(tok), { key: null }), 400);
+      for (let i = 0; i < 20 && !lines.length; i++) await new Promise((r) => setTimeout(r, 25));
+      const hit = lines.find((a) => a[1] === 'guac tunnel handshake aborted');
+      assert.ok(hit, JSON.stringify(lines));
+      assert.equal(hit[0].path, 'remote');
+      const all = JSON.stringify(lines);
+      assert.ok(!all.includes(ref) && !all.includes(tok), 'no ref, no token in the log');
+    } finally {
+      [sessions.admitTunnel, logger.warn] = prev;
+    }
   });
   it('edge channel: still refuses without gateway credentials', async () => {
     const s = await upgradeStatus('/api/v1/gateway/edge/ws');
