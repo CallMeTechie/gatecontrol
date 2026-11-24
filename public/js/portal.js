@@ -490,27 +490,12 @@
     else toast(text);
   }
   function renderServices() {
-    var http = services.filter(function (s) { return s.kind !== 'rdp'; });
-    var rdp = services.filter(function (s) { return s.kind === 'rdp'; });
+    var http = services;
     var grid = $('pt-services');
     if (grid) {
       clear(grid);
       if (!http.length) grid.appendChild(empty(T('portal.services.none')));
       http.forEach(function (s, i) { grid.appendChild(serviceTile(s, i, true)); });
-    }
-    var rdpHost = $('pt-rdp');
-    if (rdpHost) {
-      clear(rdpHost);
-      rdp.forEach(function (r) {
-        var btn = el('button', { type: 'button', class: 'pt-btn pt-btn-sm' }, T('portal.services.copy'));
-        btn.addEventListener('click', function () { copyText(r.host, btn); });
-        rdpHost.appendChild(el('div', { class: 'pt-rdp' }, [
-          el('span', { class: 'pt-rdp-ic' }, icon(ICON.pc, 18)),
-          el('span', { class: 'pt-tile-text' }, [el('b', { class: 'pt-tile-name' }, r.name), el('span', { class: 'pt-tile-host' }, r.host)]),
-          btn,
-        ]));
-      });
-      show($('pt-rdp-wrap'), rdp.length > 0);
     }
     var start = $('pt-start-services');
     if (start) {
@@ -520,7 +505,6 @@
       var byRecent = http.slice().sort(function (a, b) { return rank(a) - rank(b); });
       show($('pt-services-sub'), http.some(function (s) { return rank(s) < 99; }));
       byRecent.slice(0, 5).forEach(function (s) { start.appendChild(serviceTile(s, http.indexOf(s), false)); });
-      if (!http.length && rdp.length) start.appendChild(empty(T('portal.services.only_rdp')));
     }
     setText('pt-services-all', services.length === 1 ? T('portal.services.all_one') : T('portal.services.all', { count: services.length }));
   }
@@ -890,8 +874,7 @@
       var match = function (s) { return String(s || '').toLowerCase().indexOf(q) >= 0; };
       services.forEach(function (s) {
         if (!match(s.name) && !match(s.domain) && !match(s.host)) return;
-        if (s.kind === 'rdp') hits.push(hit(s.name, s.host, '#dienste', 'dienste'));
-        else hits.push(hit(s.name, s.domain, validHost(s.domain) ? 'https://' + s.domain : '#', null, function () { remember('http:' + s.id); }));
+        hits.push(hit(s.name, s.domain, validHost(s.domain) ? 'https://' + s.domain : '#', null, function () { remember('http:' + s.id); }));
       });
       devices.forEach(function (d) { if (match(d.name)) hits.push(hit(d.name, T('portal.tab.devices'), '#geraete', 'geraete')); });
       var found = hits.length;

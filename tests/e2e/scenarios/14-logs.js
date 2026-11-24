@@ -104,10 +104,8 @@ module.exports = (ctx) => {
       await page.click('#lg-sheet-done');
       step('the sheet closes', await until(page, () => document.getElementById('lg-sheet').hidden));
       await page.setViewportSize({ width: 1440, height: 1000 });
-      // The Sitzungen tab (rdp-history.js) asks the RDP history on load; the
-      // e2e licence may lack the remote desktop feature.
-      ctx.allow((p) => p.kind === 'http' && p.status === 403 && /\/api\/v1\/rdp\/history/.test(p.url),
-        (p) => p.kind === 'console' && /status of 403/.test(p.text));
+      // (the tab Sitzungen of the former Remote Desktops is gone: no request to /api/v1/rdp/history any more)
+      step('no tab Sitzungen any more', !(await page.$('#lg-tab-sessions')) && !(await page.$('#lg-panel-sessions')));
     },
   };
 };

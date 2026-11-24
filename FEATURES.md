@@ -1243,8 +1243,7 @@ log, Caddy's access log and remote desktop sessions.
   wieder auftritt" a returned problem is logged once as `log_problem_returned`
   (warning) — rules of the notification centre (event "Log-Problem wieder
   aufgetreten"), webhooks and alert e-mails pick it up.
-- **Zugriffe** (access log with status classes and counts), **Sitzungen** (RDP
-  history) and **Gespeicherte Filter** (saved filters and export templates,
+- **Zugriffe** (access log with status classes and counts) and **Gespeicherte Filter** (saved filters and export templates,
   shared by all administrators, table `log_saved_views`).
 - **Export** — current view, selection, one problem, time window around an
   entry, or the **Fehlerbericht** (ZIP: README with versions, `problems.json`,

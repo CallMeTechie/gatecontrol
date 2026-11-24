@@ -814,7 +814,6 @@
       [T('up.acc.source'), dirInfo ? el('a', { href: '/directory?id=' + dirInfo.id }, sourceText) : sourceText],
       disabledText ? [T('up.acc.disabled'), disabledText] : null,
       v ? [T('up.acc.services'), String(v.services && v.services.visible ? v.services.visible.length : 0)] : null,
-      v && (CTX.rdp || (v.rdp && v.rdp.total)) ? [T('up.acc.rdp'), String(v.rdp && v.rdp.visible ? v.rdp.visible.length : 0)] : null,
       v ? [T('up.acc.web'), T('up.acc.web_' + (v.web === 'all' || v.web === 'self_service' ? v.web : 'none'))] : null,
     ])]);
     const security = upCard(T('up.security'), [tabLink(T('up.details'), 'security')], [facts([
@@ -1264,14 +1263,6 @@
     if (!svcItems.length) svcItems.push({ name: T('us.see.none'), tone: 'us-dot-off', why: 'all', reason: '' });
     panel.appendChild(seeGroup(T('us.see.services'), T('us.see.count', { n: v.services.visible.length, total: v.services.total }), ICON.list,
       { label: T('us.see.link_shares'), href: '/routes' }, svcItems));
-    // RDP
-    if (CTX.rdp || v.rdp.total) {
-      const rdpItems = v.rdp.visible.map((e) => Object.assign({ name: e.name, detail: e.host }, reasonOf(e, u)));
-      if (v.rdp.hidden) rdpItems.push({ name: P('us.see.hidden', v.rdp.hidden), tone: 'us-dot-off', why: 'all', reason: T('us.see.why_hidden') });
-      if (!rdpItems.length) rdpItems.push({ name: T('us.see.none'), tone: 'us-dot-off', why: 'all', reason: '' });
-      panel.appendChild(seeGroup(T('us.see.rdp'), T('us.see.count', { n: v.rdp.visible.length, total: v.rdp.total }), ICON.pc,
-        { label: T('us.see.link_shares'), href: '/rdp' }, rdpItems));
-    }
   }
 
   // ── Tab: Anmeldung & Sicherheit ────────────────────────────────────

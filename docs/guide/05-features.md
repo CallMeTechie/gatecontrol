@@ -41,8 +41,8 @@ taken on its device), it shows “degraded” and names route, port and reason i
 Under “Domains / Routes”, “Options” on an entry opens the editor. When the
 entry has a target of its own (not the domain’s), “Target type: Home Gateway
 (LAN)” lets you pick in the field “Gateway” either a single gateway or – in the
-second group “Gateway pools” – a pool. It is the same choice as for an RDP
-route. Switching between gateway and pool drops the old target completely:
+second group “Gateway pools” – a pool. Switching between gateway and pool
+drops the old target completely:
 afterwards the entry hangs on the new one only.
 
 When the gateway of an entry was deleted, the editor says “The previous gateway

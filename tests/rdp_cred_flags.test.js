@@ -10,8 +10,7 @@ const rdp = require('../src/services/rdp');
 const GRANULAR = ['has_username','has_password','has_ssh_private_key','has_ssh_passphrase',
   'has_sftp_password','has_sftp_private_key','has_sftp_passphrase'];
 
-let agent, csrfToken, app;
-before(async () => { const c = await setup(); agent = c.agent; csrfToken = c.csrfToken; app = c.app; });
+before(async () => { await setup(); });
 after(() => teardown());
 
 describe('granular has_* flags (credFlags-gated)', () => {
@@ -56,30 +55,6 @@ describe('granular has_* flags (credFlags-gated)', () => {
     assert.ok(client.length > 0, 'getForToken must return at least one route');
     for (const r of client) {
       for (const k of GRANULAR) assert.equal(k in r, false, 'client path leaked ' + k);
-    }
-  });
-});
-
-describe('HTTP layer — credFlags admin vs client path', () => {
-  it('GET /api/v1/rdp/ (admin session) includes has_ssh_private_key boolean', async () => {
-    const res = await agent.get('/api/v1/rdp/').set('X-CSRF-Token', csrfToken).expect(200);
-    assert.equal(res.body.ok, true);
-    const routes = res.body.routes || [];
-    assert.ok(routes.length > 0, 'admin list must have routes');
-    for (const r of routes) {
-      assert.ok('has_ssh_private_key' in r, 'admin route missing has_ssh_private_key');
-      assert.equal(typeof r.has_ssh_private_key, 'boolean');
-    }
-  });
-  it('GET /api/v1/client/rdp (token auth) contains NO granular has_* flags', async () => {
-    const supertest = require('supertest');
-    const tokens = require('../src/services/tokens');
-    const { rawToken } = tokens.create({ name: 'http-leak-test', scopes: ['client:rdp'] }, '127.0.0.1');
-    const res = await supertest(app).get('/api/v1/client/rdp').set('X-Api-Token', rawToken).expect(200);
-    assert.equal(res.body.ok, true);
-    const routes = res.body.routes || [];
-    for (const r of routes) {
-      for (const k of GRANULAR) assert.equal(k in r, false, 'client HTTP path leaked ' + k);
     }
   });
 });

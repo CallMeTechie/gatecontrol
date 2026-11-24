@@ -373,7 +373,6 @@ const pages = [
   // (/settings/<section>, settingsTarget below); the plugin area
   // /settings/plugins is routes/plugins.js.
   { path: ['/settings', '/settings/:section'], template: 'settings', titleKey: 'nav.settings' },
-  { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   // Person groups (docs/groups.md): tree + detail, data from /api/v1/groups.
   { path: '/groups', template: 'groups', titleKey: 'nav.groups' },
@@ -399,6 +398,9 @@ const MOVED_PAGES = [
   ['/smarthome/rules', 'gatecontrol-smarthome', '/rules'],
   ['/midea', 'gatecontrol-midea', ''],
   ['/skoda', 'gatecontrol-skoda', ''],
+  // Remote Desktops → „Fernzugriff“ (docs/feature-remote-access.md "Remote Desktops removed"); the
+  // browser session page of an old route /rdp/:id/session goes the same way (below)
+  ['/rdp', 'gatecontrol-remote', ''],
 ];
 // apiLimiter like /me: the handler checks the role and reads the plugin registry.
 for (const [path, pluginId, sub] of MOVED_PAGES) {
@@ -406,26 +408,6 @@ for (const [path, pluginId, sub] of MOVED_PAGES) {
     if (!res.locals.user || res.locals.user.role !== 'admin') return res.redirect('/profile');
     res.redirect(require('../services/plugins/legacy').movedPage(pluginId, sub));
   });
-}
-
-/**
- * The page /rdp and the plugin "Fernzugriff" (gatecontrol-remote): { redirect } once the built-in data was taken
- * over by the installed plugin; { installed: true, manageUrl } while it is installed but not taken over yet;
- * { installed: false, url, catalog, pluginId } while it is not installed (the upgrade notice); else null.
- */
-function rdpMoved() {
-  const ID = 'gatecontrol-remote';
-  try {
-    const legacy = require('../services/plugins/legacy');
-    const registry = require('../services/plugins/registry');
-    const p = registry.resolve(ID);
-    if (p) {
-      if (legacy.everImported(p.id)) return { redirect: legacy.movedPage(ID) };
-      return { installed: true, manageUrl: `/settings/plugins/manage/${p.id}` };
-    }
-    const mv = legacy.pendingMoves().find((m) => m.pluginId === ID);
-    return mv ? { installed: false, url: mv.url, catalog: mv.catalog, pluginId: ID } : null;
-  } catch { return null; }
 }
 
 // Notification centre page: notify.* plus the common strings its script reads
@@ -526,16 +508,10 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       }
     }
     // Upgrade notice (dashboard, Settings → Plugins): built-in data of a
-    // former integration whose plugin is not installed yet.
+    // former integration whose plugin is not installed yet — or, for
+    // Remote Desktops, installed but the old rows not taken over yet.
     if (template === 'dashboard' || template === 'settings') {
       try { extraLocals.builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { extraLocals.builtinMoved = []; }
-    }
-    // Remote Desktops is the plugin "Fernzugriff" now (docs/feature-remote-access.md, stage 1): once its data was
-    // taken over the page leads to the plugin; before, it says so (not installed: install it; installed: take over)
-    if (template === 'rdp') {
-      const moved = rdpMoved();
-      if (moved && moved.redirect) return res.redirect(moved.redirect);
-      extraLocals.rdpMoved = moved;
     }
     // Settings → VPN & Netzwerk → "Namen im VPN": the legacy zone for the labels
     if (template === 'settings') {
@@ -552,13 +528,6 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     if (!isAdmin) extraLocals.portalUrl = portalLink();
     // Profil: the further fields of the user profile live on "Mein Profil" in the portal (docs/feature-user-profile.md)
     if (template === 'profile') { const pl = portalLink(); extraLocals.profilePortalUrl = pl ? `${pl}/portal#profil` : null; }
-
-    // Inject RDP route count for sidebar badge (all pages)
-    try {
-      const rdpService = require('../services/rdp');
-      const counts = rdpService.getCount();
-      extraLocals.rdpRouteCount = counts.total;
-    } catch (err) { logger.debug({ err: err.message }, 'rdp route count for sidebar unavailable'); }
 
     // Peers / Clients (peers.js, docs/feature-peers-page.md): its strings as
     // one JSON island — peers.njk data-prefixes must list the same ones.
@@ -596,9 +565,9 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         .replace(/</g, '\\u003c');
     }
 
-    // "Wer darf zugreifen?" picker of the route editor and the RDP dialog
+    // "Wer darf zugreifen?" picker of the route editor
     // (access-picker.js, partials/access-i18n.njk).
-    if (template === 'zones' || template === 'rdp') {
+    if (template === 'zones') {
       extraLocals.accessI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['acc.']))
         .replace(/</g, '\\u003c');
     }
@@ -770,27 +739,11 @@ router.get('/users/:id/devices/:peerId', apiLimiter, requireAuth, (req, res) => 
   });
 });
 
-// ─── Browser RDP session player page (admin-only, feature-gated) ──────────
-// apiLimiter: this page performs an explicit privileged role lookup (unlike the
-// declarative page routes which only gate on session presence), so rate-limit it
-// as defence-in-depth against session/id enumeration.
-router.get('/rdp/:id/session', requireAuth, apiLimiter, (req, res) => {
-  const rdpService = require('../services/rdp');
-  const users = require('../services/users');
-  const { hasFeature } = require('../services/license');
-  // Chain3-C1: admin-role gate (requireAuth only checks session presence).
-  const actorUser = users.getById(req.session?.userId);
-  if (!actorUser || actorUser.role !== 'admin') return res.redirect('/profile');
-  const id = parseInt(req.params.id, 10);
-  const route = rdpService.getById(id, false, { credFlags: true });
-  if (!route || !route.browser_enabled || !hasFeature('browser_sessions')) {
-    return res.redirect('/rdp');
-  }
-  res.render(`${res.locals.theme}/pages/rdp-session.njk`, {
-    title: res.locals.t('rdp.session.title'),
-    route,
-    guac: require('../../config/default').guac,
-  });
+// The browser session page of an old Remote Desktops route: the plugin „Fernzugriff“ opens its sessions
+// at /remote/session/<ref> (routes/remoteSession.js); an old bookmark leads where /rdp leads.
+router.get('/rdp/:id/session', apiLimiter, requireAuth, (req, res) => {
+  if (!res.locals.user || res.locals.user.role !== 'admin') return res.redirect('/profile');
+  res.redirect(require('../services/plugins/legacy').movedPage('gatecontrol-remote'));
 });
 
 // ─── Public API routes (no auth required) ─────────

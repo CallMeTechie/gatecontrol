@@ -334,7 +334,6 @@ describe('Aurora rendering', () => {
     'dashboard',
     'peers',
     'routes',
-    'rdp',
     'users',
     'logs',
     'settings',

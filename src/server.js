@@ -10,7 +10,6 @@ const { startCollector, stopCollector } = require('./services/traffic');
 const { startPoller, stopPoller } = require('./services/peerStatus');
 const { startSessionCleanup, stopSessionCleanup } = require('./services/routeAuth');
 const { startMonitor, stopMonitor } = require('./services/monitor');
-const { startMonitor: startRdpMonitor, stopMonitor: stopRdpMonitor } = require('./services/rdpMonitor');
 const { cleanupStaleSessions: cleanupStaleRdpSessions } = require('./services/rdpSessions');
 const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = require('./services/autobackup');
 const activity = require('./services/activity');
@@ -211,7 +210,7 @@ async function start() {
     try { require('./services/updateNotify').start(); }
     catch (err) { logger.warn({ err: err.message }, 'update notifications not started'); }
     startLicenseRefresh();
-    startRdpMonitor();
+    // (no RDP health loop any more: the devices of „Fernzugriff“ are probed by the plugin through gc.remote.probe)
 
     // (utils/loopStall.js runs since the start of start())
 
@@ -455,7 +454,6 @@ const shutdown = createShutdownHandler({
     () => stopPoller(),
     () => stopSessionCleanup(),
     () => stopMonitor(),
-    () => stopRdpMonitor(),
     () => stopAutoBackup(),
     () => require('./utils/loopStall').stop(),
     () => require('./services/logProblems').stop(),

@@ -275,13 +275,19 @@ describe('sessions: ticket, page, token, tunnel', () => {
 });
 
 describe('built-in data import `remote`', () => {
-  it('the upgrade notice is on (stage 1); with the plugin installed /rdp points to "Daten übernehmen"', async () => {
+  it('installed, the old rows not taken over: "Alte Remote Desktops noch nicht übernommen" — dashboard, plugin area, plugin page; /rdp leads to the plugin', async () => {
     const legacy = require('../src/services/plugins/legacy');
     assert.notEqual(legacy.DATASETS.get(ID).notice, false);
-    assert.ok(!legacy.pendingMoves().some((m) => m.pluginId === ID), 'installed: no install notice');
-    const page = await agent.get('/rdp').expect(200);
-    assert.match(page.text, /data-builtin-moved="gatecontrol-remote"/);
-    assert.match(page.text, /settings\/plugins\/manage\/gatecontrol-remote/);
+    const mv = legacy.pendingMoves().find((m) => m.pluginId === ID);
+    assert.deepEqual([mv.installed, mv.reason, mv.manageUrl], [true, 'never', '/settings/plugins/manage/' + ID]);
+    for (const url of ['/dashboard', '/settings/plugins', '/plugins/' + ID]) {
+      const page = await agent.get(url).expect(200);
+      assert.match(page.text, /data-builtin-moved="gatecontrol-remote" data-builtin-pending="never"/, url);
+      assert.match(page.text, /href="\/settings\/plugins\/manage\/gatecontrol-remote"[^>]*>(Jetzt übernehmen|Take over now)</, url);
+    }
+    const r = await agent.get('/rdp').expect(302);
+    assert.equal(r.headers.location, '/plugins/' + ID);
+    assert.equal((await agent.get('/rdp/7/session').expect(302)).headers.location, '/plugins/' + ID);
   });
   it('routes with handles instead of credentials, ids kept, sessions and maintenance; re-run keeps the handles', async () => {
     const st = (await agent.get(`/api/v1/plugins/${ID}/legacy`).expect(200)).body;
@@ -305,10 +311,27 @@ describe('built-in data import `remote`', () => {
     assert.equal(again.credential, r.credential, 'same handle on "Erneut übernehmen"');
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM rdp_routes').get().c, 1, 'the built-in table stays');
   });
-  it('once taken over, /rdp leads to the plugin; the API of the core stays', async () => {
-    const r = await agent.get('/rdp').expect(302);
-    assert.equal(r.headers.location, '/plugins/' + ID);
-    await agent.get('/api/v1/rdp').expect((res) => assert.notEqual(res.status, 410));
+  it('once taken over the notice goes; a changed row or a restore of old rows brings it back', async () => {
+    const legacy = require('../src/services/plugins/legacy');
+    const plugin = require('../src/services/plugins/registry').get(ID);
+    assert.equal(legacy.pendingImport(plugin), null);
+    assert.ok(!legacy.pendingMoves().some((m) => m.pluginId === ID));
+    assert.doesNotMatch((await agent.get('/dashboard').expect(200)).text, /data-builtin-pending=/);
+    assert.equal((await agent.get('/rdp').expect(302)).headers.location, '/plugins/' + ID);
+    // the admin API of the core is gone
+    const gone = await agent.get('/api/v1/rdp').expect(410);
+    assert.deepEqual(gone.body, { ok: false, code: 'moved_to_plugin', plugin: ID });
+    // a row changed after the import (a migration, a cleanup)
+    db.prepare("UPDATE rdp_routes SET updated_at = datetime('now', '+1 minute') WHERE id = 7").run();
+    assert.equal(legacy.pendingImport(plugin).reason, 'changed');
+    await agent.post(`/api/v1/plugins/${ID}/legacy/import`).set('X-CSRF-Token', csrf).send({ confirm: true }).expect(200);
+    db.prepare("UPDATE rdp_routes SET updated_at = datetime('now', '-1 hour') WHERE id = 7").run();
+    assert.equal(legacy.pendingImport(plugin), null);
+    // a backup restore put rows back (backup.js marks it)
+    require('../src/services/settings').set('plugins.legacy_restored.remote', new Date(Date.now() + 60000).toISOString());
+    assert.equal(legacy.pendingImport(plugin).reason, 'changed');
+    require('../src/services/settings').set('plugins.legacy_restored.remote', new Date(Date.now() - 3600000).toISOString());
+    assert.equal(legacy.pendingImport(plugin), null);
   });
 });
 
@@ -390,22 +413,23 @@ describe('gc.remote version 2 (stage 2: the Windows switch)', () => {
     const calls = (await pget('/facadeCalls')).result.slice(-4);
     assert.deepEqual(calls.map((c) => [c.op, c.id]), [['wake', '100001'], ['statusAdmin', '100001'], ['statusAdmin', '100001'], ['statusAll', null]]);
     assert.equal(calls[0].user.id, adminId);
-    // the admin's browser keeps the core's answers
+    // the admin's browser never reaches the plugin here: the admin API of the core is gone
     const before = (await pget('/facadeCalls')).result.length;
-    await agent.get('/api/v1/rdp/status');
+    await agent.get('/api/v1/rdp/status').expect(410);
     assert.equal((await pget('/facadeCalls')).result.length, before);
+    // the plugin declines: the core has no answer of its own any more
+    await ppost('/facade', { answer: null });
+    const declined = await supertest(app).post('/api/v1/rdp/100001/wol').set('X-API-Token', admTok).expect(403);
+    assert.equal(declined.body.code, 'remote_plugin_required');
     await ppost('/facade', { answer: null });
   });
 });
 
 describe('facade for the old app API', () => {
-  it('handled:false leaves it to the core', async () => {
-    const lic = require('../src/services/license');
-    lic._overrideForTest({ ...lic.COMMUNITY_FALLBACK, remote_desktop: true });
+  it('handled:false: the core has no Remote Desktops of its own any more — 403 remote_plugin_required', async () => {
     await ppost('/facade', { answer: null });
-    // the core's own answer (a browser session has no client:rdp scope)
     const r = await agent.get('/api/v1/client/rdp').expect(403);
-    assert.equal(r.body.error, 'Token does not have client:rdp permission');
+    assert.deepEqual(r.body, { ok: false, error: 'Remote Desktop feature not available', code: 'remote_plugin_required', plugin: ID });
     const calls = (await pget('/facadeCalls')).result;
     assert.equal(calls[calls.length - 1].op, 'list');
   });

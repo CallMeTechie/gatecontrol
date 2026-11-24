@@ -3,14 +3,15 @@
 // The old app API /api/v1/client/rdp* (routes/api/client/rdp.js) answered
 // from the plugin "Fernzugriff" (docs/plugins.md "Remote access",
 // "Facade for the old app API"). Apps released before the plugin keep
-// working once the targets live in the plugin.
+// working: the targets live in the plugin. The built-in Remote Desktops is
+// gone, so the core has no answer of its own any more — without the plugin
+// (or when it declines a request) the routes answer `unavailable` below.
 //
-// Active only when ALL of this holds — otherwise the core answers exactly
-// as before:
-//   * the plugin of the dataset `remote` is installed (gatecontrol-remote, or
-//     the plugin that replaced it), trusted (plugins/legacy.js eligibility)
-//     and holds permissions.remote;
-//   * its built-in data was taken over (Daten übernehmen, legacy.everImported).
+// Active when the plugin of the dataset `remote` is installed
+// (gatecontrol-remote, or the plugin that replaced it), trusted
+// (plugins/legacy.js eligibility) and holds permissions.remote — whether or
+// not the old rows of rdp_routes were taken over yet (the dashboard and the
+// plugin's page say so until they are: legacy.pendingImport).
 // Then each request goes to the plugin's hook
 //   clientFacade({ op, id, query, body, user, ip }) → { handled: false } | { status, body } | { status, body, credential } | { guac }
 // where op is list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd,
@@ -20,7 +21,7 @@
 //   statusAdmin  GET  /api/v1/rdp/:id/status, /:id/wol/status → { ok, id, online, responseTime, lastCheck }
 //   statusAll    GET  /api/v1/rdp/status          → { ok, statuses: { <id>: { online, responseTime, lastCheck } } }
 // { handled: false } (or a plugin without the hook) leaves the request to
-// the core. A plugin that does not run answers 503 plugin_unavailable (403
+// the core, which answers `unavailable`. A plugin that does not run answers 503 plugin_unavailable (403
 // license_required without a licence): the core data may be outdated.
 //
 // Credentials never pass through the plugin: for `connect` it names a vault
@@ -60,8 +61,16 @@ function active() {
   try { p = registry.resolve(DATASET_PLUGIN); } catch { p = null; }
   if (!p || !p.manifest || !p.manifest.permissions || p.manifest.permissions.remote !== true) return null;
   if (legacy.eligibility(p) !== null) return null;
-  if (!legacy.everImported(p.id)) return null;
   return p;
+}
+
+// What the apps get without the plugin: the answer an unlicensed server always gave them
+// (403: the Android app says "RDP is not available", the Windows app shows an empty list) plus a code.
+const UNAVAILABLE = Object.freeze({ ok: false, error: 'Remote Desktop feature not available', code: 'remote_plugin_required', plugin: DATASET_PLUGIN });
+
+/** Express handler after middleware(op): the core has no Remote Desktops of its own any more. */
+function unavailable(req, res) {
+  res.status(403).json({ ...UNAVAILABLE });
 }
 
 function running(id) {
@@ -220,4 +229,4 @@ function middleware(op) {
   };
 }
 
-module.exports = { middleware, active, complete, connectHost, DATASET_PLUGIN, OPS, ADMIN_OPS, _hookMs: null };
+module.exports = { middleware, unavailable, UNAVAILABLE, active, complete, connectHost, DATASET_PLUGIN, OPS, ADMIN_OPS, _hookMs: null };

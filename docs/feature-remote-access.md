@@ -41,6 +41,35 @@ id `gatecontrol-remote`). This page describes what the core provides for it
   before. The notice `plugins.moved.remote` was prepared here and is switched
   on with stage 1 (below).
 
+## Remote Desktops removed
+
+The built-in page „Remote Desktops“ is gone; „Fernzugriff“ is the only place for RDP, SSH, VNC and Telnet.
+
+* **Gone**: the menu entry, the page `/rdp` and the browser session page `/rdp/:id/session` (both lead to the
+  plugin's page, or to its catalogue page without the plugin — `legacy.movedPage`), the admin API
+  `/api/v1/rdp` (`410 moved_to_plugin`), the tab „Sitzungen“ of Logs & Monitoring (the old rows stay in the
+  source `sessions` of the events), the RDP entries of the portal's „Dienste“ and of „Was sieht <Name>?“, the
+  RDP health loop of the server, the page's scripts, styles and strings.
+* **The apps** (Android, Windows Pro/Core released before the plugin) keep calling `/api/v1/client/rdp*` and the
+  four calls `GET /api/v1/rdp/status`, `POST /api/v1/rdp/:id/wol`, `GET /api/v1/rdp/:id/status`,
+  `GET /api/v1/rdp/:id/wol/status`: the plugin answers them through `clientFacade` as soon as it is installed
+  (no longer only after the take-over). Without the plugin they get `403 { error: 'Remote Desktop feature not
+  available', code: 'remote_plugin_required' }` — what a server without the feature always answered.
+  `POST /api/v1/rdp/:id/sessions/disconnect-all` (Android, fire-and-forget after a session) gets `410`; the
+  session end reaches the plugin through `DELETE /api/v1/client/rdp/:id/session`.
+* **No data lost**: `rdp_routes` and `rdp_sessions` stay as the old stock — never dropped, in backups, restored
+  from old backups — until the plugin took them over. While the installed plugin has not got them (never
+  imported, or a row changed / a restore put rows back after its last import: `legacy.pendingImport`), the
+  dashboard, the plugin area and the plugin's own page say „Alte Remote Desktops noch nicht übernommen“ with
+  „Jetzt übernehmen“; without the plugin the install notice says the data is kept. Cleaning up (a user, group,
+  peer or pool deleted) keeps the old rows consistent as before.
+* **Still in the core, for a later release**: the services behind the old feature that the session transport
+  still shares or that keep the old stock consistent — `services/rdp.js`, `guacSession.js`, `rdpSessions.js`
+  (the old route branch of the guacamole tunnel), `rdpMonitor.js` (`checkTcp` for `gc.remote.probe` and
+  wake-on-LAN), `rdpMaintenance.js` (the schedule parser of access rules), `rdpAcl.js`, the guards that keep an
+  L4 route of an old gateway target out of bundles and the route editor. They go once the tunnel no longer knows
+  old routes and the old stock is dropped (after the apps stopped calling the old API).
+
 ## Stage 1 (the plugin „Fernzugriff“ 1.0)
 
 The plugin (gatecontrol-plugins, `plugins/gatecontrol-remote`) has the pages Geräte, Berechtigungen, Sitzungen and

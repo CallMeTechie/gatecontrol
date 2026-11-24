@@ -4,15 +4,17 @@
     the host in one place — Ereignisse (server, plugins, activity, access,
     sessions as one list with KPI tiles, timeline, facets, search syntax,
     clusters, selection, endless loading, entry detail with "Zur selben
-    Zeit"), Probleme (grouped errors with status, correlation), Zugriffe,
-    Sitzungen (RDP history) and Gespeicherte Filter, plus the export dialog.
+    Zeit"), Probleme (grouped errors with status, correlation), Zugriffe
+    and Gespeicherte Filter, plus the export dialog. (The sessions of the
+    plugin „Fernzugriff“ are on its page Sitzungen; the tab Sitzungen of the
+    former Remote Desktops is gone, its old rows stay in the source sessions.)
     Static shell only; every value comes from /api/v1/logs/* at runtime
     (public/js/logs.js, el() only — no innerHTML). Address: /logs#events,
-    #e/<id>, #problems, #problems/<key>, #access, #sessions, #saved; the
+    #e/<id>, #problems, #problems/<key>, #access, #saved; the
     filter is kept in the address (#events?…). Strings: the #lg-i18n island
     (routes/index.js LOGS_I18N_PREFIXES). Styles: §13 of public/css/app.css. -#}
 
-{% set tabs = [['events', 'lg.tab_events'], ['problems', 'lg.tab_problems'], ['access', 'lg.tab_access'], ['sessions', 'lg.tab_sessions'], ['saved', 'lg.tab_saved']] %}
+{% set tabs = [['events', 'lg.tab_events'], ['problems', 'lg.tab_problems'], ['access', 'lg.tab_access'], ['saved', 'lg.tab_saved']] %}
 
 {% block content %}
 <div class="lg-page" id="lg-page" data-licence-export="{{ '1' if logsLicenceExport else '0' }}">
@@ -164,30 +166,6 @@
     <div class="lg-more"><button type="button" class="btn btn-sm" id="lg-a-more" hidden>{{ t('lg.more') }}</button></div>
   </section>
 
-  {# ─── Sitzungen (RDP history, rdp-history.js) ─── #}
-  <section class="lg-panel" id="lg-panel-sessions" role="tabpanel" aria-labelledby="lg-tab-sessions" hidden>
-    <div class="lg-card lg-pad">
-      <div class="lg-toolbar">
-        <h2 class="lg-h">{{ t('lg.s_title') }}</h2>
-        <select class="filter-select" id="rdp-history-status" aria-label="{{ t('rdp.status') }}">
-          <option value="">{{ t('common.all') }}</option>
-          <option value="active">{{ t('rdp.status_active') }}</option>
-          <option value="ended">{{ t('rdp.status_ended') }}</option>
-        </select>
-        <select class="filter-select" id="rdp-history-period" aria-label="{{ t('lg.range') }}">
-          <option value="24h">{{ t('logs.last_24h') }}</option>
-          <option value="7d">{{ t('logs.last_7d') }}</option>
-          <option value="30d">{{ t('logs.last_30d') }}</option>
-        </select>
-        <span class="lg-toolbar-end">
-          <button type="button" class="btn btn-sm" id="rdp-history-export-csv">CSV</button>
-          <button type="button" class="btn btn-sm" id="rdp-history-export-json">JSON</button>
-        </span>
-      </div>
-      <div id="rdp-history-list"><div class="lg-faint lg-pad">{{ t('common.loading') }}</div></div>
-    </div>
-  </section>
-
   {# ─── Gespeicherte Filter ─── #}
   <section class="lg-panel" id="lg-panel-saved" role="tabpanel" aria-labelledby="lg-tab-saved" hidden>
     <div class="lg-saved-grid">
@@ -204,5 +182,4 @@
 {% block scripts %}
 <script type="application/json" id="lg-i18n" data-prefixes="lg. common." nonce="{{ cspNonce }}">{{ logsI18n | default('{}') | safe }}</script>
 <script src="/js/logs.js?v={{ appVersion }}"></script>
-<script src="/js/rdp-history.js?v={{ appVersion }}" nonce="{{ nonce }}"></script>
 {% endblock %}

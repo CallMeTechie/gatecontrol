@@ -21,7 +21,7 @@
 //     the routes event with sync 'failed' brings the error message.
 //
 // Needs the L4 and pool licence features, so the scenario starts an app of its
-// own (tests/e2e/app-licensed.js) like scenarios/33-rdp-pool.js.
+// own (tests/e2e/app-licensed.js) like scenarios/31-vpn-names.js.
 
 const fs = require('node:fs');
 const os = require('node:os');

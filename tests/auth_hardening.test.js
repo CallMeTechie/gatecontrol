@@ -92,15 +92,16 @@ describe('read-only token scope excludes secret endpoints', () => {
     await get('/api/v1/peers', readOnly).expect(200);
     await get(`/api/v1/peers/${peerId}`, readOnly).expect(200);
     await get('/api/v1/dashboard/stats', readOnly).expect(200);
-    await get('/api/v1/rdp', readOnly).expect(200);
+    await get('/api/v1/routes', readOnly).expect(200);
   });
 
   it('the resource scope or full-access still reach the secret endpoints', async () => {
     const r1 = await get(`/api/v1/peers/${peerId}/config`, readOnlyPeers).expect(200);
     assert.match(r1.body.config, /PrivateKey/);
     await get(`/api/v1/peers/${peerId}/qr`, readOnlyPeers).expect(200);
+    // (the credentials of the former Remote Desktops: its admin API is gone, 410 — the scope check still comes first)
     await get(`/api/v1/rdp/${rdpId}/credentials`, readOnlyPeers).expect(403);
-    await get(`/api/v1/rdp/${rdpId}/credentials`, fullAccess).expect(200);
+    await get(`/api/v1/rdp/${rdpId}/credentials`, fullAccess).expect(410);
     await get(`/api/v1/peers/${peerId}/config`, fullAccess).expect(200);
   });
 

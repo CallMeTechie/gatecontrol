@@ -13,7 +13,7 @@ const GW_B = 72; // pool member, priority 20 (the reserve)
 const GW_C = 73; // pool member, priority 30, offline
 const MAC = 'AA:BB:CC:DD:EE:01';
 
-let agent, csrf, db, gw, gateways, wol, health, monitor;
+let db, gw, gateways, wol, health, monitor;
 let poolId, calls, broadcasts, answers, snap;
 const orig = {};
 
@@ -25,9 +25,7 @@ function gateway(id, name, alive) {
 }
 
 before(async () => {
-  const ctx = await setup();
-  agent = ctx.agent;
-  csrf = ctx.csrfToken;
+  await setup();
   db = require('../src/db/connection').getDb();
   gw = require('../src/services/gatewayWake');
   gateways = require('../src/services/gateways');
@@ -151,47 +149,5 @@ describe('the callers wake through the pool', () => {
     assert.equal(calls[0][1].lan_host, '192.168.1.30');
     assert.equal(calls[0][1].lan_host_port, 5001);
     assert.equal(broadcasts.length, 0);
-  });
-
-  function rdpRoute(name, fields) {
-    const row = { name, host: '192.168.1.40', port: 3389, access_mode: 'gateway', wol_enabled: 1, wol_mac_address: MAC, ...fields };
-    const cols = Object.keys(row);
-    const vals = Object.values(row);
-    return Number(db.prepare(`INSERT INTO rdp_routes (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals).lastInsertRowid);
-  }
-
-  it('RDP: a route through a pool wakes through a member of the pool, not the server', async () => {
-    const id = rdpRoute('wake-rdp-pool', { gateway_pool_id: poolId });
-    answers[GW_A] = null;
-    const res = await agent.post(`/api/v1/rdp/${id}/wol`).set('X-CSRF-Token', csrf).expect(200);
-    assert.equal(res.body.ok, true);
-    assert.match(res.body.message, /via gateway/);
-    assert.deepEqual(calls.map((c) => c[0]), [GW_A, GW_B]);
-    assert.deepEqual(calls[1][1], { mac: MAC, lan_host: '192.168.1.40', lan_host_port: 3389 });
-    assert.equal(broadcasts.length, 0);
-  });
-
-  it('RDP: a pool without a live member → 503, no broadcast of the server', async () => {
-    const id = rdpRoute('wake-rdp-pool-off', { gateway_pool_id: poolId });
-    snap = { [GW_A]: { alive: false }, [GW_B]: { alive: false }, [GW_C]: { alive: false } };
-    const res = await agent.post(`/api/v1/rdp/${id}/wol`).set('X-CSRF-Token', csrf).expect(503);
-    assert.equal(res.body.ok, false);
-    assert.equal(calls.length, 0);
-    assert.equal(broadcasts.length, 0);
-  });
-
-  it('RDP: a pinned gateway peer still goes through that gateway', async () => {
-    const id = rdpRoute('wake-rdp-peer', { gateway_peer_id: GW_B });
-    await agent.post(`/api/v1/rdp/${id}/wol`).set('X-CSRF-Token', csrf).expect(200);
-    assert.deepEqual(calls.map((c) => c[0]), [GW_B]);
-    assert.equal(broadcasts.length, 0);
-  });
-
-  it('RDP: an internal route (no gateway) → the server broadcast', async () => {
-    const id = rdpRoute('wake-rdp-internal', { access_mode: 'internal' });
-    const res = await agent.post(`/api/v1/rdp/${id}/wol`).set('X-CSRF-Token', csrf).expect(200);
-    assert.equal(res.body.message, 'Magic packet sent');
-    assert.deepEqual(broadcasts, [MAC]);
-    assert.equal(calls.length, 0);
   });
 });
