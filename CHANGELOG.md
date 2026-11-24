@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.320.4] — 2026-11-24
+
+### Fixes
+- Grund einer abgelehnten Browser-Tunnel-Verbindung ins Log (#578)
+
+---
+
 ## [1.320.3] — 2026-11-24
 
 ### Fixes
