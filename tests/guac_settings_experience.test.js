@@ -22,9 +22,28 @@ describe('rdp display settings', () => {
     const c = buildConnectionSettings(rdpRoute({ color_depth: 24 }), {});
     assert.equal(c.settings['color-depth'], '24');
   });
-  it('color-depth defaults to 32 when null', () => {
-    const c = buildConnectionSettings(rdpRoute({ color_depth: null }), {});
-    assert.equal(c.settings['color-depth'], '32');
+  it('color-depth defaults to 16 when null/absent, a set value (also 32) is kept', () => {
+    assert.equal(buildConnectionSettings(rdpRoute({ color_depth: null }), {}).settings['color-depth'], '16');
+    assert.equal(buildConnectionSettings(rdpRoute({ color_depth: undefined }), {}).settings['color-depth'], '16');
+    assert.equal(buildConnectionSettings(rdpRoute({ color_depth: 32 }), {}).settings['color-depth'], '32');
+  });
+  it('nothing set (NULL/absent) → light browser default: no wallpaper, no menu animations, theming on', () => {
+    for (const unset of [null, undefined]) {
+      const c = buildConnectionSettings(rdpRoute({ disable_wallpaper: unset, disable_themes: unset, disable_animations: unset }), {});
+      assert.equal(c.settings['enable-wallpaper'], 'false');
+      assert.equal(c.settings['enable-menu-animations'], 'false');
+      assert.equal(c.settings['enable-theming'], 'true');
+    }
+  });
+  it('explicit 0 / false keeps the extra on, 1 / true switches it off', () => {
+    const on = buildConnectionSettings(rdpRoute({ disable_wallpaper: false, disable_themes: 0, disable_animations: 0 }), {});
+    assert.equal(on.settings['enable-wallpaper'], 'true');
+    assert.equal(on.settings['enable-theming'], 'true');
+    assert.equal(on.settings['enable-menu-animations'], 'true');
+    const off = buildConnectionSettings(rdpRoute({ disable_wallpaper: true, disable_themes: 1, disable_animations: 1 }), {});
+    assert.equal(off.settings['enable-wallpaper'], 'false');
+    assert.equal(off.settings['enable-theming'], 'false');
+    assert.equal(off.settings['enable-menu-animations'], 'false');
   });
   it('wallpaper ON when disable_wallpaper=0 (fixes black background)', () => {
     const c = buildConnectionSettings(rdpRoute({ disable_wallpaper: 0 }), {});
@@ -42,12 +61,18 @@ describe('rdp display settings', () => {
 });
 
 describe('rdp network_profile → experience flags', () => {
-  it('lan/auto enable font-smoothing + full-window-drag + desktop-composition', () => {
-    for (const p of ['lan', 'auto']) {
+  it('only an explicit lan enables full-window-drag + desktop-composition (with font-smoothing)', () => {
+    const c = buildConnectionSettings(rdpRoute({ network_profile: 'lan' }), {});
+    assert.equal(c.settings['enable-font-smoothing'], 'true');
+    assert.equal(c.settings['enable-full-window-drag'], 'true');
+    assert.equal(c.settings['enable-desktop-composition'], 'true');
+  });
+  it('auto and no profile behave like broadband', () => {
+    for (const p of ['auto', null, undefined, '']) {
       const c = buildConnectionSettings(rdpRoute({ network_profile: p }), {});
       assert.equal(c.settings['enable-font-smoothing'], 'true');
-      assert.equal(c.settings['enable-full-window-drag'], 'true');
-      assert.equal(c.settings['enable-desktop-composition'], 'true');
+      assert.equal(c.settings['enable-full-window-drag'], 'false');
+      assert.equal(c.settings['enable-desktop-composition'], 'false');
     }
   });
   it('broadband keeps font-smoothing but drops drag + composition', () => {
@@ -121,7 +146,22 @@ describe('vnc + default-route characterization', () => {
     assert.equal(c.settings['enable-theming'], 'true');
     assert.equal(c.settings['enable-menu-animations'], 'true');
     assert.equal(c.settings['enable-font-smoothing'], 'true'); // auto profile
+    assert.equal(c.settings['enable-full-window-drag'], 'false'); // auto = broadband
+    assert.equal(c.settings['enable-desktop-composition'], 'false');
     assert.equal(c.settings['enable-printing'], undefined);    // redirect_printers default 0
+  });
+  it('a target of a plugin without options gets the light defaults (characterization)', () => {
+    const c = buildConnectionSettings({ protocol: 'rdp', host: '10.0.0.5', port: 3389, access_mode: 'internal' }, { username: 'u', password: 'p' });
+    assert.equal(c.settings['color-depth'], '16');
+    assert.equal(c.settings['enable-wallpaper'], 'false');
+    assert.equal(c.settings['enable-theming'], 'true');
+    assert.equal(c.settings['enable-menu-animations'], 'false');
+    assert.equal(c.settings['enable-font-smoothing'], 'true');
+    assert.equal(c.settings['enable-full-window-drag'], 'false');
+    assert.equal(c.settings['enable-desktop-composition'], 'false');
+  });
+  it('vnc without color_depth keeps 32', () => {
+    assert.equal(buildConnectionSettings(vncRoute({ color_depth: null }), {}).settings['color-depth'], '32');
   });
 });
 
