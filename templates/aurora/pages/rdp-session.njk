@@ -157,6 +157,16 @@
   limit_reached:         t('rdp.session.limit_reached'),
   expired:               t('rdp.session.expired'),
   not_authorized:        t('rdp.session.not_authorized'),
+  err_auth_rejected:     t('rdp.session.err.auth_rejected'),
+  err_login_forbidden:   t('rdp.session.err.login_forbidden'),
+  err_upstream:          t('rdp.session.err.upstream'),
+  err_unreachable:       t('rdp.session.err.unreachable'),
+  err_session_conflict:  t('rdp.session.err.session_conflict'),
+  err_session_closed:    t('rdp.session.err.session_closed'),
+  err_busy:              t('rdp.session.err.busy'),
+  err_guac:              t('rdp.session.err.guac'),
+  err_connect_failed:    t('rdp.session.err.connect_failed'),
+  err_session_ended:     t('rdp.session.err.session_ended'),
   scale_fit:             t('rdp.session.scale_fit'),
   scale_native:          t('rdp.session.scale_native'),
   clipboard_unavailable: t('rdp.session.clipboard_unavailable')
@@ -214,13 +224,19 @@
       reconnectOvl.style.display = s === 'reconnecting' ? 'flex' : 'none';
       if (s === 'error') {
         errorOvl.style.display = 'flex';
-        var dStatus = detail && detail.status;
-        var dReason = detail && detail.reason;
-        var causeKey = (dStatus === 429 || dReason === 'limit-reached') ? 'limit_reached'
-                     : dStatus === 403 ? 'not_authorized'
-                     : '';
-        errorCauseEl.textContent = (causeKey && i18n[causeKey]) || i18n.error;
-        errorTextEl.textContent  = (detail && detail.message) || (causeKey && i18n[causeKey]) || i18n.error;
+        var causeKey = GCRdpPlayerLogic.errorKeyFor(detail);
+        /* a server message is shown only when it is a sentence — a bare code (not_found, target_…) is not */
+        var dMsg = detail && typeof detail.message === 'string' && !/^[a-z0-9_]+$/.test(detail.message) ? detail.message : '';
+        var causeText = (causeKey && i18n[causeKey]) || '';
+        /* the own causes of a failed start/end (err_*) win over a generic server message */
+        var errText = (causeKey.indexOf('err_') === 0 && causeText) || dMsg || causeText || i18n.error;
+        /* the pill names the technical cause: guacd status code, else HTTP status */
+        var pill = (causeKey === 'limit_reached' || causeKey === 'not_authorized') ? causeText
+                 : (detail && typeof detail.code === 'number') ? '0x' + ('000' + detail.code.toString(16).toUpperCase()).slice(-4)
+                 : (detail && typeof detail.status === 'number') ? 'HTTP ' + detail.status
+                 : i18n.error;
+        errorCauseEl.textContent = pill;
+        errorTextEl.textContent  = errText;
       } else {
         errorOvl.style.display = 'none';
       }

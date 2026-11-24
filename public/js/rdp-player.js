@@ -120,7 +120,7 @@
       if (reconnectWindowStart !== null) {
         var windowMs = lg.retryWindowMs(guacCfg());
         if (Date.now() - reconnectWindowStart > windowMs) {
-          transition('fatal', { reason: 'limit-reached', status: 429 });
+          transition('fatal', { reason: lg.gaveUpReason(established) });
           return;
         }
       }
@@ -260,6 +260,21 @@
           }
         };
 
+        /* ---- guacd error instruction (fires before the DISCONNECTED state) ----
+         * A failed start (no picture yet — e.g. Windows refused the logon because it
+         * wants NLA) is final: show its cause instead of looping on reconnects. */
+        client.onerror = function (status) {
+          if (dropped || userDisconnected) return;
+          var code = status && status.code;
+          var lg = logic();
+          if (lg.classifyGuacError({ code: code, established: established }) !== 'fatal') return; // the DISCONNECTED that follows reconnects
+          dropped = true;
+          clearTimer();
+          removeDisplayEl();
+          if (activeClient === client) activeClient = null;
+          transition('fatal', { reason: lg.guacErrorReason(code), code: code });
+        };
+
         /* ---- Tunnel error → treat as unintended drop ---- */
         tunnel.onerror = function (status) {
           handleUnintendedDrop({ reason: 'tunnel-error', status: status });
@@ -283,7 +298,7 @@
         if (reconnectWindowStart === null) reconnectWindowStart = Date.now();
         var windowMs = logic().retryWindowMs(guacCfg());
         if (Date.now() - reconnectWindowStart > windowMs) {
-          transition('fatal', { reason: 'limit-reached', status: 429 });
+          transition('fatal', { reason: logic().gaveUpReason(established), status: status });
           return;
         }
 
