@@ -140,6 +140,12 @@ describe('EOL file verification', () => {
     const t = signEd(eolClaims()).split('.');
     t[1] = b64(eolClaims({ scope: 'all' }));
     assert.equal((await eol.verify(t.join('.'))).reason, 'signature');
+    // a signature of the wrong length (cut / padded) or empty
+    const good = signEd(eolClaims()).split('.');
+    const sig = Buffer.from(good[2], 'base64url');
+    for (const bad of [sig.subarray(0, 63), Buffer.concat([sig, Buffer.from([0])]), Buffer.alloc(1)]) {
+      assert.equal((await eol.verify([good[0], good[1], bad.toString('base64url')].join('.'))).reason, 'signature');
+    }
     // an unsigned wrapper
     assert.equal((await eol.verify(JSON.stringify({ v: 1, product: 'gatecontrol', scope: 'all' }))).reason, 'malformed');
   });

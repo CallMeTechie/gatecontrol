@@ -249,8 +249,9 @@ async function verifyJws(token, { maxLength = 16384 } = {}) {
   let valid = false;
   try {
     const key = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' });
-    const sig = Buffer.from(parts[2], 'base64url');
-    valid = sig.length === 64 && crypto.verify(null, Buffer.from(parts[0] + '.' + parts[1]), key, sig);
+    // Ed25519 rejects a signature of the wrong length itself (false or a throw) —
+    // no length check in front of it that the token could steer
+    valid = crypto.verify(null, Buffer.from(parts[0] + '.' + parts[1]), key, Buffer.from(parts[2], 'base64url')) === true;
   } catch {
     valid = false;
   }
