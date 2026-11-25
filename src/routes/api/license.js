@@ -6,6 +6,7 @@ const settings = require('../../services/settings');
 const { encrypt } = require('../../utils/crypto');
 const activity = require('../../services/activity');
 const config = require('../../../config/default');
+const { uploadLimiter } = require('../../middleware/rateLimit');
 const router = Router();
 
 // Per-identity cooldowns (keyed by session user or req.ip fallback). A
@@ -96,7 +97,7 @@ router.post('/refresh', async (req, res) => {
 // The signed eol.json, uploaded as text: { content: "<file content>" }.
 // Only a file that verifies against the licence server's keys is stored.
 const EOL_REASONS = new Set(['malformed', 'alg', 'kid', 'signature', 'iss', 'kind', 'version', 'product', 'scope', 'iat', 'message']);
-router.post('/eol', async (req, res) => {
+router.post('/eol', uploadLimiter, async (req, res) => {
   const eol = require('../../services/licenseEol');
   const content = req.body && req.body.content;
   if (typeof content !== 'string' || !content.trim() || Buffer.byteLength(content, 'utf8') > eol.MAX_FILE_BYTES) {
@@ -114,7 +115,7 @@ router.post('/eol', async (req, res) => {
   res.json({ ok: true, ...license.getLicenseInfo() });
 });
 
-router.delete('/eol', async (req, res) => {
+router.delete('/eol', uploadLimiter, async (req, res) => {
   const eol = require('../../services/licenseEol');
   await eol.remove();
   activity.log('license_eol_removed', 'End-of-life file removed');

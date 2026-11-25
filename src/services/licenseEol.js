@@ -117,13 +117,20 @@ async function verify(text) {
   };
 }
 
+/** Content of a regular file of at most MAX_FILE_BYTES — checked and read through one descriptor (no stat/read race). */
 function readFileSafe(file) {
+  let fd;
   try {
-    const st = fs.statSync(file);
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const st = fs.fstatSync(fd);
     if (!st.isFile() || st.size > MAX_FILE_BYTES) return null;
-    return fs.readFileSync(file, 'utf8');
+    const buf = Buffer.alloc(MAX_FILE_BYTES + 1);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    return n > MAX_FILE_BYTES ? null : buf.subarray(0, n).toString('utf8');
   } catch {
     return null;
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* ignore */ } }
   }
 }
 
