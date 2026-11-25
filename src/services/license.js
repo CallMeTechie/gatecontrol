@@ -7,9 +7,19 @@ const jwt = require('jsonwebtoken');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const v2 = require('./licenseV2');
+const eol = require('./licenseEol');
 const { backoffDelay, retryableStatus, networkReason, parseRetryAfter } = require('../utils/checkBackoff');
 
 const PRODUCT_SLUG = 'gatecontrol';
+
+// Main version of this build (the first number of package.json). A licence
+// token may carry `maj` — the main version it is valid for (docs/feature-
+// license-eol.md "Hauptversion"). Only a token for an OLDER main version is
+// refused ("Upgrade nötig"); a token without `maj` counts for every version.
+const OWN_MAJOR = (() => {
+  try { return parseInt(require('../../package.json').version, 10) || 1; } catch { return 1; }
+})();
+let ownMajor = OWN_MAJOR; // test seam: _setOwnMajorForTest
 
 // Hardcodierter Community-Fallback für den unlizenzierten Modus.
 // Wird verwendet wenn KEIN Lizenzschlüssel konfiguriert ist.
@@ -105,6 +115,12 @@ let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 let tokenFeatureKeys = null;
 // Plugin entitlements of the last applied v2 validation (empty without v2).
 let pluginEntitlements = [];
+// { licensed, installed } while the token is for an older main version.
+let upgradeRequired = null;
+// Why a licence key runs in Community mode right now: 'offline' (licence
+// server unreachable beyond the grace), 'revoked' (403 / licence expired),
+// 'upgrade' (token for an older main version) — null otherwise.
+let fallbackReason = null;
 const PLUGIN_SOURCES = new Set(['license', 'lifetime', 'plan']);
 // Tier and seats of a plugin licence (since 1.206.0, GateControl Drive): only
 // from the signed plugin token, never from the unsigned fields of the answer.
@@ -265,9 +281,10 @@ function isoFromUnix(sec) {
  * for this install. Tokens stay in the stored copy (for offline restarts) but
  * never leave this module.
  */
-async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
+async function verifyPlugins(plugins, fingerprint, { allowExpired, eolMode = false, lastOkAt = 0 }) {
   const out = [];
   const nowSec = Math.floor(Date.now() / 1000);
+  const graceLeft = Date.now() - Number(lastOkAt || 0) <= GRACE_MS;
   for (const p of Array.isArray(plugins) ? plugins : []) {
     if (!p || typeof p !== 'object' || typeof p.slug !== 'string') continue;
     const entry = {
@@ -286,11 +303,14 @@ async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
       seats: null,
     };
     if (p.valid === true) {
-      const r = await v2.verifyToken(p.token, { fingerprint, kind: 'plugin', allowExpired });
+      const r = await v2.verifyToken(p.token, { fingerprint, kind: 'plugin', allowExpired: allowExpired || eolMode });
       if (!r.ok) {
         entry.error = 'token_invalid';
       } else if (r.payload.lat > 0 && r.payload.lat < nowSec) {
         entry.error = 'expired';
+      } else if (eolMode && !allowExpired && r.payload.exp <= nowSec && !eol.covers(r.payload) && !graceLeft) {
+        // end of life: a plugin licence the EOL does not cover keeps the normal offline grace
+        entry.error = 'token_invalid';
       } else {
         entry.valid = true;
         entry.error = null;
@@ -307,7 +327,27 @@ async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
   return out;
 }
 
-function applyV2(payload, rec, plugins, { offline = false } = {}) {
+/** { licensed, installed } when the token is for an older main version, else null. */
+function majorMismatch(payload) {
+  const maj = payload ? payload.maj : undefined;
+  if (!Number.isSafeInteger(maj) || maj <= 0 || maj >= ownMajor) return null;
+  return { licensed: maj, installed: ownMajor };
+}
+
+/**
+ * Put a verified v2 token in force.
+ * mode: 'signed' (just validated online), 'signed_offline' (offline grace,
+ * with `offline` = { last_ok_at, fallback_at }) or 'eol' (end of life).
+ * @returns {boolean} false when the token is for an older main version — then nothing is applied
+ */
+function applyV2(payload, rec, plugins, { mode = 'signed', offline = null } = {}) {
+  const mm = majorMismatch(payload);
+  if (mm) {
+    upgradeRequired = mm;
+    return false;
+  }
+  upgradeRequired = null;
+  fallbackReason = null;
   applyLicense({
     plan: payload.plan,
     features: payload.features,
@@ -315,8 +355,15 @@ function applyV2(payload, rec, plugins, { offline = false } = {}) {
     updates_until: isoFromUnix(payload.upd),
     activations: rec.activations,
     max_activations: rec.max_activations,
-  }, offline ? 'signed_offline' : 'signed');
+    offline: mode === 'signed_offline' ? offline : null,
+  }, mode);
   pluginEntitlements = plugins;
+  return true;
+}
+
+function logUpgradeRequired() {
+  if (!upgradeRequired) return;
+  logger.warn(`License is for GateControl ${upgradeRequired.licensed}.x, this is ${upgradeRequired.installed}.x — upgrade required, running in Community mode`);
 }
 
 /**
@@ -324,21 +371,30 @@ function applyV2(payload, rec, plugins, { offline = false } = {}) {
  * while the 14-day grace since the last successful validation runs.
  * @returns {Promise<{payload, rec}|null>}
  */
-async function loadV2Token(fingerprint, { grace = false } = {}) {
+async function loadV2Token(fingerprint, { grace = false, eolMode = false } = {}) {
   const rec = v2.loadState(config.license.key);
   if (!rec) return null;
-  const r = await v2.verifyToken(rec.token, { fingerprint, kind: 'app', allowExpired: grace });
+  const r = await v2.verifyToken(rec.token, { fingerprint, kind: 'app', allowExpired: grace || eolMode });
   if (!r.ok) return null;
   const now = Date.now();
   if (r.payload.lat > 0 && r.payload.lat * 1000 < now) return null;              // licence itself expired
+  // end of life: only what the EOL covers, then without exp and without grace
+  if (eolMode) return eol.covers(r.payload, now) ? { payload: r.payload, rec } : null;
   if (grace && r.payload.exp * 1000 <= now && now - Number(rec.last_ok_at || 0) > GRACE_MS) return null;
   return { payload: r.payload, rec };
+}
+
+/** When the offline grace of a stored token ends: its exp or GRACE_MS after the last success, whichever is later. */
+function graceEnd(payload, rec) {
+  return Math.max(Number(payload.exp) * 1000 || 0, Number(rec.last_ok_at || 0) + GRACE_MS);
 }
 
 function dropV2License(reason) {
   v2.clearState();
   deleteToken(); // the v1 token of a revoked licence must not resurrect it
   pluginEntitlements = [];
+  upgradeRequired = null;
+  fallbackReason = 'revoked';
   logger.warn(`License rejected by license server (${reason}) — running in Community mode`);
 }
 
@@ -349,14 +405,32 @@ function dropV2License(reason) {
  *   'v1'         v2 is not available and never succeeded here → legacy path
  */
 async function validateV2(fingerprint, { useCache }) {
+  // End of life: a stored licence the EOL covers needs no licence server any more.
+  if (eol.isActive()) {
+    const held = await loadV2Token(fingerprint, { eolMode: true });
+    if (held) {
+      const plugins = await verifyPlugins(held.rec.plugins, fingerprint, { allowExpired: false, eolMode: true, lastOkAt: held.rec.last_ok_at });
+      const wasEol = cachedLicenseInfo?.verification === 'eol';
+      if (!applyV2(held.payload, held.rec, plugins, { mode: 'eol' })) {
+        fallbackReason = 'upgrade';
+        logUpgradeRequired();
+        return 'community';
+      }
+      if (!wasEol) logger.info(`License valid (end of life, no licence server needed) — Plan: ${held.payload.plan}`);
+      return 'applied';
+    }
+  }
+
   if (useCache) {
     const cached = await loadV2Token(fingerprint);
     if (cached) {
       const plugins = await verifyPlugins(cached.rec.plugins, fingerprint, { allowExpired: false });
-      applyV2(cached.payload, cached.rec, plugins);
-      logger.info(`License valid (cached, signed) — Plan: ${cached.payload.plan}`);
-      refreshLicenseInBackground(fingerprint);
-      return 'applied';
+      // a token for an older main version: ask the licence server (an upgrade may be bought meanwhile)
+      if (applyV2(cached.payload, cached.rec, plugins)) {
+        logger.info(`License valid (cached, signed) — Plan: ${cached.payload.plan}`);
+        refreshLicenseInBackground(fingerprint);
+        return 'applied';
+      }
     }
   }
 
@@ -376,8 +450,12 @@ async function validateV2(fingerprint, { useCache }) {
       v2.saveState(config.license.key, { token: res.data.token, plugins: res.data.plugins, now, ...rec });
       v2.markActive();
       const plugins = await verifyPlugins(res.data.plugins, fingerprint, { allowExpired: false });
-      applyV2(r.payload, rec, plugins);
       noteCheck({ ok: true });
+      if (!applyV2(r.payload, rec, plugins)) {
+        fallbackReason = 'upgrade';
+        logUpgradeRequired();
+        return 'community';
+      }
       logger.info(`License valid (online, signed) — Plan: ${r.payload.plan}`);
       return 'applied';
     }
@@ -403,13 +481,23 @@ async function validateV2(fingerprint, { useCache }) {
   if (grace) {
     const plugins = await verifyPlugins(grace.rec.plugins, fingerprint, { allowExpired: true });
     const wasOffline = cachedLicenseInfo?.verification === 'signed_offline';
-    applyV2(grace.payload, grace.rec, plugins, { offline: true });
+    const offline = {
+      last_ok_at: grace.rec.last_ok_at ? new Date(Number(grace.rec.last_ok_at)).toISOString() : null,
+      fallback_at: new Date(graceEnd(grace.payload, grace.rec)).toISOString(),
+    };
+    if (!applyV2(grace.payload, grace.rec, plugins, { mode: 'signed_offline', offline })) {
+      fallbackReason = 'upgrade';
+      logUpgradeRequired();
+      return 'community';
+    }
     // once per outage, not on every retry
-    if (first || !wasOffline) logger.warn(`License server unreachable (${res.reason || res.status}), using cached signed token — Plan: ${grace.payload.plan}`);
+    if (first || !wasOffline) logger.warn(`License server unreachable (${res.reason || res.status}), using cached signed token until ${offline.fallback_at} — Plan: ${grace.payload.plan}`);
     return 'applied';
   }
   if (first || cachedPlan !== 'community') logger.warn(`License server unreachable (${res.reason || res.status}) and offline grace exhausted — running in Community mode`);
   pluginEntitlements = [];
+  // a stored token that is merely past its grace (not one of another key / a lapsed licence) → offline
+  fallbackReason = v2.loadState(config.license.key) ? 'offline' : fallbackReason;
   return 'community';
 }
 
@@ -435,9 +523,14 @@ async function validateLicense() {
     }
   }
 
+  // End of life: the file at GC_LICENSE_EOL_FILE, else an imported one (verified again)
+  await eol.load();
+
   // 1. No license key → Unlicensed community mode
   if (!config.license.key) {
     unlicensed = true;
+    fallbackReason = null;
+    upgradeRequired = null;
     setCommunityMode();
     logger.info('No license key configured — running in unlicensed Community mode');
     logger.info('Register at https://callmetechie.de for a free Community license');
@@ -452,14 +545,34 @@ async function validateLicense() {
 
   // 2. v2 (signed) — authoritative once it has succeeded on this install
   const outcome = await validateV2(fingerprint, { useCache: true });
-  if (outcome === 'applied') return getLicenseInfo();
-  if (outcome === 'community') {
+  if (outcome === 'applied') {
+    // what an earlier fallback switched off comes back on (within the limits)
+    await enforceLimitsInternal({ restoreOnly: true });
+  } else if (outcome === 'community') {
     setCommunityMode();
     await enforceLimitsInternal();
-    return getLicenseInfo();
+  } else {
+    await validateLicenseV1(fingerprint);
+    if (cachedPlan !== 'community') await enforceLimitsInternal({ restoreOnly: true });
   }
+  // a published EOL file is looked for (throttled to twice a day, in the background) and kept
+  if (needsEol()) fetchEolInBackground();
+  return getLicenseInfo();
+}
 
-  return validateLicenseV1(fingerprint);
+/** A licence key and no EOL in force: look for a published one (throttled in licenseEol). */
+function needsEol() {
+  return !!config.license.key && !eol.isActive();
+}
+
+/**
+ * Look for a published EOL file without waiting for it. Started only after a
+ * validation is complete; a file that newly applies re-validates once.
+ */
+function fetchEolInBackground({ force = false } = {}) {
+  return eol.maybeFetch({ force })
+    .then((found) => (found ? refreshLicenseInBackground() : null))
+    .catch(() => { /* next time */ });
 }
 
 // Legacy v1 path (HS256), used only while v2 is not deployed.
@@ -553,6 +666,8 @@ function applyLicense(data, verification = 'legacy') {
   cachedFeatures = { ...COMMUNITY_FALLBACK, ...planDefaults(data.plan, carried), ...carried };
   tokenFeatureKeys = new Set(Object.keys(carried));
   cachedLicenseInfo = {
+    // offline grace: { last_ok_at, fallback_at } (v2 'signed_offline' only)
+    offline: data.offline || null,
     expires_at: data.expires_at || null,
     updates_until: data.updates_until || null,
     activations: data.activations || null,
@@ -584,6 +699,7 @@ async function refreshLicenseInBackground(fingerprint) {
     if (previousPlan && previousPlan !== cachedPlan) {
       await enforceLimitsInternal();
     }
+    if (needsEol()) fetchEolInBackground();
   } catch {
     // Silent failure — keep using cached data
   }
@@ -671,8 +787,60 @@ function resetChecks() {
 }
 
 // ─── Enforce Limits (Soft-Lock) ─────────────────
+//
+// More peers / routes / pools enabled than the licence allows (licence
+// removed, revoked, expired, or the licence server unreachable beyond the
+// offline grace): the NEWEST ones over the limit are switched off — never
+// deleted, their configuration stays — and marked `license_disabled`. As soon
+// as a licence allows more again, the marked ones come back on, oldest first,
+// up to the limit. Switching one on by hand clears the mark (SQL trigger of
+// migration 162), so nothing an administrator turned off later comes back.
 
-async function enforceLimitsInternal() {
+const LIMIT_KEYS = [
+  { feature: 'vpn_peers', table: 'peers', type: 'peer', nameCol: 'name' },
+  { feature: 'http_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "(route_type = 'http' OR route_type IS NULL)" },
+  { feature: 'l4_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "route_type = 'l4'" },
+];
+
+async function syncAfterEnforcement(changed, removedPeerKeys) {
+  if (changed.peer) {
+    try {
+      await require('./peers').rewriteWgConfig();
+      for (const key of removedPeerKeys) {
+        try { await require('./wireguard').removePeer(key); } catch { /* not on the running interface */ }
+      }
+    } catch (err) {
+      logger.warn('WireGuard sync after license enforcement failed: ' + err.message);
+    }
+  }
+  if (changed.route) {
+    try {
+      await require('./routes').syncToCaddy();
+    } catch (err) {
+      logger.warn('Caddy sync after license enforcement failed: ' + err.message);
+    }
+  }
+  if (changed.peer || changed.route) {
+    try { require('./dns').scheduleRebuild(); } catch { /* best effort */ }
+  }
+}
+
+async function mailLimitAlert(text) {
+  try {
+    const settings = require('./settings');
+    if (settings.get('email_alerts_enabled') !== 'true') return;
+    const alertEmail = settings.get('alert_email');
+    if (alertEmail) await require('./email').send(alertEmail, 'GateControl License Limit', text);
+  } catch {
+    // Email alert is best-effort
+  }
+}
+
+/**
+ * @param {{restoreOnly?: boolean}} [opts]  restoreOnly: only switch marked
+ *   entries back on (a licence was just applied), never switch anything off
+ */
+async function enforceLimitsInternal({ restoreOnly = false } = {}) {
   if (enforcingLimits) return;
   enforcingLimits = true;
 
@@ -680,107 +848,127 @@ async function enforceLimitsInternal() {
     const { getDb } = require('../db/connection');
     const db = getDb();
     const activity = require('./activity');
+    const changed = { peer: false, route: false };
+    const removedPeerKeys = [];
 
-    const limitKeys = [
-      { feature: 'vpn_peers', table: 'peers', type: 'peer', nameCol: 'name' },
-      { feature: 'http_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "(route_type = 'http' OR route_type IS NULL)" },
-      { feature: 'l4_routes', table: 'routes', type: 'route', nameCol: 'domain', where: "route_type = 'l4'" },
-    ];
-
-    for (const { feature, table, type, nameCol, where } of limitKeys) {
+    for (const { feature, table, type, nameCol, where } of LIMIT_KEYS) {
       const limit = getFeatureLimit(feature);
-      if (limit === -1) continue;
+      const cond = where ? ` AND ${where}` : '';
+      const count = db.prepare(`SELECT COUNT(*) as count FROM ${table} WHERE enabled = 1${cond}`).get().count;
+      const keyCol = type === 'peer' ? ', public_key' : '';
 
-      const whereClause = where ? `WHERE enabled = 1 AND ${where}` : 'WHERE enabled = 1';
-      const count = db.prepare(`SELECT COUNT(*) as count FROM ${table} ${whereClause}`).get().count;
-
-      if (count > limit) {
+      if (!restoreOnly && limit !== -1 && count > limit) {
         const excess = count - limit;
         const rows = db.prepare(
-          `SELECT id, ${nameCol} as label FROM ${table} ${whereClause} ORDER BY created_at ASC LIMIT ?`
+          `SELECT id, ${nameCol} as label${keyCol} FROM ${table} WHERE enabled = 1${cond} ORDER BY created_at DESC, id DESC LIMIT ?`
         ).all(excess);
-
+        const off = db.prepare(`UPDATE ${table} SET enabled = 0, license_disabled = 1, updated_at = datetime('now') WHERE id = ?`);
         for (const row of rows) {
-          db.prepare(`UPDATE ${table} SET enabled = 0, updated_at = datetime('now') WHERE id = ?`).run(row.id);
-          activity.log(`${type}_license_disabled`, `${type === 'peer' ? 'Peer' : 'Route'} "${row.label}" disabled — license limit (${limit})`, { severity: 'warning' });
+          off.run(row.id);
+          if (row.public_key) removedPeerKeys.push(row.public_key);
+          activity.log(`${type}_license_disabled`,
+            `${type === 'peer' ? 'Peer' : 'Route'} "${row.label}" disabled — license limit (${limit}); it is switched on again when the licence allows it`,
+            { severity: 'warning', details: { id: row.id, feature, limit } });
         }
-
-        logger.warn(`License limit: disabled ${excess} ${type}(s) for ${feature} (limit: ${limit})`);
-
-        // Sync to WireGuard/Caddy so disabled entries are actually removed
-        if (type === 'peer') {
-          try {
-            const wireguard = require('./wireguard');
-            await wireguard.syncConfig();
-          } catch (err) {
-            logger.warn('WireGuard sync after license enforcement failed: ' + err.message);
-          }
-        } else {
-          try {
-            const routes = require('./routes');
-            await routes.syncToCaddy();
-          } catch (err) {
-            logger.warn('Caddy sync after license enforcement failed: ' + err.message);
-          }
-        }
-
-        // Send email alert if configured
-        try {
-          const email = require('./email');
-          const settings = require('./settings');
-          if (settings.get('email_alerts_enabled') === 'true') {
-            const alertEmail = settings.get('alert_email');
-            if (alertEmail) {
-              await email.send(alertEmail, 'GateControl License Limit',
-                `${excess} ${type}(s) were disabled because the ${feature} limit (${limit}) was exceeded after a license change.`);
-            }
-          }
-        } catch {
-          // Email alert is best-effort
-        }
+        changed[type] = true;
+        logger.warn(`License limit: disabled ${excess} ${type}(s) for ${feature} (limit: ${limit}), newest first — configuration kept`);
+        await mailLimitAlert(`${excess} ${type}(s) were disabled because the ${feature} limit (${limit}) was exceeded after a license change. `
+          + 'They are kept and switched on again automatically as soon as a valid licence allows it.');
+        continue;
       }
+
+      // room for marked entries: -1 = no limit (SQLite LIMIT -1)
+      const room = limit === -1 ? -1 : limit - count;
+      if (room === 0 || room < -1) continue;
+      const back = db.prepare(
+        `SELECT id, ${nameCol} as label FROM ${table} WHERE enabled = 0 AND license_disabled = 1${cond} ORDER BY created_at ASC, id ASC LIMIT ?`
+      ).all(room);
+      if (back.length === 0) continue;
+      const on = db.prepare(`UPDATE ${table} SET enabled = 1, license_disabled = 0, updated_at = datetime('now') WHERE id = ?`);
+      for (const row of back) {
+        on.run(row.id);
+        activity.log(`${type}_license_restored`,
+          `${type === 'peer' ? 'Peer' : 'Route'} "${row.label}" enabled again — the licence allows it`,
+          { severity: 'info', details: { id: row.id, feature } });
+      }
+      changed[type] = true;
+      logger.info(`License: ${back.length} ${type}(s) for ${feature} switched on again`);
     }
+
+    await syncAfterEnforcement(changed, removedPeerKeys);
+
     // ─── Pool enforcement ────────────────────────────
-    if (cachedFeatures.gateway_pools === false) {
-      const result = db.prepare("UPDATE gateway_pools SET enabled = 0 WHERE enabled = 1").run();
-      if (result.changes > 0) {
-        activity.log(
-          'pool_disabled_by_license_enforcement',
-          `${result.changes} pool(s) disabled — gateway_pools feature revoked`,
-          { source: 'system', severity: 'warn', details: { count: result.changes } },
-        );
+    let poolsChanged = false;
+    if (!restoreOnly) {
+      if (cachedFeatures.gateway_pools === false) {
+        const result = db.prepare("UPDATE gateway_pools SET enabled = 0, license_disabled = 1 WHERE enabled = 1").run();
+        if (result.changes > 0) {
+          poolsChanged = true;
+          activity.log(
+            'pool_disabled_by_license_enforcement',
+            `${result.changes} pool(s) disabled — gateway_pools feature revoked`,
+            { source: 'system', severity: 'warn', details: { count: result.changes } },
+          );
+        }
+      } else if (cachedFeatures.gateway_pool_load_balancing === false) {
+        const result = db.prepare("UPDATE gateway_pools SET enabled = 0, license_disabled = 1 WHERE mode = 'load_balancing' AND enabled = 1").run();
+        if (result.changes > 0) {
+          poolsChanged = true;
+          activity.log(
+            'pool_disabled_by_license_enforcement',
+            `${result.changes} LB pool(s) disabled — gateway_pool_load_balancing revoked`,
+            { source: 'system', severity: 'warn', details: { count: result.changes } },
+          );
+        }
       }
-    } else if (cachedFeatures.gateway_pool_load_balancing === false) {
-      const result = db.prepare("UPDATE gateway_pools SET enabled = 0 WHERE mode = 'load_balancing' AND enabled = 1").run();
-      if (result.changes > 0) {
-        activity.log(
-          'pool_disabled_by_license_enforcement',
-          `${result.changes} LB pool(s) disabled — gateway_pool_load_balancing revoked`,
-          { source: 'system', severity: 'warn', details: { count: result.changes } },
-        );
+
+      const poolsLimit = cachedFeatures.gateway_pools_limit ?? 0;
+      if (poolsLimit > 0) {
+        const overflow = db.prepare(`
+          SELECT id FROM gateway_pools WHERE enabled = 1 ORDER BY created_at DESC LIMIT -1 OFFSET ?
+        `).all(poolsLimit);
+        if (overflow.length > 0) {
+          poolsChanged = true;
+          const ids = overflow.map(r => r.id);
+          db.prepare(`UPDATE gateway_pools SET enabled = 0, license_disabled = 1 WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+          activity.log(
+            'pool_disabled_by_license_enforcement',
+            `${overflow.length} pool(s) over limit (${poolsLimit}) disabled`,
+            { source: 'system', severity: 'warn', details: { ids, limit: poolsLimit } },
+          );
+        }
       }
     }
 
-    const poolsLimit = cachedFeatures.gateway_pools_limit ?? 0;
-    if (poolsLimit > 0) {
-      const overflow = db.prepare(`
-        SELECT id FROM gateway_pools WHERE enabled = 1 ORDER BY created_at DESC LIMIT -1 OFFSET ?
-      `).all(poolsLimit);
-      if (overflow.length > 0) {
-        const ids = overflow.map(r => r.id);
-        db.prepare(`UPDATE gateway_pools SET enabled = 0 WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
-        activity.log(
-          'pool_disabled_by_license_enforcement',
-          `${overflow.length} pool(s) over limit (${poolsLimit}) disabled`,
-          { source: 'system', severity: 'warn', details: { ids, limit: poolsLimit } },
-        );
+    // marked pools come back when the licence has pools again (load balancing only with its feature)
+    if (cachedFeatures.gateway_pools === true) {
+      const poolsLimit = cachedFeatures.gateway_pools_limit ?? 0;
+      const enabledPools = db.prepare('SELECT COUNT(*) AS c FROM gateway_pools WHERE enabled = 1').get().c;
+      const room = poolsLimit > 0 ? poolsLimit - enabledPools : -1;
+      if (room > 0 || room === -1) {
+        const lbCond = cachedFeatures.gateway_pool_load_balancing === false ? " AND mode != 'load_balancing'" : '';
+        const back = db.prepare(
+          `SELECT id FROM gateway_pools WHERE enabled = 0 AND license_disabled = 1${lbCond} ORDER BY created_at ASC, id ASC LIMIT ?`
+        ).all(room);
+        if (back.length > 0) {
+          poolsChanged = true;
+          const ids = back.map(r => r.id);
+          db.prepare(`UPDATE gateway_pools SET enabled = 1, license_disabled = 0 WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+          activity.log(
+            'pool_license_restored',
+            `${ids.length} pool(s) enabled again — the licence allows it`,
+            { source: 'system', severity: 'info', details: { ids } },
+          );
+        }
       }
     }
 
-    try {
-      await require('./caddyConfig').syncToCaddy();
-    } catch (err) {
-      logger.warn({ err: err.message }, 'caddy re-render after license enforcement failed');
+    if (!restoreOnly || poolsChanged || changed.route) {
+      try {
+        await require('./caddyConfig').syncToCaddy();
+      } catch (err) {
+        logger.warn({ err: err.message }, 'caddy re-render after license enforcement failed');
+      }
     }
   } catch (err) {
     // DB not available (tests, first boot) or other error — skip enforcement
@@ -788,6 +976,21 @@ async function enforceLimitsInternal() {
   } finally {
     enforcingLimits = false;
   }
+}
+
+/**
+ * Entries the licence fallback switched off and that wait to come back.
+ * @returns {{peers:number, routes:number, pools:number}}
+ */
+function licenseDisabledCounts() {
+  const out = { peers: 0, routes: 0, pools: 0 };
+  try {
+    const db = require('../db/connection').getDb();
+    out.peers = db.prepare('SELECT COUNT(*) AS c FROM peers WHERE enabled = 0 AND license_disabled = 1').get().c;
+    out.routes = db.prepare('SELECT COUNT(*) AS c FROM routes WHERE enabled = 0 AND license_disabled = 1').get().c;
+    out.pools = db.prepare('SELECT COUNT(*) AS c FROM gateway_pools WHERE enabled = 0 AND license_disabled = 1').get().c;
+  } catch { /* DB not ready */ }
+  return out;
 }
 
 // ─── Feature Checks ─────────────────────────────
@@ -890,9 +1093,26 @@ function getLicenseInfo() {
     // "timeout", "ENOTFOUND"), never a key or response content
     lastCheck: lastCheck ? { ...lastCheck } : null,
     nextCheckAt: nextCheckAt ? new Date(nextCheckAt).toISOString() : null,
+    // offline grace ('signed_offline'): last success, when the fallback to
+    // Community comes, and the whole days until then
+    offline: offlineInfo(),
+    // why a licence key runs in Community mode: 'offline' | 'revoked' | 'upgrade' | null
+    fallback_reason: config.license.key && cachedPlan === 'community' ? fallbackReason : null,
+    // { licensed, installed } — the token is for an older main version ("Upgrade nötig")
+    upgrade_required: upgradeRequired ? { ...upgradeRequired } : null,
+    major: ownMajor,
+    // end of life (licenseEol.js): { issued_at, scope, message, source, … } or null
+    eol: eol.state(),
     locked: lockedFeatures(),
     source: featureSources(),
   };
+}
+
+function offlineInfo(now = Date.now()) {
+  const o = cachedLicenseInfo && cachedLicenseInfo.verification === 'signed_offline' ? cachedLicenseInfo.offline : null;
+  if (!o || !o.fallback_at) return null;
+  const ms = Date.parse(o.fallback_at) - now;
+  return { last_ok_at: o.last_ok_at || null, fallback_at: o.fallback_at, days_left: Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000))) };
 }
 
 function isUnlicensedMode() {
@@ -938,6 +1158,8 @@ async function removeLicense() {
   resetChecks();
   setCommunityMode();
   unlicensed = true;
+  fallbackReason = null;
+  upgradeRequired = null;
 
   // Clear runtime config
   config.license.key = '';
@@ -988,7 +1210,7 @@ module.exports = {
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
   _applyLicenseForTest,
-  _resetV2ForTest: () => { v2._resetForTest(); pluginEntitlements = []; stopLicenseRefresh(); resetChecks(); },
+  _resetV2ForTest: () => { v2._resetForTest(); eol._resetForTest(); pluginEntitlements = []; upgradeRequired = null; fallbackReason = null; stopLicenseRefresh(); resetChecks(); },
   // Test seam: plugin entitlements as a verified v2 validation would leave them.
   _setPluginEntitlementsForTest: (list) => { if (process.env.NODE_ENV === 'test') pluginEntitlements = Array.isArray(list) ? list : []; },
   deactivateLicense,
@@ -999,4 +1221,8 @@ module.exports = {
   lockedFeatures,
   featureSources,
   planDefaults,
+  licenseDisabledCounts,
+  OWN_MAJOR,
+  fetchEolInBackground,
+  _setOwnMajorForTest: (n) => { if (process.env.NODE_ENV === 'test') ownMajor = n == null ? OWN_MAJOR : n; },
 };

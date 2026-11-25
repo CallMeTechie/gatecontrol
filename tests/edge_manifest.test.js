@@ -206,11 +206,11 @@ describe('edge.optionalCapabilities', () => {
 
 describe('migration 161 (edge_optional_capabilities)', () => {
   before(() => { require('../src/db/migrations').runMigrations(); });
-  it('is the newest migration, has a unique version and adds the two columns', () => {
+  it('exists, has a unique version and adds the two columns', () => {
     const list = require('../src/db/migrationList').migrations;
     const versions = list.map((x) => x.version);
     assert.equal(new Set(versions).size, versions.length, 'every version once');
-    assert.equal(Math.max(...versions), 161, 'the newest migration');
+    assert.ok(Math.max(...versions) >= 161, 'newest migration at least 161');
     assert.equal(list.find((x) => x.version === 161).name, 'edge_optional_capabilities');
     const cols = require('../src/db/connection').getDb().prepare('PRAGMA table_info(edge_assignments)').all().map((c) => c.name);
     assert.ok(cols.includes('opt_caps_list') && cols.includes('opt_requests'), cols.join());

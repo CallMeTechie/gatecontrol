@@ -1,6 +1,6 @@
 'use strict';
 
-const { getPlan, getFeatures, hasFeature, getFeatureLimit, isWithinLimit, isUnlicensedMode, getLicenseInfo, featureSources } = require('../services/license');
+const { getPlan, getFeatures, hasFeature, getFeatureLimit, isWithinLimit, isUnlicensedMode, getLicenseInfo, featureSources, licenseDisabledCounts } = require('../services/license');
 
 function injectLicense(req, res, next) {
   const info = getLicenseInfo();
@@ -23,6 +23,14 @@ function injectLicense(req, res, next) {
     nextCheckAt: info.nextCheckAt || null,
     activations: info.activations || null,
     max_activations: info.max_activations || null,
+    // offline grace { last_ok_at, fallback_at, days_left }, why a key runs in
+    // Community mode, an upgrade that is needed, the end of life
+    offline: info.offline || null,
+    fallback_reason: info.fallback_reason || null,
+    upgrade_required: info.upgrade_required || null,
+    eol: info.eol || null,
+    // entries the licence fallback switched off (three COUNTs — only when a page reads it)
+    get disabled() { return licenseDisabledCounts(); },
     hasFeature,
     isWithinLimit,
   };

@@ -5947,7 +5947,12 @@ pages, portal tab and sections). Only for those plugins' frames
   it never decides the state (the covering entitlement does) and the UI says
   that the key is not needed. A key entered for the plugin is added to the plugin keys
   of the GateControl licence (`setPluginKeys`) and a licence refresh runs. The
-  14-day offline grace of the GateControl licence applies.
+  14-day offline grace of the GateControl licence applies (tokens carry a
+  7-day `exp`, the grace counts from the last successful validation). With a
+  signed end-of-life file in force (docs/feature-license-eol.md) a plugin
+  licence without an end (`lat` 0, e.g. `source: lifetime`) stays valid
+  without the licence server; with scope `all` a subscription runs until its
+  `lat`.
   The entitlements are those of the last validation, which runs once a day; a
   validation that failed because the licence server could not be reached
   (network error, timeout, 5xx, 429) is retried after 5 min, 15 min, 1 h, then

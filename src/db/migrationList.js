@@ -4413,6 +4413,31 @@ const migrations = [
       ALTER TABLE edge_assignments ADD COLUMN opt_requests TEXT;`,
     detect: (db) => hasColumn(db, 'edge_assignments', 'opt_requests'),
   },
+  {
+    version: 162,
+    name: 'license_disabled_marks',
+    // The licence fallback (services/license.js enforceLimitsInternal) switches
+    // the newest peers / routes / gateway pools over the limit off and marks
+    // them license_disabled = 1; they come back on by themselves once a
+    // licence allows them again. Switching one on by any other way (toggle,
+    // edit, restore) clears the mark through the triggers, so an entry an
+    // administrator turns off later is never switched on by the licence.
+    sql: `
+      ALTER TABLE peers ADD COLUMN license_disabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE routes ADD COLUMN license_disabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE gateway_pools ADD COLUMN license_disabled INTEGER NOT NULL DEFAULT 0;
+      CREATE TRIGGER IF NOT EXISTS peers_license_mark_clear AFTER UPDATE OF enabled ON peers
+        WHEN NEW.enabled = 1 AND NEW.license_disabled = 1
+        BEGIN UPDATE peers SET license_disabled = 0 WHERE id = NEW.id; END;
+      CREATE TRIGGER IF NOT EXISTS routes_license_mark_clear AFTER UPDATE OF enabled ON routes
+        WHEN NEW.enabled = 1 AND NEW.license_disabled = 1
+        BEGIN UPDATE routes SET license_disabled = 0 WHERE id = NEW.id; END;
+      CREATE TRIGGER IF NOT EXISTS gateway_pools_license_mark_clear AFTER UPDATE OF enabled ON gateway_pools
+        WHEN NEW.enabled = 1 AND NEW.license_disabled = 1
+        BEGIN UPDATE gateway_pools SET license_disabled = 0 WHERE id = NEW.id; END;`,
+    detect: (db) => hasColumn(db, 'peers', 'license_disabled') && hasColumn(db, 'routes', 'license_disabled')
+      && hasColumn(db, 'gateway_pools', 'license_disabled'),
+  },
 ];
 
 module.exports = { migrations };

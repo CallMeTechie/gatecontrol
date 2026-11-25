@@ -1271,7 +1271,21 @@ chmod +x update.sh</pre>
       {{- t('st.lic.last_check_failed', { reason: license.lastCheck.reason, at: lcAt }) }}{% if lcNext %} {{ t('st.lic.next_check', { at: lcNext }) }}{% endif -%}
     </span>
     {%- endif %}
+    {%- if license.offline and license.offline.fallback_at %}
+    {%- set fbParts = (license.offline.fallback_at | string).split('T')[0].split('-') %}
+    {%- set fbDate = ((fbParts[2] + '.' + fbParts[1] + '.' + fbParts[0]) if language == 'de' else fbParts.join('-')) if fbParts.length == 3 else '' %}
+    <span class="st-lic-offline" id="st-lic-offline" data-fallback-at="{{ license.offline.fallback_at }}" data-days-left="{{ license.offline.days_left }}">{{ t('st.lic.offline_until', { date: fbDate }) }}</span>
+    {%- endif %}
   </div>
+  {%- endif %}
+  {%- if license.upgrade_required %}
+  <div class="stx-box" data-tone="crit" id="st-lic-upgrade">{{ t('st.lic.upgrade_required', { licensed: license.upgrade_required.licensed, installed: license.upgrade_required.installed }) }}</div>
+  {%- elif license.fallback_reason == 'offline' or license.fallback_reason == 'revoked' %}
+  <div class="stx-box" data-tone="crit" id="st-lic-fallback" data-reason="{{ license.fallback_reason }}">{{ t('st.lic.fallback_' + license.fallback_reason) }}</div>
+  {%- endif %}
+  {%- set licOff = license.disabled %}
+  {%- if licOff and (licOff.peers + licOff.routes + licOff.pools) > 0 %}
+  <div class="stx-box" data-tone="warn" id="st-lic-disabled">{{ t('st.lic.disabled_waiting', { peers: licOff.peers, routes: licOff.routes, pools: licOff.pools }) }}</div>
   {%- endif %}
   {%- if not license.license_key_masked %}
   <section class="pgx-card stx-card" aria-labelledby="st-c-lickey">
@@ -1316,6 +1330,33 @@ chmod +x update.sh</pre>
       </ul>
     </details>
     {%- endif %}
+  </section>
+  <section class="pgx-card stx-card" aria-labelledby="st-c-eol" id="st-lic-eol" data-active="{{ '1' if license.eol else '0' }}">
+    {% call cardHead('st-c-eol', t('st.lic.eol_title'), t('st.lic.eol_desc')) %}{% endcall %}
+    {%- if license.eol %}
+    {%- set eolParts = (license.eol.issued_at | string).split('T')[0].split('-') %}
+    {%- set eolDate = ((eolParts[2] + '.' + eolParts[1] + '.' + eolParts[0]) if language == 'de' else eolParts.join('-')) if eolParts.length == 3 else '' %}
+    {%- set eolMsg = (license.eol.message.de if language == 'de' else license.eol.message.en) if license.eol.message else '' %}
+    <div class="stx-box" data-tone="warn" id="st-lic-eol-state" data-scope="{{ license.eol.scope }}" data-source="{{ license.eol.source }}">
+      <b>{{ t('st.lic.eol_active') }}</b>
+      <span>{{ t('st.lic.eol_scope_' + license.eol.scope) }}</span>
+      {%- if eolMsg %}<span class="st-lic-eol-msg" id="st-lic-eol-msg">{{ eolMsg }}</span>{% endif %}
+      <span class="st-hint">{{ t('st.lic.eol_issued', { date: eolDate }) }} · {{ t('st.lic.eol_source_' + license.eol.source) }}</span>
+    </div>
+    {%- if license.eol.source != 'file' %}
+    {% call actionRow(t('st.lic.eol_title'), t('st.lic.eol_source_' + license.eol.source)) %}<button type="button" class="pgx-btn pgx-btn-sm" id="st-lic-eol-remove">{{ t('st.lic.eol_remove') }}</button>{% endcall %}
+    {%- endif %}
+    {%- else %}
+    <p class="st-note" id="st-lic-eol-none">{{ t('st.lic.eol_none') }}</p>
+    {%- endif %}
+    <div class="st-row">
+      <div class="st-row-text"><span class="st-label" id="st-lic-eol-label">{{ t('st.lic.eol_upload_label') }}</span><span class="st-hint">{{ t('st.lic.eol_upload_hint') }}</span></div>
+      <div class="st-row-ctl">
+        <input type="file" id="st-lic-eol-file" accept=".json,application/json" class="st-sr" aria-labelledby="st-lic-eol-label">
+        <button type="button" class="pgx-btn" id="st-lic-eol-pick">{{ t('st.lic.eol_pick') }}</button>
+      </div>
+    </div>
+    <p class="stx-msg" id="st-lic-eol-msgline" role="status"></p>
   </section>
 </section>
 
