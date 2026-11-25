@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.325.0] — 2026-11-25
+
+### Features
+- Zugriffsziele nur an einer Stelle – Plugins mit assignTargets verwalten sie auf ihrer Seite (#588)
+
+---
+
 ## [1.324.0] — 2026-11-25
 
 ### Features
