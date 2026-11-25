@@ -555,14 +555,14 @@ async function validateLicense() {
     await validateLicenseV1(fingerprint);
     if (cachedPlan !== 'community') await enforceLimitsInternal({ restoreOnly: true });
   }
-  // offline or in Community with a key: a published EOL file is looked for (throttled, in the background)
+  // a published EOL file is looked for (throttled to twice a day, in the background) and kept
   if (needsEol()) fetchEolInBackground();
   return getLicenseInfo();
 }
 
-/** A licence key that is not confirmed online right now, and no EOL in force. */
+/** A licence key and no EOL in force: look for a published one (throttled in licenseEol). */
 function needsEol() {
-  return !!config.license.key && !eol.isActive() && cachedLicenseInfo?.verification !== 'signed';
+  return !!config.license.key && !eol.isActive();
 }
 
 /**

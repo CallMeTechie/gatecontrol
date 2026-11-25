@@ -421,7 +421,7 @@ einschaltest und später ausschaltest, lässt GateControl aus.
 
 Wird GateControl eines Tages eingestellt, stellt der Anbieter eine signierte
 Datei `eol.json` bereit (Kundenkonto, Website, GitHub-Release). GateControl
-holt sie selbst ab, sobald der Lizenzserver nicht mehr antwortet. Du kannst sie
+schaut mit der täglichen Lizenzprüfung selbst nach und speichert sie. Du kannst sie
 auch unter „Einstellungen“ → „Lizenz“ → „Produkt eingestellt (End of Life)“
 hochladen oder als `/data/eol.json` ablegen (Pfad änderbar mit
 `GC_LICENSE_EOL_FILE`). Angenommen wird nur eine vom Lizenzserver signierte

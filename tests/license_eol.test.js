@@ -24,7 +24,7 @@ const eol = require('../src/services/licenseEol');
 
 const V2_URL = 'https://lic.test/api/v2/licenses';
 const JWKS_URL = 'https://lic.test/api/licenses/keys';
-const EOL_URL = 'https://lic.test/api/v2/licenses/eol';
+const EOL_URL = 'https://lic.test/api/eol/gatecontrol';
 const EOL_URL2 = 'https://mirror.example.test/eol.json';
 const DAY = 86400;
 
@@ -112,6 +112,20 @@ describe('EOL file verification', () => {
     assert.deepEqual(r.eol.message, { de: 'GateControl wird eingestellt.', en: 'GateControl is discontinued.' });
     assert.equal((await eol.verify(signEd(eolClaims({ scope: 'all', message: 'Ende' })))).eol.message.en, 'Ende');
     assert.equal((await eol.verify('﻿' + signEd(eolClaims({ message: undefined })) + '\n')).ok, true);
+  });
+
+  it('accepts the website format (format, typ "eol", header typ gc-eol+jwt, kid, jti)', async () => {
+    const claims = { iss: 'callmetechie.de', typ: 'eol', v: 1, kid: 'key-a', jti: 'eol-1', product: 'gatecontrol', scope: 'lifetime',
+      iat: now() - 60, message: { de: 'Eingestellt.', en: 'Discontinued.' } };
+    const file = JSON.stringify({ format: 'gatecontrol-eol', v: 1, product: 'gatecontrol', token: signEd(claims, KEY_A, { typ: 'gc-eol+jwt' }) });
+    const r = await eol.verify(file);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.eol.scope, 'lifetime');
+    assert.equal((await eol.verify(signEd({ ...claims, kid: 'key-b' }, KEY_A, { typ: 'gc-eol+jwt' }))).reason, 'kid', 'payload kid must match');
+    assert.equal((await eol.verify(signEd(claims, KEY_A, { typ: 'other' }))).reason, 'typ');
+    assert.equal((await eol.verify(signEd({ ...claims, kind: 'app' }, KEY_A))).reason, 'kind', 'never an app token');
+    // and as a licence token it is worthless
+    assert.equal((await v2.verifyToken(signEd({ ...claims, fp: FP, exp: now() + DAY }), { fingerprint: FP, kind: 'app' })).reason, 'kind');
   });
 
   it('a self-made file is never accepted', async () => {

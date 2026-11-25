@@ -22,13 +22,15 @@
 //   2. a file imported in Einstellungen → Lizenz, or fetched automatically
 //      (stored in settings `license.eol`, verified again at every start)
 // Fetched from config.license.eolUrl (GC_LICENSE_EOL_URL, comma separated)
-// at most every FETCH_GAP_MS while a licence key is configured; 404 = none
-// published. The request carries nothing about the install.
+// at most every FETCH_GAP_MS (with the daily licence check) while a licence
+// key is configured and no EOL is in force; 404 = none published. The
+// request carries nothing about the install.
 //
-// The format (wrapper JSON or the bare token):
-//   { "v": 1, "product": "gatecontrol", "token": "<JWS EdDSA>" }
-//   token header  { "alg": "EdDSA", "kid": "<kid of the JWKS>", "typ": "JWT" }
-//   token payload { "iss": "callmetechie.de", "kind": "eol", "v": 1,
+// The format (wrapper JSON or the bare token; website docs/api/eol-format.md):
+//   { "format": "gatecontrol-eol", "v": 1, "product": "gatecontrol", "token": "<JWS EdDSA>" }
+//   token header  { "alg": "EdDSA", "kid": "<kid of the JWKS>", "typ": "gc-eol+jwt" }
+//   token payload { "iss": "callmetechie.de", "typ": "eol" (or "kind": "eol"), "v": 1,
+//                   "kid": "<= header kid>" (optional), "jti": "…" (ignored),
 //                   "product": "gatecontrol", "scope": "lifetime"|"all",
 //                   "iat": <unix seconds>,
 //                   "message": "…" | { "de": "…", "en": "…" } (optional) }
@@ -101,7 +103,10 @@ async function verify(text) {
   if (!v.ok) return { ok: false, reason: v.reason };
   const p = v.payload;
   if (p.iss !== v2.ISSUER) return { ok: false, reason: 'iss' };
-  if (p.kind !== KIND) return { ok: false, reason: 'kind' };
+  // `kind: "eol"` or — the website's format — `typ: "eol"` without a kind; never an app/plugin token
+  if (!(p.kind === KIND || (p.kind === undefined && p.typ === KIND))) return { ok: false, reason: 'kind' };
+  if (v.header.typ !== undefined && v.header.typ !== 'JWT' && v.header.typ !== 'gc-eol+jwt') return { ok: false, reason: 'typ' };
+  if (p.kid !== undefined && p.kid !== v.header.kid) return { ok: false, reason: 'kid' };
   if (p.v !== VERSION) return { ok: false, reason: 'version' };
   if (p.product !== PRODUCT) return { ok: false, reason: 'product' };
   if (!SCOPES.has(p.scope)) return { ok: false, reason: 'scope' };

@@ -60,15 +60,17 @@ Fingerabdruck und nichts über eine Installation.
 Datei `eol.json` (UTF-8, höchstens 32 KiB), Hülle:
 
 ```json
-{ "v": 1, "product": "gatecontrol", "token": "<JWS>" }
+{ "format": "gatecontrol-eol", "v": 1, "product": "gatecontrol", "token": "<JWS>" }
 ```
+
+(Format der Website, dort `docs/api/eol-format.md`.)
 
 Es zählt **nur** `token`; die übrigen Felder der Hülle sind Information. Die
 bloße JWS (ohne Hülle) wird ebenso angenommen.
 
 `token` ist eine kompakte JWS, genau wie die Lizenz-Tokens v2:
 
-- Header: `{ "alg": "EdDSA", "kid": "<kid aus dem JWKS>", "typ": "JWT" }`
+- Header: `{ "alg": "EdDSA", "kid": "<kid aus dem JWKS>", "typ": "gc-eol+jwt" }` (`typ` darf auch `JWT` sein oder fehlen, sonst Ablehnung)
 - Signatur: Ed25519 über `base64url(header) + "." + base64url(payload)`, mit
   dem privaten Schlüssel zu einem `kid` aus dem JWKS des Lizenzservers
   (`GET /api/licenses/keys`) – derselbe Schlüssel, der die App-Tokens signiert.
@@ -77,24 +79,29 @@ bloße JWS (ohne Hülle) wird ebenso angenommen.
 | Claim | Pflicht | Wert |
 |-------|---------|------|
 | `iss` | ja | `"callmetechie.de"` |
-| `kind` | ja | `"eol"` |
+| `typ` | ja¹ | `"eol"` |
+| `kind` | ¹ | `"eol"` – alternativ zu `typ`; ein anderer Wert (`app`, `plugin`) wird abgelehnt |
+| `kid` | nein | muss, wenn vorhanden, dem `kid` im Header gleichen |
+| `jti` | nein | wird nicht ausgewertet |
 | `v` | ja | `1` |
 | `product` | ja | `"gatecontrol"` |
 | `scope` | ja | `"lifetime"` oder `"all"` (s. u.) |
 | `iat` | ja | Ausstellungszeit, Unix-Sekunden (Ganzzahl); höchstens 1 Tag in der Zukunft |
 | `message` | nein | Text an die Kunden: String oder `{ "de": "…", "en": "…" }`, je höchstens 1000 Zeichen |
 
+¹ `typ: "eol"` (Website) oder `kind: "eol"`.
+
 Kein `exp`, kein `fp`: die Datei gilt unbefristet und für alle.
 
 Beispiel (PHP, libsodium – wie die App-Tokens):
 
 ```php
-$h = b64url(json_encode(['alg' => 'EdDSA', 'kid' => $kid, 'typ' => 'JWT']));
-$p = b64url(json_encode(['iss' => 'callmetechie.de', 'kind' => 'eol', 'v' => 1,
+$h = b64url(json_encode(['alg' => 'EdDSA', 'kid' => $kid, 'typ' => 'gc-eol+jwt']));
+$p = b64url(json_encode(['iss' => 'callmetechie.de', 'typ' => 'eol', 'v' => 1, 'kid' => $kid, 'jti' => $jti,
   'product' => 'gatecontrol', 'scope' => 'all', 'iat' => time(),
   'message' => ['de' => '…', 'en' => '…']]));
 $sig = b64url(sodium_crypto_sign_detached("$h.$p", $secretKey));
-file_put_contents('eol.json', json_encode(['v' => 1, 'product' => 'gatecontrol', 'token' => "$h.$p.$sig"]));
+file_put_contents('eol.json', json_encode(['format' => 'gatecontrol-eol', 'v' => 1, 'product' => 'gatecontrol', 'token' => "$h.$p.$sig"]));
 ```
 
 ### Prüfung im Server
@@ -120,15 +127,15 @@ dass die Installationen den neuen `kid` schon kennen.
    Life)“ (`POST /api/v1/license/eol` mit `{ "content": "<Dateiinhalt>" }`,
    entfernen mit `DELETE /api/v1/license/eol`).
 3. Automatisch abgeholt von `GC_LICENSE_EOL_URL` (Komma-Liste, der Reihe nach):
-   - `https://callmetechie.de/api/v2/licenses/eol`
+   - `https://callmetechie.de/api/eol/gatecontrol`
    - `https://github.com/CallMeTechie/gatecontrol/releases/download/eol/eol.json`
      (Release-Asset, falls die Website schon weg ist)
 
    `GET`, ohne Daten der Installation; `200` mit dem Inhalt von `eol.json`
    (`application/json`), `404`, solange keine veröffentlicht ist. Abgeholt
-   wird nur mit Lizenzschlüssel, nur solange die Lizenz gerade nicht online
-   bestätigt ist (offline oder Community) und höchstens alle 12 Stunden;
-   „Lizenz aktualisieren“ holt sofort.
+   wird mit der täglichen Lizenzprüfung (höchstens alle 12 Stunden), nur mit
+   Lizenzschlüssel und nur, solange keine EOL-Datei gilt; eine gültige wird
+   gespeichert. „Lizenz aktualisieren“ holt sofort.
 
 ### Wirkung
 
@@ -158,4 +165,5 @@ der Version in `package.json`):
   aus § 1. Das Token bleibt gespeichert, die Prüfung läuft weiter – eine
   Upgrade-Lizenz (`maj` neu) gilt sofort und schaltet alles wieder ein.
 
-Der Lizenzserver setzt `maj` erst, wenn es eine zweite Hauptversion gibt.
+Die Website stellt `maj` aus: Lifetime = Hauptversion beim Kauf, Abos = aktuelle
+Hauptversion. Solange der Server auf 1.x steht, ändert das nichts.

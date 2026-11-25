@@ -96,7 +96,7 @@ router.post('/refresh', async (req, res) => {
 // ─── End of life (docs/feature-license-eol.md) ───
 // The signed eol.json, uploaded as text: { content: "<file content>" }.
 // Only a file that verifies against the licence server's keys is stored.
-const EOL_REASONS = new Set(['malformed', 'alg', 'kid', 'signature', 'iss', 'kind', 'version', 'product', 'scope', 'iat', 'message']);
+const EOL_REASONS = new Set(['malformed', 'alg', 'kid', 'signature', 'iss', 'kind', 'typ', 'version', 'product', 'scope', 'iat', 'message']);
 router.post('/eol', uploadLimiter, async (req, res) => {
   const eol = require('../../services/licenseEol');
   const content = req.body && req.body.content;

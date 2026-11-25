@@ -171,7 +171,8 @@ async function main() {
   }
   // Portal (scenarios/08-portal.js): the app's own token for the one-time
   // login link, Anna's portal PIN and a shared living-room PC ("Wer bist du?").
-  // Created last: without a licence only the newest peers stay enabled.
+  // Created last: these are the peers that stay enabled without a licence (the
+  // ages are set at the end of the seed, see "licence fallback order").
   await require('../../src/services/portalPin').setPin(memberId, '1234');
   const livingPc = clientPeer('wohnzimmer-pc', '10.8.0.40', adminRow.id, true, 'windows', '2.4.1');
   const livingTok = mkToken('Wohnzimmer-PC', appScopes, adminRow.id, livingPc, { used: '-5 minutes' });
@@ -309,6 +310,15 @@ async function main() {
     support: { pixel: annaPixel, pixelBundle: pixelBundle.id, pc: livingPc, pcBundle: pcBundle.id, laptop: annaLaptop },
     scan: { quarantined: [q1.mediaId, q2.mediaId] },
   };
+  // Licence fallback order: the app starts without a licence key and switches
+  // the NEWEST peers / routes over the Community limit off (services/license.js
+  // enforceLimitsInternal). Everything here is created within one second, so
+  // the ages follow the creation order the other way round: what the seed
+  // creates last counts as the oldest and stays enabled — the same entries as
+  // before the fallback order changed.
+  for (const table of ['peers', 'routes']) {
+    db.prepare(`UPDATE ${table} SET created_at = datetime('now', '-' || id || ' minutes')`).run();
+  }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));
   fs.chmodSync(out, 0o600);
