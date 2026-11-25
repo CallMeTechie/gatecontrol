@@ -24,6 +24,8 @@
 //   PUT    /:id/license            { key }
 //   GET    /:id/targets            declared home targets, assignments, route/peer choices
 //   PUT    /:id/targets/:target    { assigned: [{ kind: route|peer|host, … }] }
+//   GET    /:id/page-targets       the same for the plugin's own admin page (GC.targets, permissions.network.assignTargets)
+//   PUT    /:id/page-targets/:target  { assigned: [{ kind: route|peer, … }] } from the plugin's page (an address only kept)
 //   PUT    /:id/discovery          { granted } (localDiscovery)
 //   POST   /:id/license/check
 //   GET    /:id/legacy             built-in data this plugin may import (null if none)
@@ -329,22 +331,78 @@ router.get('/:id/targets', (req, res) => {
   });
 });
 
-router.put('/:id/targets/:target', (req, res) => {
-  const p = pluginParam(req, res);
-  if (!p) return;
-  const list = req.body && req.body.assigned;
+/**
+ * Replace the assignments of one declared target (targets.assign: the same checks for both ways) and
+ * record it like every change of an administrator: the plugin's log and the activity log.
+ * `viaPage`: asked by the plugin's own admin page (window.GC.targets, permissions.network.assignTargets).
+ */
+function setTarget(req, res, p, list, viaPage) {
   try {
     const out = targets.assign(p, String(req.params.target), list);
     const reg = require('../../services/plugins/registry');
-    reg.addLog(p.id, 'info', `access target "${req.params.target}" set by an administrator: ${out.map(targets.display).join(', ') || '—'}`);
-    require('../../services/activity').log('plugin_target_changed', `Plugin "${p.name}": access target "${req.params.target}" ${out.length ? 'assigned' : 'removed'}`, {
-      source: 'admin', ipAddress: req.ip, severity: 'info', details: { plugin: p.id, target: req.params.target, assigned: out },
+    const how = viaPage ? 'set from the plugin’s page by an administrator' : 'set by an administrator';
+    reg.addLog(p.id, 'info', `access target "${req.params.target}" ${how}: ${out.map(targets.display).join(', ') || '—'}`);
+    require('../../services/activity').log('plugin_target_changed', `Plugin "${p.name}": access target "${req.params.target}" ${out.length ? 'assigned' : 'removed'}${viaPage ? ' (on the plugin’s page)' : ''}`, {
+      source: 'admin', ipAddress: req.ip, severity: 'info',
+      details: { plugin: p.id, target: req.params.target, assigned: out, ...(viaPage ? { via: 'plugin_page' } : {}) },
     });
     res.json({ ok: true, assigned: out.map((a) => ({ ...a, display: targets.display(a) })) });
   } catch (e) {
     if (e instanceof targets.TargetError) return res.status(400).json({ ok: false, code: e.code, error: tr(req, 'plugins.err.target_' + e.code, tr(req, 'plugins.err.invalid', 'Invalid request')) });
     fail(req, res, e);
   }
+}
+
+router.put('/:id/targets/:target', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  setTarget(req, res, p, req.body && req.body.assigned, false);
+});
+
+// ─── Zugriffsziele from the plugin's own admin page (since 1.324.0) ─
+// permissions.network.assignTargets: window.GC.targets in the plugin's admin frames
+// (public/js/plugin-bridge.js calls these with the administrator's session and CSRF token, like
+// every other call of the frame). The same choices as the Zugriffsziele card, the same checks
+// (targets.assign) and the same records; the page may add routes and VPN peers only — an
+// address ('host') stays the administrator's own entry, the page can keep or remove it.
+
+function pageTargetsAllowed(req, res, p) {
+  const n = p.manifest && p.manifest.permissions && p.manifest.permissions.network;
+  if (n && n.assignTargets === true) return true;
+  res.status(403).json({ ok: false, code: 'not_allowed', error: tr(req, 'plugins.err.target_not_allowed', 'The plugin may not assign access targets') });
+  return false;
+}
+
+router.get('/:id/page-targets', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p || !pageTargetsAllowed(req, res, p)) return;
+  const l = lang(req);
+  const as = targets.assignments(p.id);
+  const ch = targets.choices();
+  res.json({
+    ok: true,
+    targets: targets.declared(p).map((t) => ({ id: t.id, label: loc(t.label, l), protocols: t.protocols, multiple: t.multiple,
+      assigned: (as[t.id] || []).map((a, index) => ({ index, ...a, display: targets.display(a) })) })),
+    routes: ch.routes,
+    peers: ch.peers,
+  });
+});
+
+router.put('/:id/page-targets/:target', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p || !pageTargetsAllowed(req, res, p)) return;
+  const list = req.body && req.body.assigned;
+  if (!Array.isArray(list)) return res.status(400).json({ ok: false, code: 'invalid_target', error: tr(req, 'plugins.err.target_invalid_target', 'Invalid request') });
+  // an address ('host') only as it is assigned now: the page keeps or removes it, never adds or changes one
+  const current = (targets.assignments(p.id)[String(req.params.target)] || []).filter((a) => a.kind === 'host').map((a) => JSON.stringify(a));
+  for (const a of list) {
+    const kind = a && typeof a === 'object' ? a.kind : null;
+    if (kind === 'route' || kind === 'peer') continue;
+    let same = false;
+    if (kind === 'host') { try { same = current.includes(JSON.stringify(targets.normalise(a))); } catch { same = false; } }
+    if (!same) return res.status(400).json({ ok: false, code: 'invalid_target', error: tr(req, 'plugins.err.target_invalid_target', 'Invalid request') });
+  }
+  setTarget(req, res, p, list, true);
 });
 
 router.put('/:id/discovery', (req, res) => {

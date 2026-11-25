@@ -560,6 +560,8 @@ function describe(perms, lang) {
     discovery: n.localDiscovery ? { udp: n.localDiscovery.udp } : null,
     // since 1.216.0: pictures of any public host through the host (gc.http.fetchImage) — only when declared
     ...(!Array.isArray(n) && n.images === true ? { images: true } : {}),
+    // since 1.324.0: its admin pages assign its declared targets themselves (window.GC.targets) — only when declared
+    ...(!Array.isArray(n) && n.assignTargets === true ? { assignTargets: true } : {}),
   };
 }
 

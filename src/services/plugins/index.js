@@ -742,6 +742,8 @@ function view(p, lang) {
     cloud: require('./frame').openUrlOf(m),
     // GC.openSession in the plugin's frames (permissions.remote): the <iframe data-plugin-remote>
     remote: require('./frame').openSessionOf(m),
+    // GC.targets in the plugin's admin frames (permissions.network.assignTargets): the <iframe data-plugin-targets>
+    assignTargets: require('./frame').assignTargetsOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera), fullscreen: require('./frame').fullscreenOf(m) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,

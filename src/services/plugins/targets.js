@@ -144,13 +144,42 @@ function display(a) {
   return a.host + (a.port ? ':' + a.port : '');
 }
 
-/** Choices for the "Zugriffsziele" pickers. */
+/** The first VPN address of a peer row (allowed_ips "10.8.0.20/32, …" → "10.8.0.20"). */
+function firstIp(allowed) { return String(allowed || '').split(',')[0].split('/')[0].trim(); }
+
+/**
+ * Where an HTTP route's backend is, as the administrator set it up: { scheme, host, port, via } or null —
+ * a gateway route its home address (target_lan_host:target_lan_port behind the gateway, via 'gateway'),
+ * a peer route the peer's VPN address with the target port (via 'peer'), otherwise target_ip:target_port
+ * (via 'direct').
+ */
+function routeBackend(r, peerIps) {
+  const scheme = r.backend_https ? 'https' : 'http';
+  const port = (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null; };
+  if (r.target_kind === 'gateway') return r.target_lan_host ? { scheme, host: String(r.target_lan_host), port: port(r.target_lan_port) || port(r.target_port), via: 'gateway' } : null;
+  if (r.peer_id) { const ip = peerIps.get(r.peer_id); return ip ? { scheme, host: ip, port: port(r.target_port), via: 'peer' } : null; }
+  return r.target_ip ? { scheme, host: String(r.target_ip), port: port(r.target_port), via: 'direct' } : null;
+}
+
+/**
+ * Choices for the "Zugriffsziele" pickers: every route and every switched-on VPN peer. Each route also
+ * carries what a plugin's page shows and suggests from it (since 1.324.0): `domain`, `https` (Caddy serves
+ * the domain with a certificate), `backend` ({ scheme, host, port } — routeBackend; null for L4 routes),
+ * `gateway` (it runs through a home gateway).
+ */
 function choices() {
   const db = getDb();
-  const routes = db.prepare("SELECT id, domain, route_type, l4_listen_port, external_enabled, enabled FROM routes ORDER BY domain").all()
-    .map((r) => ({ id: r.id, label: r.route_type === 'l4' ? `${r.domain || 'L4'}:${r.l4_listen_port}` : r.domain, type: r.route_type === 'l4' ? 'l4' : 'http',
-      internal: !r.external_enabled, enabled: r.enabled === 1 }));
-  const peers = db.prepare('SELECT id, name, allowed_ips, peer_type FROM peers WHERE enabled = 1 ORDER BY name').all()
+  const peerRows = db.prepare('SELECT id, name, allowed_ips, peer_type, enabled FROM peers ORDER BY name').all();
+  const peerIps = new Map(peerRows.map((p) => [p.id, firstIp(p.allowed_ips)]));
+  const routes = db.prepare('SELECT * FROM routes ORDER BY domain').all()
+    .map((r) => {
+      const l4 = r.route_type === 'l4';
+      return { id: r.id, label: l4 ? `${r.domain || 'L4'}:${r.l4_listen_port}` : r.domain, type: l4 ? 'l4' : 'http',
+        internal: !r.external_enabled, enabled: r.enabled === 1,
+        domain: r.domain || null, https: !l4 && !!r.domain && r.https_enabled !== 0, gateway: r.target_kind === 'gateway',
+        backend: l4 ? null : routeBackend(r, peerIps) };
+    });
+  const peers = peerRows.filter((p) => p.enabled === 1)
     .map((p) => ({ id: p.id, label: p.name, ip: String(p.allowed_ips || '').split('/')[0], gateway: p.peer_type === 'gateway' }));
   return { routes, peers };
 }

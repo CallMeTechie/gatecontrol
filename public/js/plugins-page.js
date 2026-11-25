@@ -1887,21 +1887,35 @@
       row.appendChild(list);
       const kind = el('select', { class: 'st-select', 'aria-label': t('plugins.tg.title') }, ['route', 'peer', 'host'].map((k) => el('option', { value: k, text: t('plugins.tg.kind_' + k) })));
       const routes = r.choices.routes.filter((x) => (isHttp ? x.type === 'http' : x.type === 'l4'));
-      const routeSel = el('select', { class: 'st-select' }, routes.map((x) => el('option', { value: String(x.id), text: x.label + (x.internal ? ' · ' + t('plugins.tg.internal') : '') })));
-      const peerSel = el('select', { class: 'st-select' }, r.choices.peers.map((x) => el('option', { value: String(x.id), text: x.label + ' (' + x.ip + ')' })));
+      // since 1.324.0: nothing chosen until the administrator picks — a first entry preselected looked like the
+      // assigned route; "Zuweisen" only with a choice
+      const pick = (key) => el('option', { value: '', text: t(key), disabled: true, selected: true });
+      const routeSel = el('select', { class: 'st-select', 'aria-label': t('plugins.tg.kind_route') }, [pick('plugins.tg.pick_route')]
+        .concat(routes.map((x) => el('option', { value: String(x.id), text: x.label + (x.internal ? ' · ' + t('plugins.tg.internal') : '') }))));
+      const peerSel = el('select', { class: 'st-select', 'aria-label': t('plugins.tg.kind_peer') }, [pick('plugins.tg.pick_peer')]
+        .concat(r.choices.peers.map((x) => el('option', { value: String(x.id), text: x.label + ' (' + x.ip + ')' }))));
+      routeSel.value = '';
+      peerSel.value = '';
       const hostIn = el('input', { type: 'text', class: 'st-input st-mono', placeholder: t('plugins.tg.host_ph'), maxLength: 253, spellcheck: 'false', autocomplete: 'off' });
       const portIn = el('input', { type: 'number', class: 'st-input st-input-num', placeholder: t('plugins.tg.port'), min: 1, max: 65535 });
       const schemeSel = el('select', { class: 'st-select' }, ['http', 'https'].map((k) => el('option', { value: k, text: k.toUpperCase() })));
-      const sync = () => { routeSel.hidden = kind.value !== 'route'; peerSel.hidden = kind.value !== 'peer'; hostIn.hidden = kind.value !== 'host'; portIn.hidden = kind.value === 'route'; schemeSel.hidden = !isHttp || kind.value === 'route'; };
-      kind.addEventListener('change', sync);
-      sync();
       const add = el('button', { type: 'button', class: 'st-btn st-btn-primary st-btn-sm', text: t('plugins.tg.add'), on: { click: () => {
         let a;
-        if (kind.value === 'route') a = { kind: 'route', routeId: Number(routeSel.value) };
-        else if (kind.value === 'peer') a = { kind: 'peer', peerId: Number(peerSel.value), port: portIn.value || null, scheme: schemeSel.value };
-        else a = { kind: 'host', host: hostIn.value.trim(), port: portIn.value || null, scheme: schemeSel.value };
+        if (kind.value === 'route') { if (!routeSel.value) return; a = { kind: 'route', routeId: Number(routeSel.value) }; }
+        else if (kind.value === 'peer') { if (!peerSel.value) return; a = { kind: 'peer', peerId: Number(peerSel.value), port: portIn.value || null, scheme: schemeSel.value }; }
+        else { if (!hostIn.value.trim()) return; a = { kind: 'host', host: hostIn.value.trim(), port: portIn.value || null, scheme: schemeSel.value }; }
         save((d.multiple ? d.assigned.map(strip) : []).concat([a]));
       } } });
+      const ready = () => {
+        const v = kind.value === 'route' ? routeSel.value : (kind.value === 'peer' ? peerSel.value : hostIn.value.trim());
+        add.disabled = !v;
+      };
+      const sync = () => { routeSel.hidden = kind.value !== 'route'; peerSel.hidden = kind.value !== 'peer'; hostIn.hidden = kind.value !== 'host'; portIn.hidden = kind.value === 'route'; schemeSel.hidden = !isHttp || kind.value === 'route'; ready(); };
+      kind.addEventListener('change', sync);
+      routeSel.addEventListener('change', ready);
+      peerSel.addEventListener('change', ready);
+      hostIn.addEventListener('input', ready);
+      sync();
       row.appendChild(el('div', { class: 'pgx-inline' }, [kind, routeSel, peerSel, hostIn, portIn, schemeSel, add]));
       box.appendChild(row);
     }
@@ -1943,6 +1957,8 @@
     if (p.scanQr) { attrs['data-plugin-scanqr'] = ''; attrs['data-plugin-name'] = p.name || p.id; }
     // GC.pickPrincipals (permissions.groups): GateControl's picker for groups and people
     if (p.pickPrincipals) { attrs['data-plugin-groups'] = ''; attrs['data-plugin-name'] = p.name || p.id; }
+    // GC.targets (permissions.network.assignTargets, since 1.324.0): the plugin's page assigns its declared targets
+    if (p.assignTargets) attrs['data-plugin-targets'] = '';
     Object.keys(attrs).forEach((k) => f.setAttribute(k, attrs[k]));
     if (window.GCPluginBridge && typeof window.GCPluginBridge.attach === 'function') window.GCPluginBridge.attach(f);
     return card([f], { 'aria-label': page.title || p.name }, 'pgx-set-frame-card');
