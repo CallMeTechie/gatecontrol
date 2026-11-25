@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.323.0] — 2026-11-25
+
+### Features
+- sanfter Lizenz-Rückfall, signierte EOL-Datei, Hauptversion maj (#585)
+
+---
+
 ## [1.322.0] — 2026-11-25
 
 ### Features
