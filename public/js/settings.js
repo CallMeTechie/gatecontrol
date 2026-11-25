@@ -3094,6 +3094,34 @@
     if (r.ok) { toast(t('license.removed')); setTimeout(() => location.reload(), 900); } else toast(errText(r), 'error');
   });
 
+  // ── Lizenz · Produkt eingestellt (eol.json, docs/feature-license-eol.md) ──
+  const eolPick = $('st-lic-eol-pick');
+  const eolFile = $('st-lic-eol-file');
+  if (eolPick && eolFile) {
+    eolPick.addEventListener('click', () => eolFile.click());
+    eolFile.addEventListener('change', async () => {
+      const f = eolFile.files && eolFile.files[0];
+      eolFile.value = '';
+      if (!f) return;
+      const msg = $('st-lic-eol-msgline');
+      msg.textContent = '';
+      if (f.size > 32 * 1024) { msg.textContent = t('st.lic.eol_upload_hint'); msg.dataset.tone = 'crit'; return; }
+      busy(eolPick, true);
+      let content = '';
+      try { content = await f.text(); } catch (_) { content = ''; }
+      const r = await post('/api/v1/license/eol', { content });
+      busy(eolPick, false);
+      if (r.ok) { toast(t('st.lic.eol_imported')); setTimeout(() => location.reload(), 900); } else { msg.textContent = errText(r); msg.dataset.tone = 'crit'; }
+    });
+  }
+  const eolRemove = $('st-lic-eol-remove');
+  if (eolRemove) eolRemove.addEventListener('click', async () => {
+    busy(eolRemove, true);
+    const r = await del('/api/v1/license/eol');
+    busy(eolRemove, false);
+    if (r.ok) { toast(t('st.lic.eol_removed')); setTimeout(() => location.reload(), 900); } else toast(errText(r), 'error');
+  });
+
   // ── Gefahrenzone ──
   $('st-wg-stop').addEventListener('click', () => {
     $('st-wgstop-pw').value = '';

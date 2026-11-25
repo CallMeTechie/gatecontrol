@@ -402,6 +402,44 @@ einmal kopiert. Gib in der Adresse einen eigenen Unterordner an
 (z. B. `…/GateControl/Backups/`), damit die Backups nicht zwischen den Dateien
 von Drive liegen. SMB, SFTP und S3 haben dieselbe Wahl „Verbindung“.
 
+### Der Lizenzserver ist nicht erreichbar – was passiert?
+
+GateControl prüft die Lizenz täglich. Jedes Lizenz-Token gilt 7 Tage; ist der
+Lizenzserver nicht erreichbar, läuft die Lizenz bis **14 Tage nach der letzten
+erfolgreichen Prüfung** weiter. Das Dashboard warnt in dieser Zeit mit den
+verbleibenden Tagen („Rückfall auf Community in N Tagen“), unter
+„Einstellungen“ → „Lizenz“ steht das genaue Datum.
+
+Danach gilt der Community-Plan. Peers und Routen über dem Limit werden dann
+nur **ausgeschaltet, nicht gelöscht** – die neuesten zuerst, die Einstellungen
+bleiben. Sobald die Lizenz wieder geprüft ist (oder eine neue aktiviert wird),
+gehen sie **von selbst wieder an**. Dasselbe gilt, wenn eine Lizenz abläuft
+oder widerrufen wird. Einen ausgeschalteten Eintrag, den du selbst wieder
+einschaltest und später ausschaltest, lässt GateControl aus.
+
+### Produkt eingestellt: die Datei eol.json
+
+Wird GateControl eines Tages eingestellt, stellt der Anbieter eine signierte
+Datei `eol.json` bereit (Kundenkonto, Website, GitHub-Release). GateControl
+holt sie selbst ab, sobald der Lizenzserver nicht mehr antwortet. Du kannst sie
+auch unter „Einstellungen“ → „Lizenz“ → „Produkt eingestellt (End of Life)“
+hochladen oder als `/data/eol.json` ablegen (Pfad änderbar mit
+`GC_LICENSE_EOL_FILE`). Angenommen wird nur eine vom Lizenzserver signierte
+Datei.
+
+Mit ihr gelten Lifetime-Lizenzen – Server und Plugins – ohne Lizenzserver
+unbefristet; je nach Datei laufen auch Abos bis zu ihrem bezahlten Ende. Die
+Lizenzseite zeigt dann „Produkt eingestellt – keine Updates mehr“. Die Lizenz
+muss dafür vorher einmal online aktiviert worden sein. Technische Einzelheiten:
+[Lizenz: sanfter Rückfall, Produkt-Ende](../feature-license-eol.md).
+
+### „Upgrade nötig“ auf der Lizenzseite
+
+Die Lizenz gilt für eine ältere Hauptversion (z. B. 1.x), installiert ist eine
+neuere (z. B. 2.x). Bis zu einem Upgrade gilt der Community-Plan; nichts wird
+gelöscht. Hol im Kundenkonto die Upgrade-Lizenz oder bleib bei der bisherigen
+Hauptversion – danach ist alles wieder wie vorher.
+
 ### Wo ist die Seite „Interner DNS“ geblieben?
 
 Die Seite gibt es nicht mehr. Der Name eines Geräts steht jetzt beim Gerät

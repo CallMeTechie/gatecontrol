@@ -78,6 +78,8 @@ router.post('/refresh', async (req, res) => {
   _refreshCooldown.set(key, now);
 
   try {
+    // a published end-of-life file is looked for now, not only at the next daily check
+    await require('../../services/licenseEol').maybeFetch({ force: true }).catch(() => false);
     await license.refreshLicenseInBackground();
     // plugin entitlements may have changed (e.g. a newly released plugin):
     // start/stop plugins now instead of at the next 5-minute reconcile
@@ -88,6 +90,37 @@ router.post('/refresh', async (req, res) => {
     activity.log('license_refresh_failed', `License refresh failed: ${err.message}`, { severity: 'warning' });
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }
+});
+
+// ─── End of life (docs/feature-license-eol.md) ───
+// The signed eol.json, uploaded as text: { content: "<file content>" }.
+// Only a file that verifies against the licence server's keys is stored.
+const EOL_REASONS = new Set(['malformed', 'alg', 'kid', 'signature', 'iss', 'kind', 'version', 'product', 'scope', 'iat', 'message']);
+router.post('/eol', async (req, res) => {
+  const eol = require('../../services/licenseEol');
+  const content = req.body && req.body.content;
+  if (typeof content !== 'string' || !content.trim() || Buffer.byteLength(content, 'utf8') > eol.MAX_FILE_BYTES) {
+    return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.eol_invalid') : 'Not a valid end-of-life file', reason: 'malformed' });
+  }
+  const r = await eol.importText(content, 'upload');
+  if (!r.ok) {
+    const reason = EOL_REASONS.has(r.reason) ? r.reason : 'malformed';
+    activity.log('license_eol_rejected', `End-of-life file rejected (${reason})`, { severity: 'warning' });
+    return res.status(400).json({ ok: false, error: req.t ? req.t('error.license.eol_invalid') : 'Not a valid end-of-life file', reason });
+  }
+  activity.log('license_eol_imported', `End-of-life file imported (scope ${r.eol.scope}, issued ${r.eol.issued_at})`, { severity: 'warning' });
+  try { await license.validateLicense(); } catch { /* the licence keeps its state */ }
+  try { await require('../../services/plugins').reconcile(); } catch { /* plugins keep their state */ }
+  res.json({ ok: true, ...license.getLicenseInfo() });
+});
+
+router.delete('/eol', async (req, res) => {
+  const eol = require('../../services/licenseEol');
+  await eol.remove();
+  activity.log('license_eol_removed', 'End-of-life file removed');
+  try { await license.validateLicense(); } catch { /* the licence keeps its state */ }
+  try { await require('../../services/plugins').reconcile(); } catch { /* plugins keep their state */ }
+  res.json({ ok: true, ...license.getLicenseInfo() });
 });
 
 router.delete('/', async (req, res) => {

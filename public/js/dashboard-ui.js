@@ -325,6 +325,9 @@
     ['backup_incomplete', 'dashboard.sum_backup_incomplete'],
     ['waf_engine_missing', 'dashboard.sum_waf'],
     ['gateway_vpn_cert_stale', 'dashboard.sum_gateway_vpn_cert'],
+    ['license_upgrade', 'dashboard.sum_license'],
+    ['license_fallback', 'dashboard.sum_license'],
+    ['license_offline', 'dashboard.sum_license_offline'],
   ];
   /**
    * → { title: [key, params], sub: [[key, params], …] } — "Alles läuft" or

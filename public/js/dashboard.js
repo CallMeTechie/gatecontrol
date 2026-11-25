@@ -259,6 +259,7 @@
     tls_paused: 'dashboard.fix_cert', tls_expiring: 'dashboard.fix_cert', update_failed: 'dashboard.fix_update',
     update_rolled_back: 'dashboard.fix_update', backup_failed: 'dashboard.fix_backup', backup_incomplete: 'dashboard.fix_backup',
     waf_engine_missing: 'dashboard.fix_waf', gateway_vpn_cert_stale: 'dashboard.fix_gateway',
+    license_offline: 'dashboard.fix_license', license_fallback: 'dashboard.fix_license', license_upgrade: 'dashboard.fix_license',
   };
   function longDate(v) {
     var ts = UI.parseTime(v);
@@ -332,6 +333,28 @@
           title: t('problems.gateway_vpn_cert_stale', { name: (p.gateway && p.gateway.name) || '?' }),
           detail: [t('problems.gateway_vpn_cert_stale_detail')],
         };
+      case 'license_offline': {
+        var lo = p.license || {};
+        var lod = [t('problems.license_offline_detail', { date: longDate(lo.fallback_at) })];
+        if (lo.reason) lod.push(t('problems.license_offline_reason', { reason: String(lo.reason) }));
+        return { title: t('problems.license_offline'), detail: lod };
+      }
+      case 'license_fallback': {
+        var lf = p.license || {};
+        var lfd = [];
+        if (lf.peers || lf.routes || lf.pools) lfd.push(t('problems.license_fallback_off', { peers: lf.peers || 0, routes: lf.routes || 0, pools: lf.pools || 0 }));
+        lfd.push(t('problems.license_fallback_back'));
+        var lfKey = lf.reason === 'offline' ? 'problems.license_fallback_offline'
+          : lf.reason === 'revoked' ? 'problems.license_fallback_revoked' : 'problems.license_fallback_waiting';
+        return { title: t(lfKey), detail: lfd };
+      }
+      case 'license_upgrade': {
+        var lu = p.license || {};
+        return {
+          title: t('problems.license_upgrade', { licensed: lu.licensed || '?', installed: lu.installed || '?' }),
+          detail: [t('problems.license_upgrade_detail', { licensed: lu.licensed || '?' })],
+        };
+      }
       default:
         return { title: String(p.kind || ''), detail: [] };
     }
@@ -339,6 +362,10 @@
   function problemWhen(p) {
     if (p.kind === 'tls_expiring' && p.tls && p.tls.days_left != null) {
       return t(UI.plural('dashboard.in_days', p.tls.days_left), { n: p.tls.days_left });
+    }
+    // licence offline grace: when the fallback to Community comes
+    if (p.kind === 'license_offline' && p.license && p.license.days_left != null) {
+      return t(UI.plural('dashboard.in_days', p.license.days_left), { n: p.license.days_left });
     }
     var ts = UI.parseTime(p.since);
     return Number.isFinite(ts) ? t('dashboard.since', { dur: UI.duration(ts, Date.now(), t) }) : '';

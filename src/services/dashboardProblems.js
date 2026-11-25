@@ -24,6 +24,13 @@
 //   gateway_vpn_cert_stale  a gateway in "Darf abholen" still holds an older
 //                        wildcard of the VPN names for more than 24 h
 //                        (vpnCert.staleGateways — a short delay is no problem)
+//   license_offline      the licence server cannot be reached, the signed
+//                        licence runs in its offline grace: days until the
+//                        fallback to Community (error from 3 days left)
+//   license_fallback     a licence key runs in Community mode (offline beyond
+//                        the grace, revoked / expired) or entries the fallback
+//                        switched off wait to come back
+//   license_upgrade      the licence is for an older main version
 //
 // "Gateway erreichbar, Dienst im LAN antwortet nicht": the reason cannot be
 // read literally — Caddy's access log carries no `error` field, only the
@@ -212,8 +219,10 @@ const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
 const KIND_RANK = [
   'gateway_offline', 'entry_down', 'tls_failed', 'tls_paused', 'tls_expiring',
   'update_failed', 'update_rolled_back', 'backup_failed', 'backup_incomplete', 'waf_engine_missing',
-  'gateway_vpn_cert_stale',
+  'gateway_vpn_cert_stale', 'license_upgrade', 'license_fallback', 'license_offline',
 ];
+
+const LICENSE_OFFLINE_ERROR_DAYS = 3;
 
 // Offline = the live state of services/gatewayLiveState.js: not a gateway that
 // answers again and only waits for its pool's failback cooldown (alive = 0
@@ -410,6 +419,41 @@ function gatewayVpnCertProblems(now) {
   }));
 }
 
+// The licence: offline grace running out, fallback to Community, upgrade needed.
+function licenseProblems() {
+  let license;
+  let info;
+  try { license = require('./license'); info = license.getLicenseInfo(); } catch { return []; }
+  if (!info) return [];
+  const out = [];
+  const href = '/settings/lizenz';
+  if (info.upgrade_required && !info.unlicensed) {
+    out.push({
+      id: 'license_upgrade', kind: 'license_upgrade', severity: 'error', href, since: null,
+      license: { licensed: info.upgrade_required.licensed, installed: info.upgrade_required.installed },
+    });
+  }
+  const off = info.offline;
+  if (info.verification === 'signed_offline' && off && !info.unlicensed) {
+    out.push({
+      id: 'license_offline', kind: 'license_offline',
+      severity: off.days_left <= LICENSE_OFFLINE_ERROR_DAYS ? 'error' : 'warning',
+      href, since: off.last_ok_at || null,
+      license: { days_left: off.days_left, fallback_at: off.fallback_at, reason: info.lastCheck && !info.lastCheck.ok ? info.lastCheck.reason : null },
+    });
+  }
+  const counts = typeof license.licenseDisabledCounts === 'function' ? license.licenseDisabledCounts() : { peers: 0, routes: 0, pools: 0 };
+  const waiting = counts.peers + counts.routes + counts.pools;
+  const reason = info.fallback_reason && info.fallback_reason !== 'upgrade' ? info.fallback_reason : null;
+  if (reason || waiting > 0) {
+    out.push({
+      id: 'license_fallback', kind: 'license_fallback', severity: reason ? 'error' : 'warning', href, since: null,
+      license: { reason, peers: counts.peers, routes: counts.routes, pools: counts.pools },
+    });
+  }
+  return out;
+}
+
 /**
  * All current problems. `now` and `access` are injectable for tests.
  */
@@ -474,7 +518,8 @@ async function list({ now = Date.now(), access } = {}) {
   }
 
   // 3–7. Certificates (broken or expiring), update, off-site backups, WAF module, gateways with an old VPN certificate.
-  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...(await backupIncompleteProblem()), ...wafEngineProblem(db), ...gatewayVpnCertProblems(now));
+  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...(await backupIncompleteProblem()), ...wafEngineProblem(db), ...gatewayVpnCertProblems(now),
+    ...licenseProblems());
 
   problems.sort((a, b) => {
     const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];

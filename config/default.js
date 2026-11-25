@@ -234,6 +234,13 @@ const config = {
     // Optional pinned JWKS (JSON). When set, these are the only accepted keys.
     pubkeys: env('GC_LICENSE_PUBKEYS', ''),
     tokenPath: path.join(env('GC_DATA_PATH', '/data'), '.license-token'),
+    // End-of-life file (docs/feature-license-eol.md): signed with a key of the
+    // JWKS above. Read from this path at start, and fetched from eolUrl
+    // (comma separated, tried in order; 404 = none published) while a licence
+    // key is configured. The release asset keeps working if the website is gone.
+    eolFile: env('GC_LICENSE_EOL_FILE', path.join(env('GC_DATA_PATH', '/data'), 'eol.json')),
+    eolUrl: env('GC_LICENSE_EOL_URL',
+      'https://callmetechie.de/api/v2/licenses/eol,https://github.com/CallMeTechie/gatecontrol/releases/download/eol/eol.json'),
   },
 };
 

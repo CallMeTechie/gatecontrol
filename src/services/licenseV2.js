@@ -216,16 +216,16 @@ function decodeJson(part) {
 }
 
 /**
- * Verify an EdDSA licence token.
+ * Check the Ed25519 signature of a compact JWS against the pinned / JWKS keys.
+ * Only the signature, the algorithm and the key — no claim is looked at.
+ * Shared by the licence tokens (verifyToken) and the EOL file (licenseEol.js),
+ * so both are bound to exactly the same keys.
  * @param {string} token
- * @param {object} opts
- * @param {string} opts.fingerprint  this install's hardware fingerprint
- * @param {'app'|'plugin'} opts.kind
- * @param {boolean} [opts.allowExpired]  accept a passed `exp` (grace period)
- * @returns {Promise<{ok:true, payload:object}|{ok:false, reason:string}>}
+ * @param {{maxLength?:number}} [opts]
+ * @returns {Promise<{ok:true, header:object, payload:object}|{ok:false, reason:string}>}
  */
-async function verifyToken(token, { fingerprint, kind, allowExpired = false }) {
-  if (typeof token !== 'string' || token.length > 16384) return { ok: false, reason: 'malformed' };
+async function verifyJws(token, { maxLength = 16384 } = {}) {
+  if (typeof token !== 'string' || token.length > maxLength) return { ok: false, reason: 'malformed' };
   const parts = token.split('.');
   if (parts.length !== 3 || !parts.every((p) => B64URL.test(p))) return { ok: false, reason: 'malformed' };
 
@@ -237,7 +237,8 @@ async function verifyToken(token, { fingerprint, kind, allowExpired = false }) {
   } catch {
     return { ok: false, reason: 'malformed' };
   }
-  if (!header || typeof header !== 'object' || !payload || typeof payload !== 'object') return { ok: false, reason: 'malformed' };
+  if (!header || typeof header !== 'object' || Array.isArray(header)
+    || !payload || typeof payload !== 'object' || Array.isArray(payload)) return { ok: false, reason: 'malformed' };
   // Strictly EdDSA: never HS256 (forgeable with the shared v1 key), never "none".
   if (header.alg !== 'EdDSA') return { ok: false, reason: 'alg' };
   if (typeof header.kid !== 'string' || !header.kid) return { ok: false, reason: 'kid' };
@@ -254,6 +255,22 @@ async function verifyToken(token, { fingerprint, kind, allowExpired = false }) {
     valid = false;
   }
   if (!valid) return { ok: false, reason: 'signature' };
+  return { ok: true, header, payload };
+}
+
+/**
+ * Verify an EdDSA licence token.
+ * @param {string} token
+ * @param {object} opts
+ * @param {string} opts.fingerprint  this install's hardware fingerprint
+ * @param {'app'|'plugin'} opts.kind
+ * @param {boolean} [opts.allowExpired]  accept a passed `exp` (grace period)
+ * @returns {Promise<{ok:true, payload:object}|{ok:false, reason:string}>}
+ */
+async function verifyToken(token, { fingerprint, kind, allowExpired = false }) {
+  const v = await verifyJws(token);
+  if (!v.ok) return v;
+  const { payload } = v;
 
   if (payload.iss !== ISSUER) return { ok: false, reason: 'iss' };
   if (payload.kind !== kind) return { ok: false, reason: 'kind' };
@@ -354,6 +371,7 @@ module.exports = {
   clearState,
   setPluginKeys,
   getPluginKeys,
+  verifyJws,
   verifyToken,
   validate,
   deactivate,
