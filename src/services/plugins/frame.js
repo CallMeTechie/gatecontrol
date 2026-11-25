@@ -104,6 +104,15 @@
 // (the address of a direct link, "/portal?<key>=<value>#plg-<id>"), only during
 // a click, e.g. a to-do of Mail in the Notizen hub opening its mail.
 //
+// Zugriffsziele (plugin.json `permissions.network.assignTargets`, admin frames only, since
+// 1.324.0): window.GC.targets.get() → { targets, routes, peers } and
+// GC.targets.set(id, assigned) → { assigned } — the plugin's own declared home targets, the same
+// choices and checks as Einstellungen › Plugins › <plugin> › Zugriffsziele. The parent page
+// (plugin-bridge.js) calls the admin API (…/plugins/<id>/page-targets) with the administrator's
+// session and CSRF token, only for an <iframe data-plugin-targets> — an attribute the server
+// renders on the admin pages only; the frame document has GC.targets only for such plugins in
+// admin frames (assignTargetsOf).
+//
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
 // of the viewer's own notification inbox — the portal page's own state
@@ -226,6 +235,12 @@ function scanQrOf(manifest) {
 function pickPrincipalsOf(manifest) {
   const g = manifest && manifest.permissions && manifest.permissions.groups;
   return g === 'read' || g === 'manage';
+}
+
+/** May the plugin's admin frames assign its declared home targets (GC.targets)? permissions.network.assignTargets. */
+function assignTargetsOf(manifest) {
+  const n = manifest && manifest.permissions && manifest.permissions.network;
+  return !!(n && !Array.isArray(n) && n.assignTargets === true);
 }
 
 /** sandbox attribute of the <iframe> showing a plugin frame (`media`: a plugin declaring media). */
@@ -470,6 +485,21 @@ const BRIDGE_CLIENT = `(function(){
       if (modal !== lastModal) { lastModal = modal; post({ type: 'gc-modal', open: modal }); }
     });
   }
+  // permissions.network.assignTargets (since 1.324.0, admin frames only): the plugin's declared home targets.
+  // get() → { targets: [{ id, label, protocols, multiple, assigned: [{ index, kind, …, display }] }], routes, peers };
+  // set(id, assigned) replaces the list of target id → { assigned } (routes and peers; an address only as assigned)
+  function targetOp(op, target, assigned) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 60000);
+      post({ type: 'gc-targets', id: id, op: op, target: String(target == null ? '' : target), assigned: assigned === undefined ? null : assigned });
+    });
+  }
+  var targetsApi = Object.freeze({
+    get: function () { return targetOp('get'); },
+    set: function (target, assigned) { return targetOp('set', target, assigned); }
+  });
   var api = {
     call: call,
     get: function (p) { return call('GET', p); },
@@ -497,6 +527,7 @@ const BRIDGE_CLIENT = `(function(){
   if (/*GC_PICK*/false) api.pickPrincipals = pickPrincipals;
   if (/*GC_OPENURL*/false) api.openUrl = openUrl;
   if (/*GC_SESSION*/false) api.openSession = openSession;
+  if (/*GC_TARGETS*/false) api.targets = targetsApi;
   window.GC = Object.freeze(api);
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
@@ -522,14 +553,15 @@ const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y
  * only) becomes window.GC.tiles, otherwise GC.tiles is null; `scanQr`
  * (scanQrOf the plugin) gives the frame window.GC.scanQr, `pickPrincipals`
  * (pickPrincipalsOf) window.GC.pickPrincipals, `openUrl` (permissions.cloudImport,
- * openUrlOf) window.GC.openUrl, `openSession` (permissions.remote, openSessionOf) window.GC.openSession.
+ * openUrlOf) window.GC.openUrl, `openSession` (permissions.remote, openSessionOf) window.GC.openSession,
+ * `targets` (permissions.network.assignTargets, assignTargetsOf; admin frames only) window.GC.targets.
  */
-function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false, openUrl = false, openSession = false }) {
+function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false, openUrl = false, openSession = false, targets = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
   const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false')
     .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false').replace('/*GC_OPENURL*/false', openUrl === true ? 'true' : 'false')
-    .replace('/*GC_SESSION*/false', openSession === true ? 'true' : 'false');
+    .replace('/*GC_SESSION*/false', openSession === true ? 'true' : 'false').replace('/*GC_TARGETS*/false', targets === true ? 'true' : 'false');
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
     + '<style>' + BASE_CSS + '</style><script>' + client + '</script></head><body>'
@@ -551,4 +583,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, fullscreenOf, scanQrOf, pickPrincipalsOf, openUrlOf, openSessionOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, fullscreenOf, scanQrOf, pickPrincipalsOf, openUrlOf, openSessionOf, assignTargetsOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };

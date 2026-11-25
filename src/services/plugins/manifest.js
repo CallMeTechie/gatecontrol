@@ -99,15 +99,18 @@ const TARGET_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /**
  * permissions.network: an array (= internet hosts) or
- *   { internet: [...], homeTargets: [{ id, label, protocols, multiple }], localDiscovery: { udp: [ports] } }
+ *   { internet: [...], homeTargets: [{ id, label, protocols, multiple }], localDiscovery: { udp: [ports] },
+ *     assignTargets: true }
  * protocols: "http", "tcp:<ports>", "udp:<ports>".
+ * assignTargets (since 1.324.0, sensitive): the plugin's admin pages may assign its declared targets
+ * themselves (window.GC.targets, an administrator's session) — only with homeTargets.
  */
 function validateNetwork(n, err) {
   const out = { internet: [], homeTargets: [], localDiscovery: null, images: false };
   if (n == null) return out;
   const obj = Array.isArray(n) ? { internet: n } : n;
   if (!obj || typeof obj !== 'object') { err('permissions.network: invalid'); return null; }
-  for (const k of Object.keys(obj)) if (!['internet', 'homeTargets', 'localDiscovery', 'images'].includes(k)) { err('permissions.network: unknown key ' + k); return null; }
+  for (const k of Object.keys(obj)) if (!['internet', 'homeTargets', 'localDiscovery', 'images', 'assignTargets'].includes(k)) { err('permissions.network: unknown key ' + k); return null; }
   // images (since 1.216.0): pictures of any public host through the host (gc.http.fetchImage), e.g. those of mails
   if (obj.images != null) {
     if (typeof obj.images !== 'boolean') err('permissions.network.images: invalid');
@@ -140,6 +143,11 @@ function validateNetwork(n, err) {
         out.homeTargets.push({ id: t.id, label, protocols: t.protocols.map(String), proto, multiple: !!t.multiple });
       }
     }
+  }
+  if (obj.assignTargets != null) {
+    if (typeof obj.assignTargets !== 'boolean') err('permissions.network.assignTargets: invalid');
+    else if (obj.assignTargets && !out.homeTargets.length) err('permissions.network.assignTargets: needs homeTargets');
+    else if (obj.assignTargets) out.assignTargets = true;
   }
   if (obj.localDiscovery != null) {
     try {

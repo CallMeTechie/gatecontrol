@@ -67,6 +67,15 @@
 // The plugin area (plugins-page.js) switches to that tab itself when it shows
 // this plugin already (`gc:plugin-tab` DOM event, detail.handled) — no reload.
 //
+// Since 1.324.0 both close the page's open dialogs and the frame's dim first (the dim of a frame
+// dialog stayed over the new tab: nothing could be used until a reload), and load the page in the
+// top window.
+//
+// Zugriffsziele (GC.targets, frames with data-plugin-targets = plugin.json
+// `permissions.network.assignTargets`, admin pages only, since 1.324.0): get → GET
+// …/plugins/<id>/page-targets, set → PUT …/page-targets/<target> { assigned } with the session and
+// CSRF token; the admin API checks the permission again and records every change.
+//
 // Viewport (since 1.199.0): every frame learns the height it can take
 // without the page scrolling — the window's height minus what stands above
 // the frame and below it on the page (gc-viewport { height, width }; in the
@@ -222,12 +231,29 @@
    * ui.settingsPages): the plugin area switches itself when it shows that plugin, else the page loads.
    */
   function openPluginTab(pluginId, tab) {
+    // since 1.324.0: open dialogs of this page go first (a frame's own dialog ends with its frame), and the
+    // page itself opens in the top window — never inside a frame that shows this page
+    closeDialogs();
     if (typeof CustomEvent === 'function' && document.dispatchEvent) {
       const ev = new CustomEvent('gc:plugin-tab', { detail: { plugin: pluginId, tab, handled: false } });
       document.dispatchEvent(ev);
       if (ev.detail && ev.detail.handled === true) return;
     }
-    window.location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=' + encodeURIComponent(tab));
+    topWindow().location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=' + encodeURIComponent(tab));
+  }
+
+  /** The top window when it shows this origin (a page of GateControl), else this one. */
+  function topWindow() {
+    try {
+      if (window.top && window.top !== window && window.top.location.origin === window.location.origin) return window.top;
+    } catch (_) { /* another origin */ }
+    return window;
+  }
+
+  /** Close the open <dialog> elements of this page (GC.openSettings, a settings tab of GC.navigate). */
+  function closeDialogs() {
+    if (!document.querySelectorAll) return;
+    document.querySelectorAll('dialog[open]').forEach((d) => { try { d.close(); } catch (_) { d.removeAttribute('open'); } });
   }
 
   function attach(frame) {
@@ -605,7 +631,11 @@
       dim.style.borderBottomLeftRadius = bottom < r.bottom ? '0' : fs.borderBottomLeftRadius;
       dim.style.borderBottomRightRadius = bottom < r.bottom ? '0' : fs.borderBottomRightRadius;
     }
+    // the frame left the page or is hidden (a tab switch, GC.openSettings): its dialog is gone, so is the dim
+    let dimWatch = null;
+    function frameGone() { return !frame.isConnected || !frame.getClientRects().length; }
     function setModal(open) {
+      if (open && frameGone()) open = false;
       if (open && !dim) {
         dim = document.createElement('div');
         dim.className = 'plugin-frame-dim';
@@ -618,11 +648,47 @@
         placeDim();
         window.addEventListener('scroll', placeDim, true);
         window.addEventListener('resize', placeDim);
+        if (typeof MutationObserver === 'function') {
+          // only looks (placing the dim here would change its style and wake this observer again)
+          dimWatch = new MutationObserver(() => { if (frameGone()) setModal(false); });
+          dimWatch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'style', 'open'] });
+        }
       } else if (!open && dim) {
         dim.remove();
         dim = null;
+        if (dimWatch) { dimWatch.disconnect(); dimWatch = null; }
         window.removeEventListener('scroll', placeDim, true);
         window.removeEventListener('resize', placeDim);
+      }
+    }
+
+    // GC.targets (permissions.network.assignTargets, since 1.324.0): the plugin's declared home targets from its
+    // admin page — <iframe data-plugin-targets> of an admin page only; the admin API checks the permission again
+    const targetsOn = frame.getAttribute('data-plugin-targets') != null && base.indexOf('/api/v1/plugins/') === 0;
+    const pageTargetsUrl = base.replace(/api\/$/, 'page-targets');
+    async function targetOp(m) {
+      const refuse = (status, error) => reply({ type: 'gc-result', id: m.id, ok: false, status, error });
+      if (!targetsOn) { refuse(403, 'not allowed'); return; }
+      const opts = { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } };
+      let url = pageTargetsUrl;
+      if (m.op === 'set') {
+        const target = typeof m.target === 'string' ? m.target : '';
+        if (!/^[a-z][a-z0-9-]{0,31}$/.test(target) || !Array.isArray(m.assigned) || m.assigned.length > 32) { refuse(400, 'invalid request'); return; }
+        url += '/' + encodeURIComponent(target);
+        opts.method = 'PUT';
+        opts.headers['X-CSRF-Token'] = csrf();
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify({ assigned: m.assigned });
+      } else if (m.op !== 'get') { refuse(400, 'invalid request'); return; }
+      try {
+        const res = await fetch(url, opts);
+        let data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+        const ok = res.ok && !!data && data.ok === true;
+        if (ok) delete data.ok;
+        reply({ type: 'gc-result', id: m.id, ok, status: res.status, data, error: ok ? null : ((data && (data.error || data.code)) || ('HTTP ' + res.status)) });
+      } catch (_) {
+        reply({ type: 'gc-result', id: m.id, ok: false, status: 0, error: 'network error' });
       }
     }
 
@@ -668,6 +734,7 @@
       else if (m.type === 'gc-open-tab' && Number.isInteger(m.id)) openTab(m);
       else if (m.type === 'gc-open-portal' && Number.isInteger(m.id)) openPortal(m);
       else if (m.type === 'gc-open-session' && Number.isInteger(m.id)) openSession(m);
+      else if (m.type === 'gc-targets' && Number.isInteger(m.id)) targetOp(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
@@ -688,13 +755,14 @@
         sendViewport(true);
       }
       else if (m.type === 'gc-settings') {
-        if (pluginId && !base.includes('/portal/')) openPluginTab(pluginId, 'settings');
+        // the frame's dialog (gc-modal) ends with the switch: the dim must not stay over the new tab
+        if (pluginId && !base.includes('/portal/')) { setModal(false); openPluginTab(pluginId, 'settings'); }
       }
       else if (m.type === 'gc-nav') {
         const tab = settingsPages.find((p) => typeof p === 'string' && p === m.page);
         const target = pages.find((p) => typeof p === 'string' && p === m.page);
         if (!pluginId || base.includes('/portal/')) { /* admin frames only */ }
-        else if (tab) openPluginTab(pluginId, tab);
+        else if (tab) { setModal(false); openPluginTab(pluginId, tab); }
         else if (target) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
       }
     });

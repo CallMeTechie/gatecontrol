@@ -153,7 +153,8 @@ describe('tabs of the plugin area (plugins-ui.js)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugin-bridge.js'), 'utf8');
     assert.match(js, /frame\.getAttribute\('data-plugin-settings-pages'\)/);
     assert.match(js, /new CustomEvent\('gc:plugin-tab', \{ detail: \{ plugin: pluginId, tab, handled: false \} \}\)/);
-    assert.match(js, /window\.location\.assign\('\/settings\/plugins\/manage\/' \+ encodeURIComponent\(pluginId\) \+ '\?tab=' \+ encodeURIComponent\(tab\)\)/);
-    assert.match(js, /if \(!pluginId \|\| base\.includes\('\/portal\/'\)\) \{ \/\* admin frames only \*\/ \}\s*else if \(tab\) openPluginTab\(pluginId, tab\);/);
+    // since 1.324.0 in the top window, after the frame's dim is gone (tests/plugins_targets_page.test.js)
+    assert.match(js, /topWindow\(\)\.location\.assign\('\/settings\/plugins\/manage\/' \+ encodeURIComponent\(pluginId\) \+ '\?tab=' \+ encodeURIComponent\(tab\)\)/);
+    assert.match(js, /if \(!pluginId \|\| base\.includes\('\/portal\/'\)\) \{ \/\* admin frames only \*\/ \}\s*else if \(tab\) \{ setModal\(false\); openPluginTab\(pluginId, tab\); \}/);
   });
 });

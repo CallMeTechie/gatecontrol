@@ -794,6 +794,46 @@ host, which checks it against three target classes:
    * peer / address → direct (names through the server's DNS).
    Protocols per target: `http`, `tcp:<ports>`, `udp:<ports>` (ports are
    enforced for peers/addresses; a route brings its own).
+   **Assigned from the plugin's own page** (`"assignTargets": true` next to
+   `homeTargets`, since 1.324.0, a *sensitive* permission — shown in amber at
+   install and on the Berechtigungen tab, and an update that adds it needs the
+   administrator's consent like every new permission): the plugin's admin
+   pages (never a portal tab) get `window.GC.targets`, so a setup dialog can
+   offer the route or peer right where the plugin needs it (e.g. "Jellyfin-Server
+   hinzufügen" in Medien) instead of a separate step under *Zugriffsziele*:
+   * `await GC.targets.get()` → `{ targets: [{ id, label, protocols, multiple,
+     assigned: [{ index, kind, routeId | peerId | host, port, scheme, display }] }],
+     routes: [{ id, label, type: 'http'|'l4', domain, https, internal, enabled,
+     gateway, backend: { scheme, host, port, via } | null }], peers: [{ id, label, ip,
+     gateway }] }` — the same choices as the *Zugriffsziele* card (every route,
+     every switched-on peer). `https`: Caddy serves the route's domain with a
+     certificate (`https://<domain>`); `backend`: where the route leads as the
+     administrator set it up — a gateway route its home address
+     (`target_lan_host:target_lan_port`, e.g. `192.168.2.151:8096`, `via:
+     'gateway'`), a peer route the peer's VPN address and target port (`via:
+     'peer'` — no home address), otherwise `target_ip:target_port` (`via:
+     'direct'`); `null` for L4 routes. A page uses these to
+     suggest addresses; what the plugin reaches is always `fetchTarget`'s
+     transport above.
+   * `await GC.targets.set(id, assigned)` → `{ assigned }` replaces the list of
+     the declared target `id` (≤ 32 for `multiple`, else ≤ 1), entries
+     `{ kind: 'route', routeId }` or `{ kind: 'peer', peerId, port?, scheme? }`.
+     An address (`kind: 'host'`) stays the administrator's own entry: the page
+     may keep it unchanged or leave it out (removing it), never add or change
+     one. To add one more target, read the list, append, set it; to remove,
+     set the list without it.
+   The parent page calls the admin API (`GET /api/v1/plugins/<id>/page-targets`,
+   `PUT …/page-targets/<target>` `{ assigned }`) with the administrator's
+   session and CSRF token; the server checks the permission again and runs the
+   same checks as the card (`targets.assign`: unknown route/peer, ports,
+   too many). Every change is recorded like a manual one: the plugin's log
+   and the activity log (`plugin_target_changed`, `details.via:
+   'plugin_page'`). Errors reject with `status` and the message (`403` without
+   the permission, `400` with the target error). Without the permission the
+   frame has no `GC.targets` (feature test: `GC.targets` is defined); older
+   GateControl versions refuse the key (`permissions.network: unknown key
+   assignTargets`), so such a plugin sets `"gatecontrol": ">=1.324.0"`.
+   `permissions.network.assignTargets: needs homeTargets` without targets.
 3. **localDiscovery** — UDP broadcast on the declared ports in the server's
    own local networks (no Docker/WireGuard interfaces), only after the
    administrator allows it per plugin. Answers come with their source address;
@@ -4891,7 +4931,10 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
   `window.GC.navigate(pageId)` opens another of the plugin's pages and (since
   1.185.0) `window.GC.openSettings()` its settings tab (Einstellungen ›
   Plugins › the plugin › Einstellungen) — both on admin pages only, never
-  from the portal. Since 1.225.0 a page of `ui.settingsPages` is a tab of
+  from the portal. Since 1.324.0 both first close the page's open dialogs and
+  the dim of a dialog in the frame (before, the dim stayed over the new tab
+  and nothing could be used until a reload) and load the page in the top
+  window. Since 1.225.0 a page of `ui.settingsPages` is a tab of
   its own there: `GC.navigate('<page>')` opens that tab (see "plugin.json").
 * **Downloads** (since 1.186.0): `await GC.saveFile(blob, 'Fahrtenbuch
   2026-10.csv')` hands a `Blob` the frame built (e.g. from an answer of

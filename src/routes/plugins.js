@@ -198,15 +198,17 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
  * CSP allows the relay only then; `scanQr` (ui.scanQr / ui.camera) for
  * window.GC.scanQr; `pickPrincipals` (permissions.groups) for
  * window.GC.pickPrincipals; `openUrl` (permissions.cloudImport) for window.GC.openUrl; `openSession`
- * (permissions.remote) for window.GC.openSession.
+ * (permissions.remote) for window.GC.openSession; `targets` (permissions.network.assignTargets) for
+ * window.GC.targets — `admin` frames only (opts.admin), never a portal tab.
  */
-function frameHeaders(req, res, p) {
+function frameHeaders(req, res, p, opts = {}) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
   const cameras = !!(p && p.manifest && p.manifest.permissions && p.manifest.permissions.cameras === true);
   frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p), cameras });
   return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest),
-    openUrl: frame.openUrlOf(p && p.manifest), openSession: frame.openSessionOf(p && p.manifest) };
+    openUrl: frame.openUrlOf(p && p.manifest), openSession: frame.openSessionOf(p && p.manifest),
+    targets: opts.admin === true && frame.assignTargetsOf(p && p.manifest) };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }
@@ -306,7 +308,7 @@ router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (re
   const u = res.locals.user;
   try {
     const out = await plugins.render(p.id, { view: 'page', page: page.id, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role } });
-    const opts = frameHeaders(req, res, p);
+    const opts = frameHeaders(req, res, p, { admin: true });
     return res.send(frame.document({ html: out.html, lang: l, ...opts }));
   } catch (e) {
     return errorFrame(res, 503, res.locals.t(e && e.code === 'ERR_NOT_RUNNING' ? 'plugins.page.not_running' : 'plugins.page.error'), l);

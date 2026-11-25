@@ -116,6 +116,8 @@
         : t('plugins.perm.none'),
     });
     if (n.discovery) rows.push({ label: t('plugins.perm.discovery'), value: t('plugins.perm.discovery_v', { ports: n.discovery.udp.join(', ') }) });
+    // since 1.324.0: its admin pages assign these targets themselves (GC.targets) — sensitive
+    if (n.assignTargets) rows.push({ label: t('plugins.perm.assign_targets'), value: t('plugins.perm.assign_targets_on') });
     // since 1.216.0: pictures in mails, loaded by GateControl on behalf of the plugin (gc.http.fetchImage)
     if (n.images) rows.push({ label: t('plugins.perm.images'), value: t('plugins.perm.images_on') });
     rows.push({ label: t('plugins.perm.data'), value: t(perm.storage ? 'plugins.perm.storage_on' : 'plugins.perm.storage_off') });
@@ -498,6 +500,7 @@
     if (perm.vpnDns) out.push('plugins.perm.vpn_dns');
     if (perm.bridges) out.push('plugins.perm.bridges');
     if ((n.homeTargets || []).length || n.discovery) out.push('plugins.perm.lan');
+    if (n.assignTargets) out.push('plugins.perm.assign_targets');
     if ((n.internet || []).length) out.push('plugins.perm.internet');
     if (perm.actions) out.push('plugins.perm.actions');
     if (perm.geolocation) out.push('plugins.perm.geolocation');
