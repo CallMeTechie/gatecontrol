@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.324.0] — 2026-11-25
+
+### Features
+- Zugriffsziele aus der Plugin-Seite zuweisen (GC.targets), GC.openSettings ohne hängenden Dialog (#587)
+
+---
+
 ## [1.323.0] — 2026-11-25
 
 ### Features
