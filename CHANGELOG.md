@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.322.0] — 2026-11-25
+
+### Features
+- plugin hook devicesChanged for permissions.devices (#584)
+
+---
+
 ## [1.321.1] — 2026-11-24
 
 ### Fixes
