@@ -19,8 +19,21 @@
 //   viewerDevice(req)   the device of an app request { id, platform, clientType? }
 //                       (user.device of the client plugin API; clientType only
 //                       when known)
+//
+// Hook devicesChanged({ removed, added }) (since 1.322.0): a device token of a
+// person was created, revoked ("Meine Geräte", the administration, a new
+// enrollment replacing it, the directory sync), moved to another owner, or
+// its person was disabled / enabled / deleted. The token services call
+// announce(); the entries are batched (≤ 1×/s, an add and a removal of the
+// same token in one batch cancel out) and go to every running plugin with
+// permissions.devices — 10 s per call, never awaited, failures land in the
+// plugin's log, so a plugin never holds up or breaks the change itself.
+//   entriesFor({ tokenIds } | { userId }, reason)  the entries of device
+//                       tokens (before a deletion: read them first)
+//   announce({ removed, added })  queue them for the hook
 
 const stream = require('../notify/stream');
+const logger = require('../../utils/logger');
 
 const ONLINE_WINDOW_MS = 60 * 1000;
 // linux: the Linux agent (gatecontrol-agent, plugin "Fernzugriff" stage 4) and other Linux apps
@@ -143,4 +156,105 @@ function viewerDevice(req) {
   return clientType ? { id: String(req.tokenId), platform, clientType } : { id: String(req.tokenId), platform };
 }
 
-module.exports = { list, ownedBy, viewerDevice, idOf, platformOf, ONLINE_WINDOW_MS };
+// ─── hook devicesChanged ───────────────────────────────────────────────────
+
+const HOOK_MS = 10000;
+const BATCH_MS = 1000;
+const MAX_BATCH = 1000;
+const REASONS = new Set(['created', 'revoked', 'owner_changed', 'user_disabled', 'user_enabled', 'user_deleted']);
+
+/**
+ * A token the plugins treat as a device of its person for the hook: an owner,
+ * not expired, and scope `client` (an app token, even before the app first
+ * used it) or what gc.devices.list counts (a `full-access` token an app
+ * identified itself on).
+ */
+function hookCandidate(r, nowIso) {
+  if (r.user_id == null || (r.expires_at && r.expires_at <= nowIso)) return false;
+  return scopesOf(r.scopes).includes('client') || isDevice(r, nowIso);
+}
+
+/** { id, userId, name, platform, clientType, reason } of the device tokens among `tokenIds` / of `userId`. */
+function entriesFor({ tokenIds = null, userId = null } = {}, reason) {
+  let rows;
+  if (Array.isArray(tokenIds)) {
+    const ids = tokenIds.map(idOf).filter((v) => v != null);
+    if (!ids.length) return [];
+    rows = db().prepare(`${DEVICE_SQL} WHERE t.id IN (${ids.map(() => '?').join(',')}) ORDER BY t.id`).all(...ids);
+  } else if (userId != null) {
+    rows = db().prepare(`${DEVICE_SQL} WHERE t.user_id = ? ORDER BY t.id`).all(userId);
+  } else return [];
+  const nowIso = new Date().toISOString();
+  return rows.filter((r) => hookCandidate(r, nowIso)).map((r) => ({
+    id: String(r.id),
+    userId: r.user_id,
+    name: r.name,
+    platform: platformOf(r.platform || r.client_platform),
+    clientType: clientTypeOf(r),
+    reason,
+  }));
+}
+
+// token id + owner → { kind: 'added' | 'removed', entry, created }: the last state wins (a token moved to
+// another person is a removal for the old owner and an addition for the new one)
+let pending = new Map();
+let timer = null;
+
+/** Queue device changes for the hook. Never throws: the caller's change has happened. */
+function announce(change) {
+  try {
+    const removed = change && Array.isArray(change.removed) ? change.removed : [];
+    const added = change && Array.isArray(change.added) ? change.added : [];
+    const put = (kind) => (e) => {
+      if (!e || e.id == null || !REASONS.has(e.reason)) return;
+      const id = String(e.id);
+      const key = `${id}:${e.userId}`;
+      const prev = pending.get(key);
+      pending.set(key, { kind, entry: { ...e, id }, created: prev ? prev.created : kind === 'added' && e.reason === 'created' });
+    };
+    removed.forEach(put('removed'));
+    added.forEach(put('added'));
+    if (!pending.size || timer) return;
+    timer = setTimeout(flush, module.exports._batchMs != null ? module.exports._batchMs : BATCH_MS);
+    if (timer.unref) timer.unref();
+  } catch (err) { logger.debug({ err: err.message }, 'devicesChanged not queued'); }
+}
+
+function pluginLog(id, level, message) {
+  try { require('./registry').addLog(id, level, message); } catch { /* db closed */ }
+}
+
+/** The plugins with permissions.devices that run now. */
+function hookPlugins() {
+  const runtime = require('./runtime');
+  const { evaluate } = require('./index');
+  let rows;
+  try { rows = require('./registry').list(); } catch { return []; }
+  return rows.filter((p) => p.manifest && p.manifest.permissions && p.manifest.permissions.devices === true)
+    .filter((p) => { try { return evaluate(p).run && runtime.info(p.id).state === 'running'; } catch { return false; } });
+}
+
+/** Send the queued batch to the plugins (never awaited by the token services). */
+function flush() {
+  if (timer) { clearTimeout(timer); timer = null; }
+  const batch = [...pending.values()];
+  pending = new Map();
+  // an app token created and removed again in the same batch (a failed enrollment) never existed for the plugins
+  const removed = batch.filter((b) => b.kind === 'removed' && !b.created).map((b) => b.entry).slice(0, MAX_BATCH);
+  const added = batch.filter((b) => b.kind === 'added').map((b) => b.entry).slice(0, MAX_BATCH);
+  if (!removed.length && !added.length) return;
+  let targets;
+  try { targets = hookPlugins(); } catch (err) { logger.debug({ err: err.message }, 'devicesChanged: no plugins'); return; }
+  const runtime = require('./runtime');
+  const ms = module.exports._hookMs || HOOK_MS;
+  for (const p of targets) {
+    let call;
+    try { call = runtime.call(p.id, 'devicesChanged', { removed, added }, ms); } catch (e) { call = Promise.reject(e); }
+    Promise.resolve(call).catch((e) => {
+      // e.stopped: the host stopped the plugin meanwhile (runtime.js) — not a warning
+      pluginLog(p.id, e && e.stopped ? 'debug' : 'warn', 'devicesChanged failed: ' + String((e && e.message) || e).slice(0, 200));
+    });
+  }
+}
+
+module.exports = { list, ownedBy, viewerDevice, idOf, platformOf, ONLINE_WINDOW_MS, entriesFor, announce, flush, _batchMs: null, _hookMs: null };

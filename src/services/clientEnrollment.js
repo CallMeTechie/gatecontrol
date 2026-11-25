@@ -447,7 +447,10 @@ async function redeemCode(rawCode, { hostname, platform, clientVersion, fingerpr
     // Neither the token nor a peer minted by this redeem may outlive it.
     if (createdTokenId != null) {
       try {
+        const gone = require('./plugins/devices').entriesFor({ tokenIds: [createdTokenId] }, 'revoked');
         db.prepare('DELETE FROM api_tokens WHERE id = ?').run(createdTokenId);
+        // cancels the 'created' of the same batch (plugins' devicesChanged); later it is a removal
+        require('./plugins/devices').announce({ removed: gone });
         db.prepare('UPDATE client_enrollment_codes SET token_id = NULL, redeemed_peer_id = NULL, redeemed_platform = NULL WHERE code_hash = ?').run(codeHash);
       } catch (cleanupErr) { logger.warn({ err: cleanupErr.message, tokenId: createdTokenId }, 'enrollment rollback: removing token failed'); }
     }

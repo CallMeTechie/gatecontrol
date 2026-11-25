@@ -443,6 +443,18 @@ function setSelfEnroll(id, enabled, { actorId = null, ip = null } = {}) {
 }
 
 /**
+ * The person's app devices to the plugins (hook devicesChanged, plugins/devices.js):
+ * disabled → all of them removed, enabled again → added. Best-effort.
+ */
+function announceUserDevices(id, enabled) {
+  try {
+    const dev = require('./plugins/devices');
+    const list = dev.entriesFor({ userId: id }, enabled ? 'user_enabled' : 'user_disabled');
+    if (list.length) dev.announce(enabled ? { added: list } : { removed: list });
+  } catch (err) { logger.debug({ err: err.message }, 'devicesChanged for a toggled user skipped'); }
+}
+
+/**
  * Toggle a user's enabled state. Disabling a member also removes the web
  * login of "Mein Bereich" (password, passkeys, invitations): after
  * re-enabling, a new invitation is needed.
@@ -474,6 +486,7 @@ function toggle(id, { actorId = null, ip = null } = {}) {
   try { require('./groups').userEnabledChanged(id, !!newEnabled); } catch (err) {
     logger.warn({ err: err.message }, 'group change events for a toggled user skipped');
   }
+  announceUserDevices(id, !!newEnabled);
 
   activity.log('user_toggled', `User "${user.username}" ${newEnabled ? 'enabled' : 'disabled'}`, {
     source: 'admin',
@@ -533,6 +546,7 @@ function setDirectoryEnabled(id, enabled, { directoryId = null, directoryName = 
   try { require('./groups').userEnabledChanged(id, !!enabled); } catch (err) {
     logger.warn({ err: err.message }, 'group change events for a directory toggle skipped');
   }
+  announceUserDevices(id, !!enabled);
   const dirText = directoryName ? ` (${directoryName})` : '';
   activity.log('user_toggled', enabled
     ? `User "${user.username}" enabled again by the directory sync${dirText}`
@@ -629,6 +643,9 @@ function remove(id, { actorId = null, ip = null } = {}) {
   // announces them as removed (access rebuild, plugin hooks).
   let memberships = [];
   try { memberships = require('./groups').membershipsOfUser(id); } catch { memberships = []; }
+  // the person's app devices go with the tokens (hook devicesChanged): read them before
+  let devices = [];
+  try { devices = user.enabled === 1 ? require('./plugins/devices').entriesFor({ userId: id }, 'user_deleted') : []; } catch { devices = []; }
   db.transaction(() => {
     db.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(id);
     // Positions the person shared go with the person (the peers stay).
@@ -643,6 +660,9 @@ function remove(id, { actorId = null, ip = null } = {}) {
     try { require('./groups').userDeleted(id, memberships); } catch (err) {
       logger.warn({ err: err.message }, 'group change events for a deleted user skipped');
     }
+  }
+  if (devices.length) {
+    try { require('./plugins/devices').announce({ removed: devices }); } catch { /* best-effort */ }
   }
 
   activity.log('user_deleted', `User "${user.username}" deleted`, {
