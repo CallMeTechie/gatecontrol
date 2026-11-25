@@ -1316,6 +1316,11 @@ async function handleCall(method, payload) {
       // optional (permissions.groups): { changes: [{ type, groupId, userId?, role?, reason? }] }, batched ≤ 1×/s; answer ignored
       if (typeof plugin.groupsChanged === 'function') await plugin.groupsChanged(payload, gc);
       return {};
+    case 'devicesChanged':
+      // optional (permissions.devices, since 1.322.0): { removed: [...], added: [...] } — entries { id, userId, name, platform,
+      // clientType, reason }, batched ≤ 1×/s; answer ignored
+      if (typeof plugin.devicesChanged === 'function') await plugin.devicesChanged(payload, gc);
+      return {};
     case 'groupUsage':
       // optional (permissions.groups): what the plugin keeps for payload.groupId → [{ kind, label, onDelete }]
       return typeof plugin.groupUsage === 'function' ? plugin.groupUsage(payload, gc) : [];

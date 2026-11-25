@@ -380,7 +380,7 @@ function validate(raw, opts = {}) {
     // publicLinks (since 1.193.0): download links without sign-in (gc.publicLinks,
     // only while an administrator allows them — publicLinks.js)
     // devices (since 1.193.0): a person's app installations (gc.devices.list,
-    // gc.notify devices / silent, user.device on app requests)
+    // gc.notify devices / silent, user.device on app requests; hook devicesChanged since 1.322.0)
     // homePresence (phase 3a): whether people are at home by their phone in the home network
     // (gc.homeNetwork.presence — only people who agreed, never MAC/IP addresses)
     // homeInternet (phase 3b): pause / extend the home internet of a person (gc.homeNetwork.internet, never MACs)

@@ -5,6 +5,15 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const activity = require('./activity');
 
+/** Hook devicesChanged of the plugins (plugins/devices.js): best-effort, never throws. */
+function devicesHook() { return require('./plugins/devices'); }
+function announceDevices(change) {
+  try { devicesHook().announce(change); } catch (err) { logger.debug({ err: err.message }, 'devicesChanged not announced'); }
+}
+function deviceEntries(sel, reason) {
+  try { return devicesHook().entriesFor(sel, reason); } catch { return []; }
+}
+
 const TOKEN_PREFIX = 'gc_';
 const TOKEN_BYTES = 48;
 const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
@@ -225,6 +234,7 @@ function create({ name, scopes, expiresAt, machineBindingEnabled, userId, peerId
   });
 
   logger.info({ tokenId: token.id, name: name.trim() }, 'API token created');
+  if (token.user_id != null) announceDevices({ added: deviceEntries({ tokenIds: [token.id] }, 'created') });
 
   return {
     rawToken,
@@ -482,7 +492,13 @@ function update(id, data, { ip = null, actorId = null } = {}) {
 
   if (!fields.length) return { token: formatToken(row), dropped };
   values.push(id);
+  const ownerChanged = changes.includes('owner');
+  const before = ownerChanged && row.user_id != null ? deviceEntries({ tokenIds: [id] }, 'owner_changed') : [];
   db.prepare(`UPDATE api_tokens SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  if (ownerChanged) {
+    // a device of another person now: gone for the old owner, new for the new one (plugins' devicesChanged)
+    announceDevices({ removed: before, added: ownerId != null ? deviceEntries({ tokenIds: [id] }, 'owner_changed') : [] });
+  }
   if (changes.includes('split_tunnel')) {
     // The token's split-tunnel preset feeds GET /client/split-tunnel and the
     // policy version: tell its open push stream (best-effort).
@@ -508,9 +524,12 @@ function revoke(id, ipAddress, { source = 'admin' } = {}) {
   const token = db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(id);
   if (!token) throw new Error('Token not found');
 
+  const gone = token.user_id != null ? deviceEntries({ tokenIds: [id] }, 'revoked') : [];
   db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
   // A revoked device loses its push stream at once (notification center).
   require('./notify').onTokenRevoked(id);
+  // ... and the plugins hear of it (devicesChanged: e.g. a media server signs the device out)
+  if (gone.length) announceDevices({ removed: gone });
 
   activity.log('token_deleted', `API token "${token.name}" revoked`, {
     source,
@@ -608,6 +627,7 @@ function assignToUser(tokenId, userId) {
   if (!token) throw new Error('Token not found');
   if (token.user_id !== null) throw new Error('Token is already assigned to a user');
   db.prepare('UPDATE api_tokens SET user_id = ? WHERE id = ?').run(userId, tokenId);
+  announceDevices({ added: deviceEntries({ tokenIds: [tokenId] }, 'owner_changed') });
   return formatToken(db.prepare('SELECT * FROM api_tokens WHERE id = ?').get(tokenId));
 }
 

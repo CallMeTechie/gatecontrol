@@ -1018,6 +1018,7 @@ module.exports = {
   async publicRequest({ method, path, query, headers, user, token, body, url, originalUrl, proofUrl }, gc) {  // optional
     return { status: 200, json: {} };       // (`publicEndpoints`, since 1.211.0) — see "Public endpoints"
   },
+  async devicesChanged({ removed, added }, gc) {},  // optional (`devices`, since 1.322.0): devices revoked / added (see "Devices")
   async groupsChanged({ changes }, gc) {},  // optional (`groups`): batched group changes (see "Groups")
   async groupUsage({ groupId, successorUserId }, gc) {  // optional (`groups`): what the plugin keeps for a group
     return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
@@ -2504,6 +2505,44 @@ single device. Code: `src/services/plugins/devices.js`.
   transfer Y".
 * `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
   on a chat topic they are `ERR_INVALID`.
+
+### Hook `devicesChanged` (since 1.322.0)
+
+A plugin that keeps something per device (a media server's sign-in, a
+pairing) hears at once when a device goes or comes, instead of polling
+`gc.devices.list`:
+
+```js
+async devicesChanged({ removed, added }, gc) {
+  // removed / added: [{ id: '42', userId: 12, name: 'Pixel 8',
+  //   platform: 'android' | 'windows' | 'ios' | 'web' | 'linux' | null,
+  //   clientType: 'pro' | 'community' | 'android-tv' | null,
+  //   reason }]
+  for (const d of removed) await signOut(d.id);
+}
+```
+
+| `reason` | in | when |
+|---|---|---|
+| `revoked` | `removed` | the token was deleted: the person in "Meine Geräte", an administrator (Users / Clients, `DELETE /api/v1/tokens/:id`), a new setup of the same app replacing it, the directory sync |
+| `user_disabled` | `removed` | the person was disabled (administrator or directory): every device of that person |
+| `user_deleted` | `removed` | an enabled person was deleted (a disabled one was announced at disabling) |
+| `created` | `added` | a new app token (scope `client`) of a person — the app may not have used it yet, so it can be missing from `gc.devices.list` for a moment |
+| `user_enabled` | `added` | the person was enabled again: the devices they still have |
+| `owner_changed` | both | the token was moved to another person: removed for the old owner (`userId` the old one), added for the new one |
+
+* The same ids as `gc.devices.list` and `gc.notify({ devices })`; `platform`
+  and `clientType` as far as known (a fresh token: `null`). Only tokens with
+  an owner and scope `client`, or a `full-access` token an app identified
+  itself on — never admin or automation tokens.
+* Only running plugins with `permissions.devices` that export the hook;
+  batched (at most once per second; a token created and removed again within
+  the batch, such as a failed setup, is not announced at all).
+* 10 s per call, **never awaited**: the revocation, the disabling or the
+  deletion happens whatever the plugin does; errors and timeouts land in the
+  plugin's log (`devicesChanged failed: …`). No replay after a restart — a
+  plugin still compares with `gc.devices.list` now and then (a token that
+  merely expires is not announced).
 
 ## Presence over the home network (`permissions.homePresence`)
 
