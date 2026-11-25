@@ -218,6 +218,12 @@ scenarios/34-plugin-dialog-dim.js Plugin-Dialog höher als das Fenster: Fixture-
                         min-height-Füller von .app, ein daran gehaltener Dialog passt
                         ins Fenster; Thema auch bei spät geladenem plugin-bridge.js;
                         1440 / 390 px, hell/dunkel
+scenarios/37-plugin-targets.js Einstellungen › Plugins › <Plugin> › Einstellungen: Karte
+                        „Zugriffsziele“ mit dem Test-Plugin hello unter drei ids
+                        (unsigniert, am Ende entfernt): ohne assignTargets das Formular
+                        wie bisher; mit assignTargets keine Ziele auf der Karte (kein
+                        Formular, keine Liste) – nur der Schalter „Geräte im lokalen
+                        Netz suchen“ bleibt; ohne localDiscovery keine Karte; 390 px
 ```
 
 ## Ablauf

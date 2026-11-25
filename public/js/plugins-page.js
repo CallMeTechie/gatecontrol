@@ -1860,13 +1860,18 @@
   }
 
   // ── Zugriffsziele (home-network targets the plugin declared) ──
+  // Since 1.325.0 a plugin with permissions.network.assignTargets (granted with its install or update)
+  // manages its targets on its own pages only (window.GC.targets, e.g. Medien › Quellen): no targets here,
+  // one place for them. What the plugin cannot grant itself (local discovery) stays.
   async function renderTargets(p, panel) {
     const r = await req('GET', API + '/' + enc(p.id) + '/targets');
-    if (!r.ok || (!r.declared.length && !r.discovery)) return;
+    if (!r.ok) return;
+    const declared = P.cardTargets(p, r.declared);
+    if (!declared.length && !r.discovery) return;
     const box = el('section', { class: 'pgx-card pgx-pad pgx-stack-card', id: 'pg-targets', 'aria-labelledby': 'pg-tg-title' });
     box.appendChild(h2(t('plugins.tg.title'), 'pg-tg-title'));
-    box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.tg.intro') }));
-    for (const d of r.declared) {
+    if (declared.length) box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.tg.intro') }));
+    for (const d of declared) {
       const isHttp = d.protocols.indexOf('http') >= 0;
       const row = el('div', { class: 'pg-target', 'data-target': d.id });
       row.appendChild(el('div', { class: 'pg-target-head' }, [el('b', { text: d.label }), el('span', { class: 'pgx-muted', text: ' ' + d.protocols.map(P.protoText).join(' · ') })]));
