@@ -96,7 +96,13 @@ describe('install a signed plugin', () => {
     assert.equal(r.body.user.role, 'admin');
     assert.deepEqual(r.body.query, { x: '1' });
     assert.deepEqual(r.body.body, { a: 1 });
-    await agent.get(`${API}/hello/api/../../settings`).expect(404);
+    // superagent >= 10.4 sends dot segments as written (no WHATWG
+    // normalisation), so `..` reaches the forwarder and must be refused there
+    // instead of leaving the plugin's API (forwardPath).
+    const up = await agent.get(`${API}/hello/api/../../settings`).expect(400);
+    assert.equal(up.body.code, 'invalid');
+    const upEnc = await agent.get(`${API}/hello/api/x/%2e%2e/%2e%2e/settings`).expect(400);
+    assert.equal(upEnc.body.code, 'invalid', 'encoded dot segments are refused as well');
     await agent.post(`${API}/hello/api/ping`).send({}).expect(403); // CSRF of the host
   });
 });
