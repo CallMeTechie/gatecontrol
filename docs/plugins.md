@@ -834,6 +834,16 @@ host, which checks it against three target classes:
    GateControl versions refuse the key (`permissions.network: unknown key
    assignTargets`), so such a plugin sets `"gatecontrol": ">=1.324.0"`.
    `permissions.network.assignTargets: needs homeTargets` without targets.
+   **One place for the targets** (since 1.325.0): once the permission is
+   granted (with the install or the update that brings it), the targets are
+   managed on the plugin's own pages only — Einstellungen › Plugins › the
+   plugin › Einstellungen no longer shows them, neither as a form nor as a
+   list (the *Zugriffsziele* card is left out; a declared `localDiscovery`
+   keeps its switch there, the plugin cannot grant that itself). So such a
+   plugin offers on its page everything the card did: assign, show, remove
+   (e.g. Medien › Quellen: the route of a source is its target). Without the
+   permission the card stays as before. The admin API (`…/targets`) is
+   unchanged.
 3. **localDiscovery** — UDP broadcast on the declared ports in the server's
    own local networks (no Docker/WireGuard interfaces), only after the
    administrator allows it per plugin. Answers come with their source address;

@@ -50,6 +50,15 @@
   }
 
   /** The tab to show: the one asked for (?tab=) when the plugin has it, else "overview". */
+  /**
+   * The declared targets the Zugriffsziele card under Einstellungen shows (since 1.325.0): none for a plugin
+   * that assigns them on its own pages (permissions.network.assignTargets, the view's `assignTargets`) —
+   * one place for them — else all of them.
+   */
+  function cardTargets(p, declared) {
+    return p && p.assignTargets === true ? [] : (Array.isArray(declared) ? declared : []);
+  }
+
   function manageTab(tabs, want) {
     return (tabs || []).some((x) => x.id === want) ? want : 'overview';
   }
@@ -520,6 +529,6 @@
     return out;
   }
 
-  return { MAX_PACKAGE_BYTES, MANAGE_TABS, manageTabs, manageTab, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
+  return { MAX_PACKAGE_BYTES, MANAGE_TABS, manageTabs, manageTab, cardTargets, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
     CATEGORIES, ICON_PATHS, DETAIL_ICON_PATHS, addRows, addChips, daysUntil, categoryOf, iconPath, isProblem, licenseExpiring, attention, matches, filterInstalled, groupByCategory, sortCatalog, updateKind, noteLines, sensitivePerms };
 });

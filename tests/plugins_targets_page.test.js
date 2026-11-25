@@ -175,6 +175,20 @@ describe('page scripts', () => {
       for (const k of ['plugins.tg.pick_route', 'plugins.tg.pick_peer', 'plugins.perm.assign_targets', 'plugins.perm.assign_targets_on', 'plugins.err.target_not_allowed']) assert.ok(s[k], l + ' ' + k);
     }
   });
+  it('since 1.325.0: one place — the Zugriffsziele card under Einstellungen leaves the targets out once the plugin assigns them itself', () => {
+    const P = require('../public/js/plugins-ui.js');
+    const declared = [{ id: 'gateway', label: 'Gateway', protocols: ['http'], multiple: false, assigned: [] }];
+    assert.deepEqual(P.cardTargets({ assignTargets: true }, declared), [], 'granted: managed on the plugin\'s page only');
+    assert.deepEqual(P.cardTargets({ assignTargets: false }, declared), declared, 'without the permission: as before');
+    assert.deepEqual(P.cardTargets({}, declared), declared, 'a view from before 1.324.0');
+    assert.deepEqual(P.cardTargets(null, undefined), []);
+    const src = read('plugins-page.js');
+    const body = /async function renderTargets\(p, panel\) \{([\s\S]*?)\n  \}\n/.exec(src)[1];
+    assert.match(body, /const declared = P\.cardTargets\(p, r\.declared\);/);
+    assert.match(body, /if \(!declared\.length && !r\.discovery\) return;/, 'no card at all without targets and discovery');
+    assert.match(body, /for \(const d of declared\)/);
+    assert.doesNotMatch(body, /r\.declared\b(?!\);)/, 'nothing else reads the full list');
+  });
   it('plugins-ui.js: assignTargets is a sensitive permission row', () => {
     const P = require('../public/js/plugins-ui.js');
     const perm = { network: { internet: [], homeTargets: [{ id: 'x', label: 'X', protocols: ['http'] }], discovery: null, assignTargets: true } };
