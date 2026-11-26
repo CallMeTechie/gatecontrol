@@ -6413,7 +6413,13 @@ person uses Zigbee2MQTT:
   the approved ones). A gateway that does not read `optionalCapabilities` yet
   runs the edge part as usual but refuses the optional topic in
   `gc.mqtt.subscribe` / `publish` (`denied`). Treat `denied` as "not available
-  on this gateway yet".
+  on this gateway yet". The server tells such a gateway apart by the feature
+  `edge-optional-caps` (the hello's `gw.features` or the heartbeat's
+  `telemetry.capabilities`, gateway 1.46.0 and newer): without it the page
+  shows „Gateway zu alt – bitte aktualisieren“ above *Zusätzliche Rechte
+  (optional)* (confirming stays possible, it applies after the update), the
+  note of `gc.edge.requestCapability` says so, and `gc.edge.capabilities` /
+  `requestCapability` answer `gatewaySupported: false`.
 
 ### Server part: `gc.edge`
 
@@ -6456,11 +6462,15 @@ Only in plugins with an `edge` section:
   servers keep working; show `reason` when it is set and fall back to a
   generic "not connected" otherwise.
 * `gc.edge.capabilities(gatewayId)` (since 1.317.0) → `{ gatewayId, optional,
-  approved, requested }` — the keys of `edge.optionalCapabilities`, the ones an
+  approved, requested, gatewaySupported }` — the keys of `edge.optionalCapabilities`, the ones an
   administrator confirmed for that gateway, and the ones asked for and not
-  confirmed yet. `not_enabled` when the plugin is not set up for that gateway.
+  confirmed yet. `gatewaySupported` (newer servers; missing on older ones):
+  `true` when the gateway applies optional capabilities (feature
+  `edge-optional-caps`), `false` for an older gateway that refuses them
+  (`denied`) — tell the user to update the gateway —, `null` when not known
+  yet (no hello, no heartbeat). `not_enabled` when the plugin is not set up for that gateway.
 * `gc.edge.requestCapability(gatewayId, key)` (since 1.317.0) → `{ status:
-  'approved' | 'requested', notified }` — asks an administrator for one optional
+  'approved' | 'requested', notified, gatewaySupported }` (`gatewaySupported` as above) — asks an administrator for one optional
   key (`mqtt.topic:zigbee2mqtt/#`): a note in the activity log
   (`gateway_edge_capability_requested`, severity warning, `details.link`
   `/gateways#gw/<id>/edge`) naming the plugin, the gateway and the capability,

@@ -9349,6 +9349,8 @@
   "gwe.pl.disabled_done": "{{plugin}} ist auf diesem Gateway aus.",
   "gwe.opt.title": "Zusätzliche Rechte (optional)",
   "gwe.opt.intro": "Diese Rechte fragt das Plugin erst an, wenn es sie braucht. Jedes gilt nur für dieses Gateway, du kannst es jederzeit wieder entziehen – der Edge-Teil läuft ohne sie weiter.",
+  "gwe.opt.too_old": "Gateway zu alt – bitte aktualisieren",
+  "gwe.opt.too_old_d": "Zusätzliche Rechte wendet erst Gateway {{min}} oder neuer an (dieses: {{version}}) – bis dahin lehnt es sie ab, auch bestätigte. Bestätigen kannst du schon jetzt; nach dem Update gelten sie.",
   "gwe.opt.list": "Zusätzliche Rechte von {{plugin}}",
   "gwe.opt.approved": "bestätigt",
   "gwe.opt.requested": "angefragt",

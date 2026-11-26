@@ -653,9 +653,16 @@
         h('span', { class: 'gwe-opt-t', text: c.text }), tag(tone, t(label), true), b,
       ]);
     });
+    // a gateway without the feature edge-optional-caps refuses confirmed optional rights (`denied`) — say so
+    const sup = d.support || {};
+    const tooOld = sup.optionalCaps === false
+      ? note('warn', [h('strong', { text: t('gwe.opt.too_old') }), ' ', t('gwe.opt.too_old_d', { min: sup.optionalCapsMinGateway || '—', version: sup.gatewayVersion || '—' })])
+      : null;
+    if (tooOld) tooOld.setAttribute('data-opt-too-old', '');
     return h('div', { class: 'gwe-opt' }, [
       h('p', { class: 'gwe-opt-h', text: t('gwe.opt.title') }),
       h('p', { class: 'gwe-d', text: t('gwe.opt.intro') }),
+      tooOld,
       h('ul', { class: 'gwe-opt-list', 'aria-label': t('gwe.opt.list', { plugin: p.name }) }, rows),
     ]);
   }

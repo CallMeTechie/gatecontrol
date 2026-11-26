@@ -306,9 +306,9 @@ function makeEdge() {
   return Object.freeze({
     /** gateways() → [{ id, name, state, online, version }] — the gateways this plugin is set up for */
     gateways: () => hostCall('edge.gateways', {}),
-    /** since 1.317.0: capabilities(gatewayId) → { gatewayId, optional, approved, requested } — edge.optionalCapabilities on that gateway */
+    /** since 1.317.0: capabilities(gatewayId) → { gatewayId, optional, approved, requested, gatewaySupported } — edge.optionalCapabilities on that gateway (gatewaySupported false: gateway too old) */
     capabilities: (gatewayId) => hostCall('edge.capabilities', { gatewayId }),
-    /** since 1.317.0: requestCapability(gatewayId, key) → { status: 'approved' | 'requested', notified } — asks an administrator (one note per day) */
+    /** since 1.317.0: requestCapability(gatewayId, key) → { status: 'approved' | 'requested', notified, gatewaySupported } — asks an administrator (one note per day) */
     requestCapability: (gatewayId, key) => hostCall('edge.requestCapability', { gatewayId, key: String(key) }),
     /** call(gatewayId, method, params, { timeoutMs ≤ 30000 }) → what the edge part's gc.handle(method) returned */
     call: (gatewayId, method, params, opts) => {

@@ -228,7 +228,8 @@ describe('state, switches and the admin API', () => {
     const p = r.body.gateway.plugins.find((x) => x.id === P);
     assert.deepEqual(p.edge.capabilities.map((x) => x.key), CAPS);
     assert.equal(p.assignment, null);
-    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0' });
+    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
+      optionalCaps: false, optionalCapsMinGateway: '1.46.0' }); // hello without gw.features: too old for optional rights
     assert.equal(r.body.gateway.gateway.isolation, null, 'older gateway: no isolation in hello');
     const list = await agent.get(`${API}/gateways`).expect(200);
     assert.deepEqual(list.body.gateways.map((g) => g.name), ['gw-a', 'gw-b']);
@@ -236,7 +237,8 @@ describe('state, switches and the admin API', () => {
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.18.0' } }), gwB.peer.id);
     db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(gwB.peer.id);
     const b = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((g) => g.id === gwB.peer.id);
-    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0' });
+    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
+      optionalCaps: null, optionalCapsMinGateway: '1.46.0' }); // no hello, no capability list: not known
   });
 
   it('edge on → new state; enabling needs exactly the shown capability list', async () => {
@@ -799,7 +801,8 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
   });
 
   it('gc.edge.capabilities: declared, nothing confirmed; another gateway → not_enabled; topics outside → denied', async () => {
-    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [], requested: [] });
+    // the simulated host's hello names no gw.features: an older gateway (gatewaySupported false)
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [], requested: [], gatewaySupported: false });
     const other = await pluginApi('/capabilities', { gatewayId: 999999 });
     assert.equal(other.code, 'not_enabled');
     assert.equal((await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { topics: ['zigbee2mqtt/lamp/#'] } })).code, 'denied');
@@ -807,7 +810,7 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
 
   it('gc.edge.requestCapability: one note with the way to the confirmation, throttled; unknown keys refused', async () => {
     const r1 = await pluginApi('/request', { gatewayId: gw(), key: Z });
-    assert.deepEqual(r1.result, { status: 'requested', notified: true });
+    assert.deepEqual(r1.result, { status: 'requested', notified: true, gatewaySupported: false });
     const notes = activities('gateway_edge_capability_requested');
     assert.equal(notes.length, 1);
     assert.match(notes[0].message, /Edge demo/);
@@ -816,8 +819,12 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     const det = JSON.parse(notes[0].details);
     assert.equal(det.link, `/gateways#gw/${gw()}/edge`);
     assert.equal(det.capability, Z);
+    // the gateway is too old for optional capabilities: the note says so (no silent `denied` later)
+    assert.match(notes[0].message, /gateway too old for additional capabilities, update it \(needs 1\.46\.0 or newer\)/);
+    assert.equal(det.gateway_too_old, true);
+    assert.equal(det.min_gateway, '1.46.0');
     // again (and again): no second note
-    for (let i = 0; i < 3; i++) assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'requested', notified: false });
+    for (let i = 0; i < 3; i++) assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'requested', notified: false, gatewaySupported: false });
     assert.equal(activities('gateway_edge_capability_requested').length, 1);
     assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result.requested, [Z]);
     const p = await optOf();
@@ -847,8 +854,8 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     assert.equal(appr.length, 1);
     assert.equal(JSON.parse(appr[0].details).capability, Z);
     // the plugin sees it; asking again is answered with "approved"
-    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [Z], requested: [] });
-    assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'approved', notified: false });
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [Z], requested: [], gatewaySupported: false });
+    assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'approved', notified: false, gatewaySupported: false });
     // device accounts below the confirmed topic now work
     const acc = await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { name: 'zb', topics: ['zigbee2mqtt/lamp/#'] } });
     assert.equal(acc.ok, true, JSON.stringify(acc));
@@ -872,6 +879,46 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: Z }).expect(200);
     assert.equal(activities('gateway_edge_optional_revoked').length, 1);
     assert.equal((await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: 'mqtt.topic:other/#' })).body.code, 'unknown_capability');
+  });
+
+  it('„Gateway zu alt“: the feature edge-optional-caps from the hello (gw.features) or the heartbeat (telemetry.capabilities)', async () => {
+    const support = async () => (await agent.get(`${API}/gateways/${gw()}`).expect(200)).body.gateway.support;
+    const supported = async () => (await pluginApi('/capabilities', { gatewayId: gw() })).result.gatewaySupported;
+    const edge = require('../src/services/edge');
+    const store = require('../src/services/edge/store');
+    const meta = db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gw());
+    const setCaps = (caps) => db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?')
+      .run(JSON.stringify({ telemetry: { gateway_version: '1.45.2', ...(caps ? { capabilities: caps } : {}) } }), gw());
+    try {
+      // a hello without gw.features, a heartbeat without the capability: an older gateway
+      setCaps(['netwatch']);
+      let s = await support();
+      assert.equal(s.optionalCaps, false);
+      assert.equal(s.optionalCapsMinGateway, '1.46.0');
+      assert.equal(await supported(), false);
+      // the heartbeat names it (the edge channel's hello still from before)
+      setCaps(['netwatch', 'edge-optional-caps']);
+      assert.equal((await support()).optionalCaps, true);
+      assert.equal(await supported(), true);
+      // the hello names it: kept with the hello, only short lower-case words
+      setCaps(['netwatch']);
+      h.send({ t: 'hello', v: 1, gw: { version: '1.46.0', edgeHost: '1.0.0', mqtt: { available: true, tlsCert: true }, features: ['edge-optional-caps', 'Bad Word', 7, 'z2m-thermostat-ext', 'edge-optional-caps'] } });
+      await sleep(150);
+      assert.deepEqual(store.settings(gw()).hello.features, ['edge-optional-caps', 'z2m-thermostat-ext']);
+      s = await support();
+      assert.equal(s.optionalCaps, true);
+      assert.equal(await supported(), true);
+      const r = await pluginApi('/request', { gatewayId: gw(), key: Z });
+      assert.equal(r.result.gatewaySupported, true);
+      // nothing known yet (no hello, no capability list) → null: no hint
+      assert.equal(edge.optionalCapsSupported({ hello: null }, { telemetry: null }), null);
+      assert.equal(edge.optionalCapsSupported({ hello: null }, { telemetry: { capabilities: [] } }), false);
+      assert.equal(edge.optionalCapsSupported({ hello: { version: '1.45.0' } }, { telemetry: null }), false);
+    } finally {
+      h.send({ t: 'hello', v: 1, gw: { version: '1.35.0', edgeHost: '1.0.0', mqtt: { available: true, tlsCert: true } } });
+      await sleep(150);
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(meta ? meta.last_health : null, gw());
+    }
   });
 
   it('an update that makes a confirmed optional key a regular capability needs no new confirmation', async () => {

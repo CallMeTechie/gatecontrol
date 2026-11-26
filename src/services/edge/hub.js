@@ -236,6 +236,10 @@ class Conn {
       isolation: gw.isolation && typeof gw.isolation === 'object' && ['isolated', 'fence'].includes(gw.isolation.mode)
         ? { mode: gw.isolation.mode, active: gw.isolation.active === true } : null,
       hardware: boundedJson(gw.hardware, 4096),
+      // features of the edge host (gw.features, e.g. edge-optional-caps: confirmed optional MQTT topics count) —
+      // short lower-case words only, at most 32; older gateways send none
+      features: Array.isArray(gw.features)
+        ? [...new Set(gw.features.filter((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(x)))].slice(0, 32) : [],
     };
     store.setHello(this.peerId, hello);
     const first = !this.ready;
