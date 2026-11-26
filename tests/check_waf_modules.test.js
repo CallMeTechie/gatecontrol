@@ -12,8 +12,20 @@ describe('check-waf-modules', () => {
   it('reads the coraza-caddy pin from the real Dockerfile', () => {
     const pins = parseDockerfilePins(fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8'));
     assert.match(pins['github.com/corazawaf/coraza-caddy/v2'] || '', /^v2\.\d+\.\d+/);
-    assert.equal(pins['github.com/mholt/caddy-l4'], undefined, 'unpinned --with lines are ignored');
     assert.equal(pins['github.com/custom/caddy-mirror'], undefined, 'local replacements are ignored');
+    assert.equal(parseDockerfilePins('xcaddy build \\\n  --with github.com/mholt/caddy-l4 \\\n')['github.com/mholt/caddy-l4'], undefined, 'unpinned --with lines are ignored');
+  });
+
+  it('the real Dockerfile pins every --with module (reproducible Caddy build); only the local mirror has none', () => {
+    const text = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+    const withs = [...text.matchAll(/^\s*--with\s+([^\s\\]+)/gm)].map((m) => m[1]); // build lines, not comments
+    assert.ok(withs.length >= 10, `found ${withs.length} --with lines`);
+    const unpinned = withs.filter((w) => !/@v[0-9]/.test(w) && !/=\//.test(w));
+    assert.deepEqual(unpinned, [], 'every --with needs @<version> (or =<local path>)');
+    const pins = parseDockerfilePins(text);
+    for (const mod of ['pkg.jsn.cam/caddy-defender', 'github.com/mholt/caddy-l4', 'github.com/mholt/caddy-ratelimit', 'github.com/ueffel/caddy-brotli', 'github.com/greenpau/caddy-trace']) {
+      assert.match(pins[mod] || '', /^v\d+\.\d+\.\d+$/, mod);
+    }
   });
 
   it('parses explicit CRS pins and go.mod requirements (block and single line)', () => {

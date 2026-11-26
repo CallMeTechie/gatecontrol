@@ -39,6 +39,13 @@
 # silently moved with every Caddy release), CADDY_VERSION is set explicitly,
 # caddy-plugins/mirror/go.mod requires the same version, and the build fails
 # if the binary reports any other version. A Caddy bump changes all four.
+#
+# Every --with module is pinned (reproducible build): defender, caddy-l4,
+# caddy-ratelimit, caddy-brotli and caddy-trace were unversioned before, so
+# each build took whatever @latest was that day. Pinned to the release tags
+# @latest resolved to when they were pinned (the same modules the images were
+# built with). An update is a deliberate change here, like the others;
+# tests/check_waf_modules.test.js fails on an unpinned --with line.
 FROM caddy:2.11.9-builder@sha256:f9beaa5ddbe7df6f26ebbcf9cbf44e05a1917b9bba464f0c3229038d7e2e6e13 AS caddy-builder
 ENV CADDY_VERSION=v2.11.9
 COPY caddy-plugins/mirror /tmp/caddy-mirror
@@ -46,11 +53,11 @@ RUN for attempt in 1 2 3; do \
       if (cd /tmp/caddy-mirror && go mod tidy) && \
          xcaddy build \
          --output /usr/bin/caddy \
-         --with pkg.jsn.cam/caddy-defender \
-         --with github.com/mholt/caddy-l4 \
-         --with github.com/mholt/caddy-ratelimit \
-         --with github.com/ueffel/caddy-brotli \
-         --with github.com/greenpau/caddy-trace \
+         --with pkg.jsn.cam/caddy-defender@v0.10.2 \
+         --with github.com/mholt/caddy-l4@v0.1.3 \
+         --with github.com/mholt/caddy-ratelimit@v0.1.0 \
+         --with github.com/ueffel/caddy-brotli@v1.7.0 \
+         --with github.com/greenpau/caddy-trace@v1.1.13 \
          --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
          --with github.com/corazawaf/coraza/v3@v3.8.1 \
          --with github.com/caddy-dns/hetzner/v2@v2.0.1 \

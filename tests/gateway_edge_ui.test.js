@@ -415,6 +415,17 @@ describe('gateway-edge: texts and errors', () => {
     assert.equal(en['gwe.opt.title'], 'Additional rights (optional)');
   });
 
+  it('„Zusätzliche Rechte“ on a gateway without edge-optional-caps: „Gateway zu alt – bitte aktualisieren“ instead of a silent refusal', () => {
+    const src = stripComments(EDGE_JS);
+    assert.match(src, /sup\.optionalCaps === false\s*\? note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: sup\.optionalCapsMinGateway/);
+    // only false (an older gateway) shows it — null (nothing known yet) and true do not
+    assert.doesNotMatch(src, /!sup\.optionalCaps/);
+    assert.match(read('src/services/edge/index.js'), /optionalCaps: optionalCapsSupported\(s, hb\), optionalCapsMinGateway: EDGE_OPTIONAL_MIN_GATEWAY/);
+    assert.equal(de['gwe.opt.too_old'], 'Gateway zu alt – bitte aktualisieren');
+    assert.equal(en['gwe.opt.too_old'], 'Gateway too old – please update');
+    for (const L of [de, en]) assert.match(L['gwe.opt.too_old_d'], /\{\{min\}\}.*\{\{version\}\}/);
+  });
+
   it('no innerHTML, no browser dialogs, destructive confirmations in red', () => {
     const src = stripComments(EDGE_JS);
     assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML/);

@@ -9349,6 +9349,8 @@
   "gwe.pl.disabled_done": "{{plugin}} is off on this gateway.",
   "gwe.opt.title": "Additional rights (optional)",
   "gwe.opt.intro": "The plugin asks for these rights only when it needs them. Each applies to this gateway only and you can revoke it at any time – the edge part keeps running without them.",
+  "gwe.opt.too_old": "Gateway too old – please update",
+  "gwe.opt.too_old_d": "Additional rights are applied from gateway {{min}} on (this one: {{version}}) – until then it refuses them, even confirmed ones. You can confirm them now already; they apply after the update.",
   "gwe.opt.list": "Additional rights of {{plugin}}",
   "gwe.opt.approved": "confirmed",
   "gwe.opt.requested": "requested",
