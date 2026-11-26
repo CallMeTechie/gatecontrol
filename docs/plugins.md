@@ -6415,7 +6415,9 @@ person uses Zigbee2MQTT:
   the plugin running on every gateway.
 * An administrator confirms (or revokes) each optional key **per gateway**
   (*Gateways › Gateway › Edge-Plugins › Zusätzliche Rechte (optional)*, admin
-  API `…/optional/approve` / `…/optional/revoke`). Only confirmed keys reach the
+  API `…/optional/approve` / `…/optional/revoke`; the switch „Alle bestätigen“
+  below the list does all declared keys at once, `…/optional/approve-all` /
+  `…/optional/revoke-all`). Only confirmed keys reach the
   gateway — in `plugins[].caps` and `mqtt.pluginTopics` of the `state` — and
   `gc.mqtt.accounts.create` accepts topics below them; revoking takes them out
   of the next state. A confirmed key the plugin later moves into
@@ -6730,6 +6732,8 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 | `POST /gateways/:id/plugins/:pluginId/disable` | switch off |
 | `POST /gateways/:id/plugins/:pluginId/optional/approve` | `{ key }` — confirm one optional capability (since 1.317.0); `400 unknown_capability` when the plugin does not declare it; the plugin must be set up for the gateway (`404 not_assigned`) |
 | `POST /gateways/:id/plugins/:pluginId/optional/revoke` | `{ key }` — take it back; also for a key the installed version no longer declares |
+| `POST /gateways/:id/plugins/:pluginId/optional/approve-all` | no body — confirm every optional capability the installed version declares and that is not confirmed yet, in one write; one activity entry `gateway_edge_optional_approved` per key (`details.all: true`), then the gateway gets its state once; nothing to confirm → unchanged. `404 not_assigned` as above |
+| `POST /gateways/:id/plugins/:pluginId/optional/revoke-all` | no body — take back every confirmed key the installed version declares as optional (one `gateway_edge_optional_revoked` per key); a confirmed key a later version made a regular capability stays (else `update_pending`) |
 | `GET /gateways/:id/logs?plugin=&kind=&limit=&before=` | ring buffer, newest first (`kind` `log`, `event`, `system`; `plugin=` empty: the gateway's own notes); 500 entries per gateway × plugin |
 | `GET /gateways/:id/mqtt/accounts` | accounts (no password, no hash) |
 | `POST /gateways/:id/mqtt/accounts` | `{ username, label, topics, vendorPrefix }` → `201 { account, password }` |

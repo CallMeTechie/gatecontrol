@@ -3910,6 +3910,8 @@ input[type=date]:focus, select:focus {
 .gwe-opt-row{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13px}
 .gwe-opt-row:first-child{border-top:0}
 .gwe-opt-t{flex:1 1 220px; min-width:0; overflow-wrap:anywhere}
+.gwe-opt-all{flex-wrap:nowrap}
+.gwe-opt-all .gwe-opt-t{flex-basis:0}
 /* key/value rows (MQTT) */
 .gwe-kvs{display:grid; gap:8px}
 .gwe-kv{display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:6px 14px; align-items:center; font-size:13px}

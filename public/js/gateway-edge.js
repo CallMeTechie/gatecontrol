@@ -669,6 +669,33 @@
       h('p', { class: 'gwe-d', text: t('gwe.opt.intro') }),
       tooOld,
       h('ul', { class: 'gwe-opt-list', 'aria-label': t('gwe.opt.list', { plugin: p.name }) }, rows),
+      opt.length > 1 ? optionalAllRow(g, d, p, opt) : null,
+    ]);
+  }
+
+  // „Alle bestätigen“: one switch for every optional right of this plugin on this gateway — on when all are
+  // confirmed; switching on confirms the rest at once (same confirmation as one by one), off revokes all
+  function optionalAllRow(g, d, p, opt) {
+    const all = opt.every((c) => c.approved);
+    const label = t('gwe.opt.all', { plugin: p.name });
+    const sw = switchBtn(all, label, 'opt-all:' + p.id, async () => {
+      const approve = sw.getAttribute('aria-checked') !== 'true';
+      const open = opt.filter((c) => !c.approved);
+      if (approve && !await D.confirm({
+        title: t('gwe.opt.all_title', { plugin: p.name }),
+        message: t('gwe.opt.all_msg', { plugin: p.name, gateway: d.name || g.name, caps: open.map((c) => c.text).join('; ') }),
+        okLabel: t('gwe.opt.all_ok'),
+      })) return;
+      sw.disabled = true;
+      sw.setAttribute('aria-checked', approve ? 'true' : 'false');
+      api('POST', gwUrl(g.peer_id, '/plugins/' + encodeURIComponent(p.id) + '/optional/' + (approve ? 'approve-all' : 'revoke-all')))
+        .then(() => { toast(t(approve ? 'gwe.opt.all_approved_done' : 'gwe.opt.all_revoked_done', { n: approve ? open.length : opt.length })); return reload(g.peer_id); })
+        .catch((e) => { sw.disabled = false; sw.setAttribute('aria-checked', approve ? 'false' : 'true'); D.alert({ message: errText(e), danger: true }); });
+    });
+    const n = opt.filter((c) => c.approved).length;
+    return h('div', { class: 'gwe-opt-row gwe-opt-all', 'data-opt-all': all ? '1' : '0' }, [
+      h('span', { class: 'gwe-opt-t' }, [h('strong', { text: t('gwe.opt.all_label') }), ' ', h('span', { class: 'gwe-d', text: t('gwe.opt.all_count', { n, total: opt.length }) })]),
+      sw,
     ]);
   }
 
