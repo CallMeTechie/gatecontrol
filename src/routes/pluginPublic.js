@@ -64,7 +64,8 @@ function hasBody(req) {
 
 /** A body of a public endpoint → an unclaimed media file of `owner`; throws { status, code }. */
 async function storeBody(p, decl, req, owner) {
-  if (req._body) throw Object.assign(new Error('unsupported_type'), { status: 415, code: 'unsupported_type' }); // parsed as JSON / form already
+  // parsed as JSON / form already: the stream is read to its end (Express 5 sets no req._body any more)
+  if (req.readableEnded) throw Object.assign(new Error('unsupported_type'), { status: 415, code: 'unsupported_type' });
   if (!decl.maxBodyBytes || !media.declOf(p)) throw Object.assign(new Error('too_large'), { status: 413, code: 'too_large' });
   const length = media.contentLength(req);
   if (length > decl.maxBodyBytes) throw Object.assign(new Error('too_large'), { status: 413, code: 'too_large' });
@@ -82,13 +83,15 @@ function dropUnclaimed(pluginId, upload) {
   } catch (e) { logger.warn({ plugin: pluginId, err: e.message }, 'public endpoint: dropping an upload failed'); }
 }
 
-router.all('/plugin-public/:id/*', pluginPublicFailLimiter, pluginPublicLimiter, async (req, res) => {
+router.all('/plugin-public/:id/{*rest}', pluginPublicFailLimiter, pluginPublicLimiter, async (req, res) => {
   const id = String(req.params.id || '');
   const p = ID_RE.test(id) && id.length <= 64 ? plugins.get(id) : null;
   const decl = p ? pe.declOf(p) : null;
   if (!decl) return plain(res, 404, 'not found');
   if (!METHODS.has(req.method)) return plain(res, 405, 'method not allowed');
-  const path = String(req.params[0] || '');
+  // Express 5: the wildcard `{*rest}` comes as its decoded segments
+  const rest = req.params.rest;
+  const path = Array.isArray(rest) ? rest.join('/') : String(rest || '');
   if (path.length > 1000 || !PATH_RE.test(path) || path.split('/').some((s) => s === '..' || s === '.')) return plain(res, 404, 'not found');
   const tok = pe.verify(p.id, pe.tokenOf(req), path);
   const user = tok ? db().prepare('SELECT id, username, display_name, role FROM users WHERE id = ? AND enabled = 1').get(tok.user) : null;

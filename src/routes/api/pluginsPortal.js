@@ -115,7 +115,7 @@ router.get('/:id/events', (req, res) => {
   return require('../../services/plugins/events').openStream(req, res, p.id, user.id);
 });
 
-router.all('/:id/api/*', (req, res, next) => {
+router.all('/:id/api/{*rest}', (req, res, next) => {
   const id = String(req.params.id || '');
   const p = ID_RE.test(id) ? plugins.get(id) : null;
   if (!p || !p.manifest || !p.manifest.permissions || !p.manifest.permissions.portal) return res.status(404).json({ ok: false, code: 'not_found' });

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.325.2] — 2026-11-26
+
+### Fixes
+- update express from 4.22.3 to 5.3.0 (#590)
+
+---
+
+## [1.325.1] — 2026-11-26
+
+### Fixes
+- Caddy-Module gepinnt (reproduzierbarer Build) und „Gateway zu alt“ bei zusätzlichen Edge-Rechten (#589)
+
+---
+
 ## [1.325.0] — 2026-11-25
 
 ### Features
