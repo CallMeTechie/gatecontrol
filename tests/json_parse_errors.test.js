@@ -92,7 +92,7 @@ describe('invalid JSON', () => {
 
   it('JSON.parse past its caller: a 500 with method, path and position — not the text', () => {
     const error = mock.method(logger, 'error', () => {});
-    const handler = app._router.stack.at(-1).handle;
+    const handler = app.router.stack.at(-1).handle;
     assert.equal(handler.length, 4, 'the error handler is the last layer');
     let err;
     try { JSON.parse(DOUBLED); } catch (e) { err = e; }

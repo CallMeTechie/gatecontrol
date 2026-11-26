@@ -317,7 +317,7 @@ router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (re
 
 const FOCUS_RE = /^[a-z]{2,12}:[A-Za-z0-9:._-]{1,64}$/;
 
-router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => {
+router.get('/plugins/:id{/:page}', pluginPageLimiter, requireAuth, (req, res) => {
   if (!isAdmin(res)) return res.redirect('/profile');
   const p = findPlugin(req.params.id);
   const l = lang(req, res);

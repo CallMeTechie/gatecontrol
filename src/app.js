@@ -92,6 +92,15 @@ function createApp() {
   });
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+  // Express 5 (body-parser 2) leaves req.body undefined for a request without
+  // a parsed body (GET, DELETE, no or another Content-Type); Express 4 always
+  // set {}. The handlers read req.body.x without a guard, so the old default
+  // stays: an empty object. Route parsers (express.raw/text, multer) still
+  // replace it when they parse.
+  app.use((req, res, next) => {
+    if (req.body === undefined) req.body = {};
+    next();
+  });
   app.use(cookieParser());
 
   // ─── Static files (webroot) ──────────────────────

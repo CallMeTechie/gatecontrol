@@ -649,6 +649,15 @@ function plainQuery(q) {
   return Object.fromEntries(out);
 }
 
+/**
+ * The rest of the path after `/:id/api/` (route `{*rest}`): Express 5 hands a
+ * wildcard over as its decoded segments, the plugin gets them joined again.
+ */
+function restOf(req) {
+  const r = req.params && req.params.rest;
+  return Array.isArray(r) ? r.join('/') : String(r || '');
+}
+
 function forwardPath(raw) {
   const p = '/' + String(raw || '').replace(/^\/+/, '');
   if (p.length > 1000 || !/^[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(p) || p.split('/').some((s) => s === '..')) return null;
@@ -672,7 +681,7 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
     const p = ID_RE.test(id) ? plugins.get(id) : null;
     if (!p) return res.status(404).json({ ok: false, code: 'not_found', ...(unavailable ? { reason: 'plugin_unavailable' } : {}), error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
     if (!FORWARD_METHODS.has(req.method)) return res.status(405).json({ ok: false, code: 'method' });
-    const path = forwardPath(req.params[0]);
+    const path = forwardPath(restOf(req));
     if (!path) return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
     const user = userOf(req);
     if (!user) return res.status(403).json({ ok: false, code: 'login_required', error: tr(req, 'plugins.err.login_required', 'Sign in first') });
@@ -703,7 +712,7 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
   };
 }
 
-router.all('/:id/api/*', forwarder((req) => currentUser(req)));
+router.all('/:id/api/{*rest}', forwarder((req) => currentUser(req)));
 
 module.exports = router;
 module.exports.forwarder = forwarder;

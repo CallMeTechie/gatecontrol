@@ -393,8 +393,9 @@ router.put('/s/:token/u', publicLinkUploadLimiter, async (req, res) => {
   if (!r || r.link.kind !== 'upload') return res.status(404).json({ ok: false, code: 'not_found' });
   if (r.state !== 'active') return res.status(410).json({ ok: false, code: r.state });
   if (!links.unlocked(req, r.link)) return res.status(403).json({ ok: false, code: 'pin_required' });
-  // the body is the file itself: one a body parser already read (JSON, a form) is refused
-  if (req._body) return res.status(415).json({ ok: false, code: 'type' });
+  // the body is the file itself: one a body parser already read (JSON, a form) is refused —
+  // its stream is read to the end (Express 5 sets no req._body any more)
+  if (req.readableEnded) return res.status(415).json({ ok: false, code: 'type' });
   const vid = visitorOf(req, res, t);
   // the browser names the type; the body comes as application/octet-stream (never parsed as JSON)
   const type = typeof req.query.type === 'string' && MIME_RE.test(req.query.type.toLowerCase()) ? req.query.type.toLowerCase() : null;
