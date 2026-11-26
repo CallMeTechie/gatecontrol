@@ -228,7 +228,7 @@ describe('state, switches and the admin API', () => {
     const p = r.body.gateway.plugins.find((x) => x.id === P);
     assert.deepEqual(p.edge.capabilities.map((x) => x.key), CAPS);
     assert.equal(p.assignment, null);
-    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
+    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', heartbeatVersion: null, edgeOutdated: false, edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
       optionalCaps: false, optionalCapsMinGateway: '1.46.0', optionalLan: false, optionalLanMinGateway: '1.49.0' }); // hello without gw.features: too old for optional rights
     assert.equal(r.body.gateway.gateway.isolation, null, 'older gateway: no isolation in hello');
     const list = await agent.get(`${API}/gateways`).expect(200);
@@ -237,7 +237,7 @@ describe('state, switches and the admin API', () => {
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.18.0' } }), gwB.peer.id);
     db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(gwB.peer.id);
     const b = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((g) => g.id === gwB.peer.id);
-    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
+    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', heartbeatVersion: '1.18.0', edgeOutdated: false, edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
       optionalCaps: null, optionalCapsMinGateway: '1.46.0', optionalLan: null, optionalLanMinGateway: '1.49.0' }); // no hello, no capability list: not known
   });
 
@@ -623,6 +623,45 @@ describe('updates, unsigned plugins, disabling', () => {
     assert.equal(st.plugins.find((p) => p.id === P).reason, 'gateway_too_old');
     await post(`/gateways/${gwB.peer.id}/plugins/${P}/disable`).expect(200);
     await old.close();
+  });
+
+  it('edge container outdated: the gateway (heartbeat) is newer than its edge container (hello) — still gateway_too_old, the cause named', async () => {
+    const edge = require('../src/services/edge');
+    const meta = db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gwB.peer.id);
+    const setHb = (v) => db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?')
+      .run(JSON.stringify({ telemetry: { gateway_version: v, capabilities: ['edge-optional-caps', 'edge-optional-lan'] } }), gwB.peer.id);
+    // the edge container still says 1.19.0, the gateway itself already runs 1.49.0 (auto-update without the edge container)
+    const stale = await host(gwB, { version: '1.19.0' });
+    try {
+      await put(`/gateways/${gwB.peer.id}/settings`, { edgeEnabled: true }).expect(200);
+      await post(`/gateways/${gwB.peer.id}/plugins/${P}/enable`, { capabilities: [...CAPS, 'udp.port:6000'] }).expect(200);
+      setHb('1.49.0');
+      // the check keeps going by the edge container: it is the one that refuses the package
+      const st = await stale.waitForState((s) => s.plugins.some((p) => p.id === P));
+      assert.equal(st.plugins.find((p) => p.id === P).reason, 'gateway_too_old');
+      const ov = (await agent.get(`${API}/gateways/${gwB.peer.id}`).expect(200)).body.gateway;
+      assert.equal(ov.plugins.find((x) => x.id === P).assignment.state, 'gateway_too_old');
+      assert.equal(ov.support.gatewayVersion, '1.19.0');
+      assert.equal(ov.support.heartbeatVersion, '1.49.0');
+      assert.equal(ov.support.edgeOutdated, true);
+      assert.equal((await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((x) => x.id === gwB.peer.id).support.edgeOutdated, true);
+      // heartbeat not newer (equal, older, unknown): no verdict
+      for (const v of ['1.19.0', '1.18.0', null]) {
+        setHb(v);
+        const sv = (await agent.get(`${API}/gateways/${gwB.peer.id}`).expect(200)).body.gateway.support;
+        assert.equal(sv.edgeOutdated, false, String(v));
+      }
+      await post(`/gateways/${gwB.peer.id}/plugins/${P}/disable`).expect(200);
+    } finally {
+      await stale.close();
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(meta ? meta.last_health : null, gwB.peer.id);
+    }
+    // the rule itself
+    assert.deepEqual(edge.edgeOutdatedOf({ hello: { version: '1.44.0' } }, { telemetry: { gateway_version: '1.49.0' } }), { gateway: '1.49.0', edge: '1.44.0' });
+    assert.equal(edge.edgeOutdatedOf({ hello: { version: '1.49.0' } }, { telemetry: { gateway_version: '1.49.0' } }), null);
+    assert.equal(edge.edgeOutdatedOf({ hello: null }, { telemetry: { gateway_version: '1.49.0' } }), null);
+    assert.equal(edge.edgeOutdatedOf({ hello: { version: '1.44.0' } }, { telemetry: null }), null);
+    assert.equal(edge.edgeOutdatedOf({ hello: { version: 'x' } }, { telemetry: { gateway_version: '1.49.0' } }), null);
   });
 
   it('unsigned plugins: only with allowUnsignedEdge (confirmed with ERLAUBEN) on that gateway', async () => {

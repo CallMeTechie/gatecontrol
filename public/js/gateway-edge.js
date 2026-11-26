@@ -116,6 +116,17 @@
     const url = guideUrl(topic);
     return url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', class: cls || null, 'data-guide': topic, text: t('gwe.reason.guide') }) : null;
   }
+  const edgeStale = (d, min) => K.edgeStale(d && d.support, min);
+  const verNewer = K.verNewer;
+  const gwVersionOf = (sup) => K.gatewayVersionOf(sup) || '—';
+  function edgeOutdatedNote(d) {
+    const sup = d.support || {};
+    const n = note('warn', [h('strong', { text: t('gwe.edge.update_first') }), ' ',
+      t('gwe.edge.outdated_text', { gateway: sup.heartbeatVersion || '—', edge: sup.gatewayVersion || '—' }), ' ', guide('edge.edge_outdated')]);
+    n.setAttribute('data-edge-outdated', '');
+    return n;
+  }
+
   function chip(tone, text, ic) { return h('span', { class: 'gwe-chip' + (tone ? ' gwe-chip-' + tone : '') }, [ic ? icon(ic, 14) : null, text]); }
   function switchBtn(on, label, fk, onClick, disabled) {
     return h('button', {
@@ -505,6 +516,8 @@
       c.body.appendChild(note('warn', [h('strong', { text: t('gwe.edge.update_first') }), ' ', t('gwe.edge.update_first_text'), ' ', guide('edge.compose_outdated')]));
       if (g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
     }
+    // connected, the gateway is newer than its edge container: recreate the edge container (and renew update.sh)
+    if (conn.online && !bound.updateFirst && edgeStale(d)) c.body.appendChild(edgeOutdatedNote(d));
     const tel = (g.health && g.health.telemetry) || {};
     const memTotal = (hello && hello.hardware && hello.hardware.mem_total) || (tel.hardware && tel.hardware.mem_total) || tel.mem_total;
     const mh = K.memoryHint(memTotal, K.summary(d.plugins, d.settings).enabled);
@@ -573,10 +586,12 @@
     const st = K.pluginState(p, d.settings);
     const a = p.assignment;
     const status = a && a.status;
+    // "Gateway zu alt" while the gateway itself is new enough: the edge container lags behind
+    const stale = st.state === 'gateway_too_old' && edgeStale(d, p.edge.minGateway);
     const head = h('div', { class: 'gwe-prow-h' }, [
       h('strong', { class: 'gwe-pname', text: p.name }),
       h('span', { class: 'gwe-d', text: p.version + ' · ' + t(p.verified ? 'gwe.pl.signed' : 'gwe.pl.unsigned') }),
-      tag(st.tone, t(st.key), true),
+      tag(st.tone, t(stale ? 'gwe.edge.update_first' : st.key), true),
     ]);
     const main = h('div', { class: 'gwe-prow-m' }, [head]);
     // what the state means
@@ -584,8 +599,12 @@
     if (st.state === 'update_pending') {
       const fresh = (a.newCapabilities || []).map((c) => c.text).join(', ');
       detail = h('p', { class: 'gwe-d' }, [t('gwe.pl.update_wants', { version: p.version }), ' ', h('strong', { class: 'gwe-strong', text: fresh }), '. ', t('gwe.pl.update_off')]);
+    } else if (stale) {
+      const sup = d.support || {};
+      detail = h('p', { class: 'gwe-d', 'data-edge-outdated': '' }, [t('gwe.state_d.edge_outdated', { min: p.edge.minGateway || '—', gateway: sup.heartbeatVersion || '—', edge: sup.gatewayVersion || '—' }),
+        ' ', guide('edge.edge_outdated')]);
     } else if (st.state === 'gateway_too_old') {
-      detail = h('p', { class: 'gwe-d', text: t('gwe.state_d.gateway_too_old', { min: p.edge.minGateway || '—', version: (d.support && d.support.gatewayVersion) || '—' }) });
+      detail = h('p', { class: 'gwe-d', text: t('gwe.state_d.gateway_too_old', { min: p.edge.minGateway || '—', version: gwVersionOf(d.support || {}) }) });
     } else if (K.REASONS.indexOf(st.state) >= 0) {
       detail = h('p', { class: 'gwe-d' }, reasonText(g, d, st.state));
     } else if (['denied', 'unsigned', 'plugin_off', 'offline', 'pending', 'not_set_up', 'disabled', 'stopped'].indexOf(st.state) >= 0) {
@@ -657,13 +676,18 @@
     // the same per key for the newer optional LAN rights (tcp.lan, udp.port, udp.broadcast: feature edge-optional-lan)
     const sup = d.support || {};
     const old = opt.filter((c) => c.gatewaySupported === false);
-    const ver = (v) => String(v).split('.').map((x) => parseInt(x, 10) || 0);
-    const newer = (x, y) => { const a = ver(x); const b = ver(y); for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
-    const minOld = old.map((c) => c.minGateway).filter(Boolean).reduce((m, v) => (!m || newer(v, m) ? v : m), null);
-    const tooOld = sup.optionalCaps === false || old.length
-      ? note('warn', [h('strong', { text: t('gwe.opt.too_old') }), ' ', t('gwe.opt.too_old_d', { min: minOld || sup.optionalCapsMinGateway || '—', version: sup.gatewayVersion || '—' })])
-      : null;
-    if (tooOld) tooOld.setAttribute('data-opt-too-old', '');
+    const minOld = old.map((c) => c.minGateway).filter(Boolean).reduce((m, v) => (!m || verNewer(v, m) ? v : m), null);
+    const needOld = sup.optionalCaps === false || old.length > 0;
+    // the edge container applies the optional rights: while it lags behind the (new enough) gateway, it is the one to renew
+    const stale = edgeStale(d, needOld ? (minOld || sup.optionalCapsMinGateway) : null);
+    let tooOld = null;
+    if (stale) {
+      tooOld = note('warn', [h('strong', { text: t('gwe.edge.update_first') }), ' ', t('gwe.opt.edge_outdated_d', { gateway: sup.heartbeatVersion || '—', edge: sup.gatewayVersion || '—' }), ' ', guide('edge.edge_outdated')]);
+      tooOld.setAttribute('data-opt-edge-outdated', '');
+    } else if (needOld) {
+      tooOld = note('warn', [h('strong', { text: t('gwe.opt.too_old') }), ' ', t('gwe.opt.too_old_d', { min: minOld || sup.optionalCapsMinGateway || '—', version: gwVersionOf(sup) })]);
+      tooOld.setAttribute('data-opt-too-old', '');
+    }
     return h('div', { class: 'gwe-opt' }, [
       h('p', { class: 'gwe-opt-h', text: t('gwe.opt.title') }),
       h('p', { class: 'gwe-d', text: t('gwe.opt.intro') }),

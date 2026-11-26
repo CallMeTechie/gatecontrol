@@ -438,10 +438,37 @@
     return 'gwe.log.k.' + (entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'info');
   }
 
+  /** "1.49.0" newer than "1.44.0"? (x.y.z — enough for gateway releases) */
+  function verNewer(x, y) {
+    const v = (s) => String(s).split('.').map((n) => parseInt(n, 10) || 0);
+    const a = v(x); const b = v(y);
+    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+    return false;
+  }
+
+  /**
+   * The gateway updated itself, its edge container (compose service `edge`, same image) still runs the old one
+   * (support.edgeOutdated from the server: heartbeat newer than the edge container's hello). The edge checks keep
+   * going by the edge container — it refuses the package — but the cause is "Edge-Container veraltet", not
+   * "Gateway zu alt", as long as the gateway itself has `min` (no min: any). Otherwise the gateway update comes first.
+   */
+  function edgeStale(support, min) {
+    const sup = support || {};
+    if (!sup.edgeOutdated || !sup.heartbeatVersion) return false;
+    return !min || !verNewer(min, sup.heartbeatVersion);
+  }
+
+  /** The gateway's own version for a "Gateway zu alt" text: the heartbeat while the edge container lags behind. */
+  function gatewayVersionOf(support) {
+    const sup = support || {};
+    return (sup.edgeOutdated ? sup.heartbeatVersion : sup.gatewayVersion) || null;
+  }
+
   return {
     TABS, STATES, REASONS, reasonDoc, reasonTopic, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
     topicPrefix, brokerAddress, fingerprintText, tlsView, vpnCertView, fpPortView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
+    verNewer, edgeStale, gatewayVersionOf,
   };
 });

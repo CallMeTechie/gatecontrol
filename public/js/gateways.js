@@ -574,6 +574,12 @@
       menu.appendChild(a);
       return a;
     }
+    // "update.sh herunterladen": the server's copy (byte-identical to deploy/update.sh of the pinned gateway
+    // release, CI drift check) — it updates the gateway AND recreates the edge container; replaces an old copy
+    var ush = link('update-sh', T('gwp.menu.update_sh', 'update.sh herunterladen'), '/api/v1/gateways/' + encodeURIComponent(g.peer_id) + '/update-sh');
+    ush.setAttribute('download', 'update.sh');
+    ush.title = T('gwp.menu.update_sh_hint', 'Replace the old update.sh next to docker-compose.yml, then make it executable: chmod +x update.sh');
+    ush.addEventListener('click', function () { toast(T('gwp.menu.update_sh_hint', 'Replace the old update.sh next to docker-compose.yml, then make it executable: chmod +x update.sh'), 'success'); });
     link('versions', T('gwp.menu.versions', 'Versionen'), DOCS ? DOCS.versionsHash(g.peer_id) : GW_RELEASES);
     if (DOCS) link('handbook', T('gwp.menu.handbook', 'Handbuch'), DOCS.handbookHash(g.peer_id));
     // rename, connection data, proxy port, disable, delete (gateway-manage.js; moved here from Peers)

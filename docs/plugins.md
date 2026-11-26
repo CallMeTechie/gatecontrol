@@ -6329,6 +6329,11 @@ example `tests/fixtures/plugins/edge-demo/`.
 * `entry` — a `.js` file **inside a folder** of the package (the gateway
   unpacks only that folder and `plugin.json`).
 * `minGateway` (optional) — older gateways keep the edge part off (`gateway_too_old`).
+  The check goes by the version in the edge container's `hello` (the edge container refuses the
+  package). Is the gateway's own heartbeat (`telemetry.gateway_version`) newer — the gateway updated
+  itself, the edge container (compose service `edge`) was not recreated — the support view says
+  `edgeOutdated: true` with `heartbeatVersion`, and the page shows „Edge-Container veraltet“ with both
+  versions and how to recreate it instead of „Gateway zu alt“ (also above *Zusätzliche Rechte*).
 * `memoryMb` 16 … 256 (default 48) — the heap of the edge process
   (`--max-old-space-size`).
 * `capabilities` — each optional; unknown keys refuse the package:

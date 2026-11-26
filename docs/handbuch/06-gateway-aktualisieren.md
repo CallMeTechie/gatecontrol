@@ -39,6 +39,12 @@ verfügbar“ im „Zustand“ des Gateways (oder „Mehr“ → „Versionen“
 Versionen mit ihren Änderungen, die installierte markiert, die neueren mit
 „Neuer“. Mehr in [3.8](03-gateway-einrichten.md#38-versionen-und-handbuch).
 
+Die `update.sh` auf dem Gerät erneuert nach dem Gateway auch den Edge-Container.
+Eine ältere Kopie tut das nicht (Edge-Plugins zeigen dann „Edge-Container
+veraltet“, siehe [Kapitel 4](04-edge-und-smart-home.md#edge-container-veraltet)).
+Die aktuelle gibt es unter „Mehr“ → „update.sh herunterladen“; sie ersetzt die
+alte im Ordner der `docker-compose.yml` (danach `chmod +x update.sh`).
+
 **Prüfen:** Nach einigen Minuten zeigt die Karte die neue Version.
 
 ## 6.2 Warum die Compose-Datei extra dran ist
