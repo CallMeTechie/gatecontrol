@@ -229,7 +229,7 @@ describe('state, switches and the admin API', () => {
     assert.deepEqual(p.edge.capabilities.map((x) => x.key), CAPS);
     assert.equal(p.assignment, null);
     assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
-      optionalCaps: false, optionalCapsMinGateway: '1.46.0' }); // hello without gw.features: too old for optional rights
+      optionalCaps: false, optionalCapsMinGateway: '1.46.0', optionalLan: false, optionalLanMinGateway: '1.48.0' }); // hello without gw.features: too old for optional rights
     assert.equal(r.body.gateway.gateway.isolation, null, 'older gateway: no isolation in hello');
     const list = await agent.get(`${API}/gateways`).expect(200);
     assert.deepEqual(list.body.gateways.map((g) => g.name), ['gw-a', 'gw-b']);
@@ -238,7 +238,7 @@ describe('state, switches and the admin API', () => {
     db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(gwB.peer.id);
     const b = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((g) => g.id === gwB.peer.id);
     assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0',
-      optionalCaps: null, optionalCapsMinGateway: '1.46.0' }); // no hello, no capability list: not known
+      optionalCaps: null, optionalCapsMinGateway: '1.46.0', optionalLan: null, optionalLanMinGateway: '1.48.0' }); // no hello, no capability list: not known
   });
 
   it('edge on → new state; enabling needs exactly the shown capability list', async () => {
@@ -796,13 +796,13 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     const p = await optOf();
     assert.deepEqual(p.edge.optionalCapabilities.map((x) => x.key), [Z]);
     assert.equal(p.assignment.newCapabilities.length, 0);
-    assert.deepEqual(p.assignment.optional.map((x) => [x.key, x.approved, x.requestedAt]), [[Z, false, null]]);
+    assert.deepEqual(p.assignment.optional.map((x) => [x.key, x.approved, x.requestedAt, x.gatewaySupported, x.minGateway]), [[Z, false, null, false, '1.46.0']]);
     assert.match(p.assignment.optional[0].text, /zigbee2mqtt\/#/);
   });
 
   it('gc.edge.capabilities: declared, nothing confirmed; another gateway → not_enabled; topics outside → denied', async () => {
     // the simulated host's hello names no gw.features: an older gateway (gatewaySupported false)
-    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [], requested: [], gatewaySupported: false });
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [], requested: [], gatewaySupported: false, unsupported: [Z] });
     const other = await pluginApi('/capabilities', { gatewayId: 999999 });
     assert.equal(other.code, 'not_enabled');
     assert.equal((await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { topics: ['zigbee2mqtt/lamp/#'] } })).code, 'denied');
@@ -820,7 +820,7 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     assert.equal(det.link, `/gateways#gw/${gw()}/edge`);
     assert.equal(det.capability, Z);
     // the gateway is too old for optional capabilities: the note says so (no silent `denied` later)
-    assert.match(notes[0].message, /gateway too old for additional capabilities, update it \(needs 1\.46\.0 or newer\)/);
+    assert.match(notes[0].message, /gateway too old for this capability, update it \(needs 1\.46\.0 or newer\)/);
     assert.equal(det.gateway_too_old, true);
     assert.equal(det.min_gateway, '1.46.0');
     // again (and again): no second note
@@ -854,7 +854,7 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     assert.equal(appr.length, 1);
     assert.equal(JSON.parse(appr[0].details).capability, Z);
     // the plugin sees it; asking again is answered with "approved"
-    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [Z], requested: [], gatewaySupported: false });
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result, { gatewayId: gw(), optional: [Z], approved: [Z], requested: [], gatewaySupported: false, unsupported: [Z] });
     assert.deepEqual((await pluginApi('/request', { gatewayId: gw(), key: Z })).result, { status: 'approved', notified: false, gatewaySupported: false });
     // device accounts below the confirmed topic now work
     const acc = await pluginApi('/mqtt/create', { gatewayId: gw(), opts: { name: 'zb', topics: ['zigbee2mqtt/lamp/#'] } });
@@ -933,6 +933,58 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     assert.equal(activities('gateway_edge_update_pending').filter((r) => JSON.parse(r.details).version === '1.3.0').length, 0);
     const p = await optOf();
     assert.deepEqual(p.assignment.optional, []);
+    assert.deepEqual(p.assignment.newCapabilities, []);
+  });
+
+  it('optional tcp.lan / udp.port / udp.broadcast (Tuya): no update_pending, confirmed per key, „Gateway zu alt“ via edge-optional-lan', async () => {
+    const T = ['tcp.lan', 'udp.broadcast', 'udp.port:6666', 'udp.port:6667', 'udp.port:7000'];
+    const pj = require('./fixtures/plugins/edge-demo/plugin.json');
+    const caps = { ...pj.edge.capabilities, udp: { ports: [5683, 6000], multicast: ['224.0.1.187'] }, mqtt: { topics: ['shellies/#', 'zigbee2mqtt/#'] } };
+    await installPkg(edgePackage({ overrides: { version: '1.4.0', edge: { ...pj.edge, capabilities: caps,
+      optionalCapabilities: { tcp: { lan: true }, udp: { ports: [6666, 6667, 7000], broadcast: true } } } } }));
+    assert.equal(await runtime.waitRunning(P), true);
+    let st = await h.waitForState((s) => s.plugins.some((x) => x.id === P && x.version === '1.4.0'));
+    let e = st.plugins.find((x) => x.id === P);
+    assert.equal(e.enabled, true, 'a new optional key never stops the plugin');
+    assert.equal(e.caps.tcp, undefined);
+    assert.deepEqual(e.caps.udp, { ports: [5683, 6000], multicast: ['224.0.1.187'] });
+    let p = await optOf();
+    assert.deepEqual(p.assignment.optional.map((x) => x.key), T);
+    // the simulated gateway names no edge-optional-lan: too old for every one of them (needs 1.48.0)
+    assert.deepEqual(p.assignment.optional.map((x) => [x.gatewaySupported, x.minGateway]), T.map(() => [false, '1.48.0']));
+    let r = (await pluginApi('/capabilities', { gatewayId: gw() })).result;
+    assert.deepEqual([r.optional, r.approved, r.gatewaySupported, r.unsupported], [T, [], false, T]);
+    const req = await pluginApi('/request', { gatewayId: gw(), key: 'tcp.lan' });
+    assert.deepEqual(req.result, { status: 'requested', notified: true, gatewaySupported: false });
+    const note = activities('gateway_edge_capability_requested').find((x) => JSON.parse(x.details).capability === 'tcp.lan');
+    assert.match(note.message, /TCP connections to devices in the home network/);
+    assert.match(note.message, /needs 1\.48\.0 or newer/);
+    assert.equal(JSON.parse(note.details).min_gateway, '1.48.0');
+    // confirmed one by one: only those reach the gateway
+    for (const k of ['tcp.lan', 'udp.port:7000', 'udp.broadcast']) await post(`/gateways/${gw()}/plugins/${P}/optional/approve`, { key: k }).expect(200);
+    st = await h.waitForState((s) => { const x = s.plugins.find((y) => y.id === P); return !!(x && x.caps.tcp && x.caps.udp.broadcast); });
+    e = st.plugins.find((x) => x.id === P);
+    assert.equal(e.enabled, true);
+    assert.deepEqual(e.caps.tcp, { lan: true });
+    assert.deepEqual(e.caps.udp, { ports: [5683, 6000, 7000], multicast: ['224.0.1.187'], broadcast: true });
+    // a gateway with edge-optional-lan: supported
+    h.send({ t: 'hello', v: 1, gw: { version: '1.48.0', edgeHost: '1.1.0', mqtt: { available: true, tlsCert: true }, features: ['edge-optional-caps', 'edge-optional-lan'] } });
+    await sleep(150);
+    try {
+      r = (await pluginApi('/capabilities', { gatewayId: gw() })).result;
+      assert.deepEqual([r.approved, r.gatewaySupported, r.unsupported], [['tcp.lan', 'udp.broadcast', 'udp.port:7000'], true, []]);
+      const g = (await agent.get(`${API}/gateways/${gw()}`).expect(200)).body.gateway;
+      assert.equal(g.support.optionalLan, true);
+      assert.ok(g.plugins.find((x) => x.id === P).assignment.optional.every((x) => x.gatewaySupported === true));
+    } finally {
+      h.send({ t: 'hello', v: 1, gw: { version: '1.35.0', edgeHost: '1.0.0', mqtt: { available: true, tlsCert: true } } });
+      await sleep(150);
+    }
+    // revoked: out of the next state
+    await post(`/gateways/${gw()}/plugins/${P}/optional/revoke`, { key: 'udp.broadcast' }).expect(200);
+    st = await h.waitForState((s) => { const x = s.plugins.find((y) => y.id === P); return !!(x && x.caps.udp && !x.caps.udp.broadcast); });
+    assert.deepEqual(st.plugins.find((x) => x.id === P).caps.udp.ports, [5683, 6000, 7000]);
+    p = await optOf();
     assert.deepEqual(p.assignment.newCapabilities, []);
   });
 });

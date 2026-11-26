@@ -6334,7 +6334,11 @@ example `tests/fixtures/plugins/edge-demo/`.
 * `capabilities` — each optional; unknown keys refuse the package:
   * `udp.ports` 1024 … 65535, never 5353 (mDNS only through `mdns`), ≤ 16;
     `udp.multicast` IPv4 groups in 224.0.0.0/4 without 224.0.0.0/24 (except
-    the mDNS group 224.0.0.251), ≤ 16;
+    the mDNS group 224.0.0.251), ≤ 16; `udp.broadcast: true` (since 1.326.0,
+    key `udp.broadcast`, gateway 1.48.0 and newer) — `gc.lan.udp.send` may also
+    go to `255.255.255.255` (the gateway sends it to the broadcast address of
+    each of its private LAN subnets) or to such a subnet broadcast address, but
+    only to one of the plugin's `udp.ports`; needs `udp.ports`;
   * `mdns.services` like `_shelly._tcp` (≤ 16);
   * `tcp.lan` / `http.lan` — connections to addresses in the gateway's LAN
     subnets (never the tunnel, never this server); HTTPS is always checked —
@@ -6385,13 +6389,26 @@ person uses Zigbee2MQTT:
 ```
 
 * Same form as `capabilities`, validated at install with the same rules
-  (`edge.optionalCapabilities.mqtt.topics: invalid topic …`). For now **only
-  `mqtt.topics`** can be optional — the gateway applies topics live (it checks
-  every subscription again with each state); ports, mDNS, LAN access and
-  serial devices stay in `capabilities` (`edge.optionalCapabilities: udp cannot
-  be optional (optional: mqtt)`). A topic must not also be in `capabilities`
-  (`… already in capabilities`), and both lists together hold at most 16
-  topics.
+  (`edge.optionalCapabilities.mqtt.topics: invalid topic …`). Optional can be
+  **`mqtt.topics`** and, since 1.326.0, **`tcp: { "lan": true }`** and
+  **`udp: { "ports": [...], "broadcast": true }`** (keys `tcp.lan`,
+  `udp.port:<n>`, `udp.broadcast`) — e.g. Tuya devices, which a smart home
+  plugin talks to over TCP 6668 and finds with UDP 6666/6667/7000:
+
+  ```json
+  "optionalCapabilities": {
+    "mqtt": { "topics": ["zigbee2mqtt/#"] },
+    "tcp":  { "lan": true },
+    "udp":  { "ports": [6666, 6667, 7000], "broadcast": true }
+  }
+  ```
+
+  Multicast groups, mDNS, HTTP and serial devices stay in `capabilities`
+  (`edge.optionalCapabilities: mdns cannot be optional (optional: mqtt, tcp,
+  udp)`, `… udp.multicast: cannot be optional`). Nothing may also be in
+  `capabilities` (`… already in capabilities`); topics and UDP ports each at most
+  16 together with `capabilities`; optional `udp.broadcast` needs UDP ports
+  (optional or in `capabilities`) and goes only to those the gateway was given.
 * Optional keys (`mqtt.topic:zigbee2mqtt/#`) are **never** part of the
   confirmation that switches the edge part on and never cause
   `update_pending`: an update that only adds an optional capability keeps
@@ -6420,6 +6437,15 @@ person uses Zigbee2MQTT:
   (optional)* (confirming stays possible, it applies after the update), the
   note of `gc.edge.requestCapability` says so, and `gc.edge.capabilities` /
   `requestCapability` answer `gatewaySupported: false`.
+  The optional LAN keys (`tcp.lan`, `udp.port:<n>`, `udp.broadcast`) need the
+  feature **`edge-optional-lan`** (gateway 1.48.0 and newer, which also allows
+  64 instead of 32 TCP connections per plugin). Careful: gateways 1.46.0 and
+  1.47.0 refuse a **package** whose `optionalCapabilities` hold anything but
+  `mqtt` (the whole edge part stays off, `denied`), so a plugin that adds them
+  sets `edge.minGateway` to `1.48.0` (or ships them only once every gateway is
+  updated). Gateway 1.48.0 and newer ignore optional keys they do not know.
+  Each optional row of the gateway page carries `gatewaySupported` and
+  `minGateway`; the note „Gateway zu alt“ names the highest version needed.
 
 ### Server part: `gc.edge`
 
@@ -6462,15 +6488,16 @@ Only in plugins with an `edge` section:
   servers keep working; show `reason` when it is set and fall back to a
   generic "not connected" otherwise.
 * `gc.edge.capabilities(gatewayId)` (since 1.317.0) → `{ gatewayId, optional,
-  approved, requested, gatewaySupported }` — the keys of `edge.optionalCapabilities`, the ones an
+  approved, requested, gatewaySupported, unsupported }` — the keys of `edge.optionalCapabilities`, the ones an
   administrator confirmed for that gateway, and the ones asked for and not
   confirmed yet. `gatewaySupported` (newer servers; missing on older ones):
-  `true` when the gateway applies optional capabilities (feature
-  `edge-optional-caps`), `false` for an older gateway that refuses them
-  (`denied`) — tell the user to update the gateway —, `null` when not known
-  yet (no hello, no heartbeat). `not_enabled` when the plugin is not set up for that gateway.
+  `true` when the gateway applies all of the plugin's optional capabilities
+  (features `edge-optional-caps` for MQTT topics, `edge-optional-lan` for
+  `tcp.lan` / `udp.port:<n>` / `udp.broadcast`), `false` for an older gateway that refuses
+  (some of) them (`denied`) — tell the user to update the gateway —, `null` when not known
+  yet (no hello, no heartbeat). `unsupported` (since 1.326.0): the keys the gateway is too old for. `not_enabled` when the plugin is not set up for that gateway.
 * `gc.edge.requestCapability(gatewayId, key)` (since 1.317.0) → `{ status:
-  'approved' | 'requested', notified, gatewaySupported }` (`gatewaySupported` as above) — asks an administrator for one optional
+  'approved' | 'requested', notified, gatewaySupported }` (`gatewaySupported` as above, for this one key) — asks an administrator for one optional
   key (`mqtt.topic:zigbee2mqtt/#`): a note in the activity log
   (`gateway_edge_capability_requested`, severity warning, `details.link`
   `/gateways#gw/<id>/edge`) naming the plugin, the gateway and the capability,

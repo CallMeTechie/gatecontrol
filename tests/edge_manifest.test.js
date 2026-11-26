@@ -171,9 +171,9 @@ describe('edge.optionalCapabilities', () => {
     assert.deepEqual(check(opt({})).manifest.edge.optionalCapabilities, {});
   });
 
-  it('only MQTT topics can be optional; the same topic rules; nothing that capabilities already holds', () => {
-    for (const k of ['udp', 'mdns', 'tcp', 'http', 'serial']) {
-      const v = { udp: { ports: [6000] }, mdns: { services: ['_x._tcp'] }, tcp: { lan: true }, http: { lan: true }, serial: ['zigbee'] }[k];
+  it('only MQTT topics, tcp.lan and UDP ports/broadcast can be optional; the same rules; nothing that capabilities already holds', () => {
+    for (const k of ['mdns', 'http', 'serial']) {
+      const v = { mdns: { services: ['_x._tcp'] }, http: { lan: true }, serial: ['zigbee'] }[k];
       assert.match(errorsOf(opt({ [k]: v })).join(), new RegExp('edge\\.optionalCapabilities: ' + k + ' cannot be optional'), k);
     }
     assert.match(errorsOf(opt({ nope: true })).join(), /edge\.optionalCapabilities: nope cannot be optional/);
@@ -201,6 +201,62 @@ describe('edge.optionalCapabilities', () => {
     assert.deepEqual(edgeManifest.withOptional({ udp: { ports: [6000], multicast: [] } }, ['mqtt.topic:z/#']), { udp: { ports: [6000], multicast: [] }, mqtt: { topics: ['z/#'] } });
     assert.deepEqual(edgeManifest.withOptional(edge.capabilities, []), edge.capabilities);
     assert.deepEqual(edgeManifest.describe(edge.optionalCapabilities, 'de').map((x) => x.text), ['MQTT-Themen zigbee2mqtt/# am lokalen Broker']);
+  });
+
+  // Tuya and the like: TCP to devices in the LAN, UDP ports for the scan and broadcast to them — per gateway
+  const zigbeeOnly = { entry: 'edge/index.js', capabilities: { mqtt: { topics: ['shellies/#'] }, udp: { ports: [5683], multicast: [] } } };
+  const tuya = { tcp: { lan: true }, udp: { ports: [7000, 6666, 6667], broadcast: true } };
+
+  it('tcp.lan, udp.port:<n> and udp.broadcast as optional keys (normalised, sorted)', () => {
+    const r = check({ ...zigbeeOnly, optionalCapabilities: tuya });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+    assert.deepEqual(r.manifest.edge.optionalCapabilities, { tcp: { lan: true }, udp: { ports: [6666, 6667, 7000], multicast: [], broadcast: true } });
+    assert.deepEqual(edgeManifest.optionalList(r.manifest.edge), ['tcp.lan', 'udp.broadcast', 'udp.port:6666', 'udp.port:6667', 'udp.port:7000']);
+    const de = edgeManifest.describe(r.manifest.edge.optionalCapabilities, 'de');
+    assert.equal(de.find((x) => x.key === 'udp.broadcast').text, 'UDP-Broadcast im Heimnetz (nur an die UDP-Ports des Plugins)');
+    assert.equal(de.find((x) => x.key === 'tcp.lan').text, 'TCP-Verbindungen zu Geräten im Heimnetz');
+    // broadcast alone, its ports from capabilities
+    assert.equal(check({ ...zigbeeOnly, optionalCapabilities: { udp: { broadcast: true } } }).ok, true);
+    // the gateway feature each key needs
+    assert.equal(edgeManifest.optionalFeature('tcp.lan'), 'edge-optional-lan');
+    assert.equal(edgeManifest.optionalFeature('udp.port:6667'), 'edge-optional-lan');
+    assert.equal(edgeManifest.optionalFeature('udp.broadcast'), 'edge-optional-lan');
+    assert.equal(edgeManifest.optionalFeature('mqtt.topic:zigbee2mqtt/#'), 'edge-optional-caps');
+  });
+
+  it('optional tcp/udp: kept narrow, never twice, ≤ 16 ports together', () => {
+    const e = (o, base = zigbeeOnly) => errorsOf({ ...base, optionalCapabilities: o }).join();
+    assert.match(e({ tcp: { lan: false } }), /optionalCapabilities\.tcp: only \{ "lan": true \} can be optional/);
+    assert.match(e({ tcp: { lan: true } }, goodEdge), /optionalCapabilities\.tcp: already in capabilities/);
+    assert.match(e({ udp: { ports: [5683] } }), /optionalCapabilities\.udp\.ports: already in capabilities/);
+    assert.match(e({ udp: { ports: [6000], multicast: ['239.1.2.3'] } }), /optionalCapabilities\.udp\.multicast: cannot be optional/);
+    assert.match(e({ udp: { ports: [53] } }), /optionalCapabilities\.udp\.ports: below 1024/);
+    assert.match(e({ udp: { ports: [5353] } }), /5353 only through capabilities\.mdns/);
+    assert.match(e({ udp: { ports: [6000], broadcast: 'yes' } }), /optionalCapabilities\.udp\.broadcast: invalid/);
+    assert.match(e({ udp: { ports: [6000], extra: 1 } }), /optionalCapabilities\.udp: invalid/);
+    assert.match(e({ udp: { broadcast: true } }, { entry: 'edge/index.js', capabilities: {} }), /optionalCapabilities\.udp\.broadcast: needs udp\.ports/);
+    assert.match(e({ udp: { broadcast: true } }, { entry: 'edge/index.js', capabilities: { udp: { ports: [6000], broadcast: true } } }), /udp\.broadcast: already in capabilities/);
+    const many = Array.from({ length: 16 }, (_, i) => 20000 + i);
+    assert.match(e({ udp: { ports: many } }), /optionalCapabilities\.udp\.ports: more than 16 together with capabilities/);
+    assert.equal(check({ ...zigbeeOnly, optionalCapabilities: { udp: { ports: many.slice(0, 15) } } }).ok, true);
+    // as a regular capability: broadcast needs ports, false is dropped
+    assert.match(errorsOf({ entry: 'edge/index.js', capabilities: { udp: { broadcast: true } } }).join(), /edge\.capabilities\.udp\.broadcast: needs udp\.ports/);
+    assert.deepEqual(check({ entry: 'edge/index.js', capabilities: { udp: { ports: [6000], broadcast: false } } }).manifest.edge.capabilities, { udp: { ports: [6000], multicast: [] } });
+    assert.deepEqual(edgeManifest.capabilityList({ udp: { ports: [6000], multicast: [], broadcast: true } }), ['udp.broadcast', 'udp.port:6000']);
+  });
+
+  it('withOptional: only the confirmed tcp/udp keys reach the state caps', () => {
+    const edge = check({ ...zigbeeOnly, optionalCapabilities: tuya }).manifest.edge;
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, []), edge.capabilities, 'nothing confirmed: nothing more');
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, ['tcp.lan']), { ...edge.capabilities, tcp: { lan: true } });
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, ['udp.port:7000', 'udp.port:6667']).udp, { ports: [5683, 6667, 7000], multicast: [] });
+    assert.deepEqual(edgeManifest.withOptional(edge.capabilities, ['udp.port:6666', 'udp.broadcast']).udp, { ports: [5683, 6666], multicast: [], broadcast: true });
+    assert.deepEqual(edgeManifest.withOptional({}, ['udp.port:6666']), { udp: { ports: [6666], multicast: [] } });
+    assert.deepEqual(edgeManifest.withOptional({}, ['udp.port:abc', 'tcp.lanx']), {}, 'only well-formed keys');
+    // the approved keys are filtered against the declaration first (approvedOptional)
+    assert.deepEqual(edgeManifest.approvedOptional(edge, ['tcp.lan', 'udp.port:9999', 'http.lan']), ['tcp.lan']);
+    // forState keeps broadcast
+    assert.deepEqual(edgeManifest.forState({ udp: { ports: [7000], multicast: [], broadcast: true } }), { udp: { ports: [7000], multicast: [], broadcast: true } });
   });
 });
 

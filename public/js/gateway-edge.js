@@ -653,10 +653,15 @@
         h('span', { class: 'gwe-opt-t', text: c.text }), tag(tone, t(label), true), b,
       ]);
     });
-    // a gateway without the feature edge-optional-caps refuses confirmed optional rights (`denied`) — say so
+    // a gateway without the feature edge-optional-caps refuses confirmed optional rights (`denied`) — say so;
+    // the same per key for the newer optional LAN rights (tcp.lan, udp.port, udp.broadcast: feature edge-optional-lan)
     const sup = d.support || {};
-    const tooOld = sup.optionalCaps === false
-      ? note('warn', [h('strong', { text: t('gwe.opt.too_old') }), ' ', t('gwe.opt.too_old_d', { min: sup.optionalCapsMinGateway || '—', version: sup.gatewayVersion || '—' })])
+    const old = opt.filter((c) => c.gatewaySupported === false);
+    const ver = (v) => String(v).split('.').map((x) => parseInt(x, 10) || 0);
+    const newer = (x, y) => { const a = ver(x); const b = ver(y); for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
+    const minOld = old.map((c) => c.minGateway).filter(Boolean).reduce((m, v) => (!m || newer(v, m) ? v : m), null);
+    const tooOld = sup.optionalCaps === false || old.length
+      ? note('warn', [h('strong', { text: t('gwe.opt.too_old') }), ' ', t('gwe.opt.too_old_d', { min: minOld || sup.optionalCapsMinGateway || '—', version: sup.gatewayVersion || '—' })])
       : null;
     if (tooOld) tooOld.setAttribute('data-opt-too-old', '');
     return h('div', { class: 'gwe-opt' }, [
