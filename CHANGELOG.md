@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.326.0] — 2026-11-26
+
+### Features
+- optionale Edge-Rechte tcp.lan, udp.port und udp.broadcast (z. B. Tuya) (#591)
+
+---
+
 ## [1.325.2] — 2026-11-26
 
 ### Fixes
