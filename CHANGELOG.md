@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.325.1] — 2026-11-26
+
+### Fixes
+- Caddy-Module gepinnt (reproduzierbarer Build) und „Gateway zu alt“ bei zusätzlichen Edge-Rechten (#589)
+
+---
+
 ## [1.325.0] — 2026-11-25
 
 ### Features
