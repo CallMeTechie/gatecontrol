@@ -207,18 +207,37 @@ function channelOf(peerId, hb) {
   return { ...conn, reason: d.reason, detail: d.detail };
 }
 
+/**
+ * The edge container runs an older image than the gateway container (same image, own compose service `edge`):
+ * the gateway updated itself, the edge container was not recreated (an update.sh from before the edge
+ * container, a recreate by hand that left `edge` out). → { gateway, edge } (both versions) or null.
+ * The edge-side checks (edge.minGateway, edge-optional-*) still go by the edge container's hello — it is the
+ * edge container that refuses the package; this only names the cause: "Edge-Container veraltet" instead of
+ * "Gateway zu alt". `s`: store.settings(), `hb`: heartbeatOf().
+ */
+function edgeOutdatedOf(s, hb) {
+  const semver = require('../plugins/semver');
+  const edge = s && s.hello && typeof s.hello.version === 'string' ? s.hello.version : null;
+  const v = hb && hb.telemetry && hb.telemetry.gateway_version;
+  const gw = typeof v === 'string' && v ? v.slice(0, 32) : null;
+  if (!edge || !gw || !semver.valid(edge) || !semver.valid(gw) || semver.compare(gw, edge) <= 0) return null;
+  return { gateway: gw, edge };
+}
+
 /** Version and edge support of a gateway from its last heartbeat (telemetry.gateway_version). `hb`: heartbeatOf(). */
 function supportView(s, hb) {
   let version = s.hello && s.hello.version ? s.hello.version : null;
-  if (!version) {
-    const v = hb.telemetry && hb.telemetry.gateway_version;
-    version = typeof v === 'string' && v ? v.slice(0, 32) : null;
-  }
+  const hv = hb.telemetry && hb.telemetry.gateway_version;
+  const heartbeatVersion = typeof hv === 'string' && hv ? hv.slice(0, 32) : null;
+  if (!version) version = heartbeatVersion;
   const semver = require('../plugins/semver');
   const supported = s.hello ? true : (version && semver.valid(version) ? semver.compare(version, EDGE_MIN_GATEWAY) >= 0 : null);
   const isolatedSupported = version && semver.valid(version) ? semver.compare(version, EDGE_ISOLATED_MIN_GATEWAY) >= 0 : null;
   const mode = (s.hello && s.hello.isolation && s.hello.isolation.mode) || channelReason.modeOf(hb.telemetry);
-  return { gatewayVersion: version, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY,
+  // gatewayVersion: what the edge container says in its hello (the edge checks go by it), else the heartbeat;
+  // heartbeatVersion: the gateway container itself; edgeOutdated: the edge container runs an older image
+  const outdated = edgeOutdatedOf(s, hb);
+  return { gatewayVersion: version, heartbeatVersion, edgeOutdated: !!outdated, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY,
     edgeMode: mode || null, isolatedSupported, isolatedMinGateway: EDGE_ISOLATED_MIN_GATEWAY,
     // „Zusätzliche Rechte (optional)“: false → "Gateway zu alt – bitte aktualisieren" (null: not known yet)
     optionalCaps: optionalCapsSupported(s, hb), optionalCapsMinGateway: EDGE_OPTIONAL_MIN_GATEWAY,
@@ -677,13 +696,18 @@ function hostRequestCapability(plugin, args) {
   store.setOptionalRequests(plugin.id, peerId, req);
   const name = loc(plugin.manifest.name, 'en') || plugin.id;
   const link = '/gateways#gw/' + peerId + '/edge';
-  // an older gateway would refuse the capability even once confirmed: say so instead of a silent `denied`
-  const tooOld = gatewaySupported === false
-    ? ` — gateway too old for this capability, update it (needs ${minGateway} or newer)` : '';
+  // an older gateway would refuse the capability even once confirmed: say so instead of a silent `denied` —
+  // and when the gateway is current but its edge container still runs the old image, name that instead
+  const outdated = gatewaySupported === false ? edgeOutdatedOf(store.settings(peerId), heartbeatOf(peerId)) : null;
+  const tooOld = gatewaySupported !== false ? ''
+    : outdated && require('../plugins/semver').compare(outdated.gateway, minGateway) >= 0
+      ? ` — edge container outdated (gateway ${outdated.gateway}, edge container ${outdated.edge}): recreate the edge container`
+      : ` — gateway too old for this capability, update it (needs ${minGateway} or newer)`;
   log('gateway_edge_capability_requested',
     `Plugin "${name}" asks for an additional capability on gateway "${g.name}": ${capText(edge, key, 'en')} — confirm under Gateways › ${g.name} › Edge-Plugins (${link})${tooOld}`, {
       source: 'system', severity: 'warning',
-      details: { peer_id: peerId, plugin: plugin.id, version: plugin.version, capability: key, link, ...(gatewaySupported === false ? { gateway_too_old: true, min_gateway: minGateway } : {}) },
+      details: { peer_id: peerId, plugin: plugin.id, version: plugin.version, capability: key, link, ...(gatewaySupported === false ? { gateway_too_old: true, min_gateway: minGateway } : {}),
+        ...(outdated ? { edge_outdated: true, gateway_version: outdated.gateway, edge_version: outdated.edge } : {}) },
     });
   store.addLog(peerId, plugin.id, 'system', 'warn', `asks for optional capability ${key} — confirm under Edge-Plugins${tooOld}`);
   return { status: 'requested', notified: true, gatewaySupported };
@@ -764,5 +788,5 @@ module.exports = {
   gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, approveOptional, revokeOptional, approveAllOptional, revokeAllOptional, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
   onPluginInstalled, onPluginRemoved, hostGateways, hostCapabilities, hostRequestCapability, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
-  EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY, EDGE_OPTIONAL_MIN_GATEWAY, EDGE_OPTIONAL_LAN_MIN_GATEWAY, optionalCapsSupported, optionalLanSupported, optionalKeySupported,
+  EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY, EDGE_OPTIONAL_MIN_GATEWAY, EDGE_OPTIONAL_LAN_MIN_GATEWAY, optionalCapsSupported, optionalLanSupported, optionalKeySupported, edgeOutdatedOf,
 };

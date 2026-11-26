@@ -444,7 +444,8 @@ describe('gateway-edge: texts and errors', () => {
 
   it('„Zusätzliche Rechte“ on a gateway without edge-optional-caps: „Gateway zu alt – bitte aktualisieren“ instead of a silent refusal', () => {
     const src = stripComments(EDGE_JS);
-    assert.match(src, /sup\.optionalCaps === false \|\| old\.length\s*\? note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: minOld \|\| sup\.optionalCapsMinGateway/);
+    assert.match(src, /const needOld = sup\.optionalCaps === false \|\| old\.length > 0;/);
+    assert.match(src, /\} else if \(needOld\) \{\s*tooOld = note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: minOld \|\| sup\.optionalCapsMinGateway/);
     // per key (tcp.lan / udp.* need edge-optional-lan): the rows the gateway is too old for, the highest version they need
     assert.match(src, /const old = opt\.filter\(\(c\) => c\.gatewaySupported === false\);/);
     assert.match(read('src/services/edge/index.js'), /gatewaySupported: optionalKeySupported\(x\.key, settings, hb\), minGateway: optionalMinGateway\(x\.key\)/);
@@ -454,6 +455,72 @@ describe('gateway-edge: texts and errors', () => {
     assert.equal(de['gwe.opt.too_old'], 'Gateway zu alt – bitte aktualisieren');
     assert.equal(en['gwe.opt.too_old'], 'Gateway too old – please update');
     for (const L of [de, en]) assert.match(L['gwe.opt.too_old_d'], /\{\{min\}\}.*\{\{version\}\}/);
+  });
+
+  it('edge container outdated (gateway newer than its edge container): „Edge-Container veraltet“ with both versions instead of „Gateway zu alt“', () => {
+    // the rule: only when the gateway itself is new enough for what is asked
+    const sup = { edgeOutdated: true, heartbeatVersion: '1.49.0', gatewayVersion: '1.44.0' };
+    assert.equal(K.edgeStale(sup, '1.49.0'), true);
+    assert.equal(K.edgeStale(sup, '1.46.0'), true);
+    assert.equal(K.edgeStale(sup, null), true);
+    assert.equal(K.edgeStale(sup, '1.50.0'), false, 'the gateway itself is too old: update it first');
+    assert.equal(K.edgeStale({ ...sup, edgeOutdated: false }, '1.49.0'), false);
+    assert.equal(K.edgeStale({ edgeOutdated: true }, '1.49.0'), false);
+    assert.equal(K.edgeStale(null, null), false);
+    assert.equal(K.verNewer('1.50.0', '1.49.0'), true);
+    assert.equal(K.verNewer('1.49.0', '1.49.0'), false);
+    assert.equal(K.verNewer('1.9.0', '1.10.0'), false);
+    // "Gateway zu alt … dieses hat": the gateway's own version, not the edge container's
+    assert.equal(K.gatewayVersionOf(sup), '1.49.0');
+    assert.equal(K.gatewayVersionOf({ gatewayVersion: '1.44.0' }), '1.44.0');
+    assert.equal(K.gatewayVersionOf(null), null);
+    const src = stripComments(EDGE_JS);
+    // plugin row: the state stays gateway_too_old (the edge container refuses it), only tag and text name the cause
+    assert.match(src, /const stale = st\.state === 'gateway_too_old' && edgeStale\(d, p\.edge\.minGateway\);/);
+    assert.match(src, /tag\(st\.tone, t\(stale \? 'gwe\.edge\.update_first' : st\.key\), true\)/);
+    assert.match(src, /t\('gwe\.state_d\.edge_outdated', \{ min: p\.edge\.minGateway \|\| '—', gateway: sup\.heartbeatVersion \|\| '—', edge: sup\.gatewayVersion \|\| '—' \}\)/);
+    assert.match(src, /t\('gwe\.state_d\.gateway_too_old', \{ min: p\.edge\.minGateway \|\| '—', version: gwVersionOf\(d\.support \|\| \{\}\) \}\)/);
+    // edge card: the way out once, while the channel is up; „Zusätzliche Rechte“: the same cause
+    assert.match(src, /if \(conn\.online && !bound\.updateFirst && edgeStale\(d\)\) c\.body\.appendChild\(edgeOutdatedNote\(d\)\);/);
+    assert.match(src, /t\('gwe\.edge\.outdated_text', \{ gateway: sup\.heartbeatVersion \|\| '—', edge: sup\.gatewayVersion \|\| '—' \}\), ' ', guide\('edge\.edge_outdated'\)/);
+    assert.match(src, /const stale = edgeStale\(d, needOld \? \(minOld \|\| sup\.optionalCapsMinGateway\) : null\);/);
+    assert.match(src, /t\('gwe\.opt\.edge_outdated_d', \{ gateway: sup\.heartbeatVersion \|\| '—', edge: sup\.gatewayVersion \|\| '—' \}\)/);
+    // the server sends both versions
+    assert.match(read('src/services/edge/index.js'), /gatewayVersion: version, heartbeatVersion, edgeOutdated: !!outdated,/);
+    // the texts: the existing title, both versions, Container Manager + SSH, and the new update.sh from „Mehr“
+    assert.equal(de['gwe.edge.update_first'], 'Edge-Container veraltet');
+    assert.equal(en['gwe.edge.update_first'], 'Edge container outdated');
+    assert.match(de['gwe.edge.outdated_text'], /^Gateway \{\{gateway\}\}, Edge-Container \{\{edge\}\} – Edge-Container neu erstellen\./);
+    assert.match(en['gwe.edge.outdated_text'], /^Gateway \{\{gateway\}\}, edge container \{\{edge\}\} – recreate the edge container\./);
+    for (const L of [de, en]) {
+      assert.match(L['gwe.edge.outdated_text'], /Container Manager/);
+      assert.match(L['gwe.edge.outdated_text'], /docker compose up -d --no-deps edge/);
+      assert.match(L['gwe.edge.outdated_text'], new RegExp(L['gwp.menu.update_sh'].replace(/\./g, '\\.')));
+      assert.match(L['gwe.state_d.edge_outdated'], /\{\{min\}\}.*\{\{gateway\}\}.*\{\{edge\}\}/);
+    }
+    // „Anleitung“ leads to the handbook section (de + en)
+    const HB = require('../public/js/handbook.js');
+    const topic = HB.TOPICS['edge.edge_outdated'];
+    assert.ok(topic);
+    assert.match(read('docs/handbuch/' + topic.de.split('#')[0]), /^### Edge-Container veraltet$/m);
+    assert.match(read('docs/guide/' + topic.en.split('#')[0]), /^### Edge container outdated$/m);
+  });
+
+  it('„Mehr“ → „update.sh herunterladen“: the server copy of the gateway release, saved as update.sh, with the chmod hint', () => {
+    const src = read('public/js/gateways.js');
+    assert.match(src, /var ush = link\('update-sh', T\('gwp\.menu\.update_sh', 'update\.sh herunterladen'\), '\/api\/v1\/gateways\/' \+ encodeURIComponent\(g\.peer_id\) \+ '\/update-sh'\);/);
+    assert.match(src, /ush\.setAttribute\('download', 'update\.sh'\);/);
+    assert.match(read('src/routes/api/gateways.js'), /router\.get\('\/:id\/update-sh'[\s\S]{0,300}filename="update\.sh"[\s\S]{0,200}gatewaySetup\.readUpdateSh\(\)/);
+    // the copy recreates the edge container after a good update (and pins it back on a rollback)
+    const sh = require('../src/services/gatewaySetup').readUpdateSh();
+    assert.match(sh, /dc up -d --no-deps "\$EDGE"/);
+    assert.match(sh, /grep -qx "\$\{GC_GW_EDGE_SERVICE:-edge\}"/);
+    for (const L of [de, en]) {
+      assert.ok(L['gwp.menu.update_sh']);
+      assert.match(L['gwp.menu.update_sh_hint'], /chmod \+x update\.sh/);
+    }
+    assert.match(read('docs/handbuch/06-gateway-aktualisieren.md'), /„Mehr“ → „update\.sh herunterladen“/);
+    assert.match(read('docs/guide/06-updating-a-gateway.md'), /“More” → “Download update\.sh”/);
   });
 
   it('no innerHTML, no browser dialogs, destructive confirmations in red', () => {

@@ -39,6 +39,12 @@ with its changes, the installed one marked, the newer ones “Newer”. More in
 
 **Check:** After a few minutes the card shows the new version.
 
+The `update.sh` on the device also renews the edge container after the gateway.
+An older copy does not (edge plugins then show “Edge container outdated”, see
+[chapter 4](04-edge-and-smart-home.md#edge-container-outdated)). Get the current
+one under “More” → “Download update.sh”; it replaces the old one in the folder
+of `docker-compose.yml` (then `chmod +x update.sh`).
+
 ## 6.2 Why the compose file needs extra care
 
 Auto-update **only swaps the image**. It **never** changes the compose file

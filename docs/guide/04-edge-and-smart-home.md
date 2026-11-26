@@ -244,6 +244,28 @@ network fence). Otherwise a freshly written, current image helps.
 
 **Check:** The tab shows “Edge without network (isolated)”, the edge parts run.
 
+### Edge container outdated
+
+The gateway updated itself (the view shows e.g. “Version 1.49.0”), but the
+container `edge` still runs the old image – it uses the same image, but is a
+service of its own in the compose file. An edge part that needs a newer
+gateway then shows “Edge container outdated” with both versions (“Gateway
+1.49.0, edge container 1.44.0”) instead of “gateway too old”. Usually the
+`update.sh` on the device is from before the edge container and only renews
+the service `gateway`.
+
+1. Recreate the edge container:
+   - **Synology:** Container Manager → “Project” → your gateway project →
+     “Action” → “Build” (“Recreate”).
+   - **Over SSH** in the gateway's folder: `sudo docker compose up -d --no-deps edge`.
+2. Get the current `update.sh` so that future updates take the edge container
+   along: in the gateway's view “More” → “Download update.sh”. Replace the old
+   file in the folder of `docker-compose.yml` and make it executable
+   (`chmod +x update.sh`). The task in the Task Scheduler or the cron line
+   stays as it is.
+
+**Check:** The note in the tab goes away, the plugin runs.
+
 ### Network fence missing
 
 The same situation on a gateway **older than 1.23.0**: update the gateway first

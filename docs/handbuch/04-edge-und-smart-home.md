@@ -248,6 +248,28 @@ die Netzgrenze setzen). Sonst hilft ein frisch geschriebenes, aktuelles Image.
 
 **Prüfen:** Im Reiter steht „Edge ohne Netzwerk (isoliert)“, die Edge-Teile laufen.
 
+### Edge-Container veraltet
+
+Das Gateway hat sich aktualisiert (in der Ansicht steht etwa „Version 1.49.0“),
+der Container `edge` läuft aber noch mit dem alten Image – er hat dasselbe
+Image, ist aber ein eigener Dienst der Compose-Datei. Ein Edge-Teil, das ein
+neueres Gateway braucht, zeigt dann „Edge-Container veraltet“ mit beiden
+Versionen („Gateway 1.49.0, Edge-Container 1.44.0“) statt „Gateway zu alt“.
+Meist stammt die `update.sh` auf dem Gerät aus der Zeit vor dem Edge-Container
+und erneuert nur den Dienst `gateway`.
+
+1. Den Edge-Container neu erstellen:
+   - **Synology:** Container Manager → „Projekt“ → dein Gateway-Projekt →
+     „Aktion“ → „Erstellen“ („Neu erstellen“).
+   - **Per SSH** im Ordner des Gateways: `sudo docker compose up -d --no-deps edge`.
+2. Die aktuelle `update.sh` holen, damit künftige Updates den Edge-Container
+   mitziehen: in der Ansicht des Gateways „Mehr“ → „update.sh herunterladen“.
+   Die alte Datei im Ordner der `docker-compose.yml` ersetzen und ausführbar
+   machen (`chmod +x update.sh`). Die Aufgabe im Aufgabenplaner bzw. die
+   Cron-Zeile bleibt, wie sie ist.
+
+**Prüfen:** Im Reiter verschwindet der Hinweis, das Plugin läuft.
+
 ### Netzgrenze fehlt
 
 Dieselbe Lage bei einem Gateway **älter als 1.23.0**: Aktualisiere zuerst das
