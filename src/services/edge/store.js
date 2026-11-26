@@ -114,6 +114,13 @@ function setOptional(pluginId, peerId, list) {
   return db().prepare('UPDATE edge_assignments SET opt_caps_list = ? WHERE plugin_id = ? AND peer_id = ?').run(JSON.stringify(keys), pluginId, peerId).changes > 0;
 }
 
+/** Confirmed optional keys and the open requests in one statement („Alle bestätigen“: all or nothing). */
+function setOptionalWithRequests(pluginId, peerId, list, requests) {
+  const keys = [...new Set((list || []).map(String))].sort();
+  return db().prepare('UPDATE edge_assignments SET opt_caps_list = ?, opt_requests = ? WHERE plugin_id = ? AND peer_id = ?')
+    .run(JSON.stringify(keys), JSON.stringify(requests || {}), pluginId, peerId).changes > 0;
+}
+
 /** { key: ms } of the last gc.edge.requestCapability per optional key. */
 function setOptionalRequests(pluginId, peerId, requests) {
   db().prepare('UPDATE edge_assignments SET opt_requests = ? WHERE plugin_id = ? AND peer_id = ?').run(JSON.stringify(requests || {}), pluginId, peerId);
@@ -175,6 +182,6 @@ function logs(peerId, { pluginId, limit = 200, before = null, kind = null } = {}
 
 module.exports = {
   gatewayPeer, gatewayPeers, settings, setSettings, setHello, setMqttStatus,
-  assignment, assignmentsOfGateway, assignmentsOfPlugin, approve, setOptional, setOptionalRequests, setAssignmentEnabled, setAssignmentStatus, removePlugin,
+  assignment, assignmentsOfGateway, assignmentsOfPlugin, approve, setOptional, setOptionalWithRequests, setOptionalRequests, setAssignmentEnabled, setAssignmentStatus, removePlugin,
   addLog, logs, LOG_KEEP, LOG_LINE_MAX,
 };

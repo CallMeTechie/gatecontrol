@@ -64,6 +64,12 @@ GateControl **1.317.0** gilt:
   Rechte (optional)“: je Recht „bestätigt“, „angefragt“ oder „nicht
   bestätigt“, dazu „Bestätigen“ bzw. „Entziehen“. Ein bestätigtes Recht gilt
   nur für dieses Gateway.
+- Hat ein Plugin mehrere zusätzliche Rechte (z. B. Tuya: TCP ins Heimnetz,
+  UDP-Broadcast und die UDP-Ports 6666, 6667, 7000), steht unter der Liste der
+  Schalter „Alle bestätigen“ mit „(x von y bestätigt)“. Einschalten bestätigt
+  nach einer Rückfrage alle noch offenen Rechte auf einmal; der Schalter steht
+  auf „an“, sobald alle bestätigt sind. Ausschalten entzieht alle wieder. Die
+  Knöpfe je Recht bleiben – du kannst danach auch einzelne wieder entziehen.
 - „Entziehen“ nimmt das Recht beim nächsten Abgleich wieder heraus; das Gateway
   beendet dann die Abos des Plugins auf diesen Themen.
 

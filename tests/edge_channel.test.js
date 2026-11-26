@@ -987,6 +987,50 @@ describe('optional capabilities (edge.optionalCapabilities)', () => {
     p = await optOf();
     assert.deepEqual(p.assignment.newCapabilities, []);
   });
+
+  it('„Alle bestätigen“ / „Alle entziehen“: every declared key at once, one entry per key, one new state', async () => {
+    const T = ['tcp.lan', 'udp.broadcast', 'udp.port:6666', 'udp.port:6667', 'udp.port:7000'];
+    const all = `/gateways/${gw()}/plugins/${P}/optional/approve-all`;
+    // same protection as one key: session + CSRF, a plugin set up for this gateway
+    assert.equal((await agent.post(`${API}${all}`).send({})).status, 403, 'CSRF');
+    assert.equal((await post(`/gateways/${gw()}/plugins/hello/optional/approve-all`, {})).status, 404);
+    assert.equal((await post(`/gateways/${gw()}/plugins/${P}/optional/revoke-all/x`, {})).status, 404);
+    // from the previous test: tcp.lan and udp.port:7000 confirmed, udp.broadcast revoked
+    const before = activities('gateway_edge_optional_approved').length;
+    const states = h.frames.filter((f) => f.t === 'state').length;
+    const r = await post(all, { key: 'ignored', all: false });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.assignment.optional.map((x) => [x.key, x.approved, x.requestedAt]), T.map((k) => [k, true, null]));
+    let st = await h.waitForState((s) => { const x = s.plugins.find((y) => y.id === P); return !!(x && x.caps.udp && x.caps.udp.broadcast && x.caps.udp.ports.includes(6666)); });
+    let e = st.plugins.find((x) => x.id === P);
+    assert.equal(e.enabled, true);
+    assert.deepEqual(e.caps.tcp, { lan: true });
+    assert.deepEqual(e.caps.udp, { ports: [5683, 6000, 6666, 6667, 7000], multicast: ['224.0.1.187'], broadcast: true });
+    await sleep(150);
+    assert.equal(h.frames.filter((f) => f.t === 'state').length - states, 1, 'the gateway gets its state once');
+    // one activity entry per newly confirmed key (as with Bestätigen), marked as „all“
+    const appr = activities('gateway_edge_optional_approved').slice(before);
+    assert.deepEqual(appr.map((x) => JSON.parse(x.details).capability).sort(), ['udp.broadcast', 'udp.port:6666', 'udp.port:6667']);
+    assert.ok(appr.every((x) => JSON.parse(x.details).all === true));
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result.approved, T);
+    // nothing left to confirm: no new entry, no new state
+    await post(all, {}).expect(200);
+    assert.equal(activities('gateway_edge_optional_approved').length, before + 3);
+    // „Alle entziehen“: everything out of the next state, one entry per key
+    const rb = activities('gateway_edge_optional_revoked').length;
+    const rv = await post(`/gateways/${gw()}/plugins/${P}/optional/revoke-all`, {});
+    assert.equal(rv.status, 200, JSON.stringify(rv.body));
+    assert.ok(rv.body.assignment.optional.every((x) => x.approved === false));
+    st = await h.waitForState((s) => { const x = s.plugins.find((y) => y.id === P); return !!(x && !x.caps.tcp && !x.caps.udp.broadcast); });
+    e = st.plugins.find((x) => x.id === P);
+    assert.equal(e.enabled, true, 'the plugin keeps running without them (a confirmed key that 1.4.0 made a regular capability stays)');
+    assert.deepEqual(e.caps.udp, { ports: [5683, 6000], multicast: ['224.0.1.187'] });
+    const rev = activities('gateway_edge_optional_revoked').slice(rb);
+    assert.deepEqual(rev.map((x) => JSON.parse(x.details).capability).sort(), T);
+    assert.deepEqual((await pluginApi('/capabilities', { gatewayId: gw() })).result.approved, []);
+    await post(`/gateways/${gw()}/plugins/${P}/optional/revoke-all`, {}).expect(200);
+    assert.equal(activities('gateway_edge_optional_revoked').length, rb + 5);
+  });
 });
 
 describe('no secrets in the logs', () => {

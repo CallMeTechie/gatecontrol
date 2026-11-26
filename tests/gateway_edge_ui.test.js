@@ -415,6 +415,33 @@ describe('gateway-edge: texts and errors', () => {
     assert.equal(en['gwe.opt.title'], 'Additional rights (optional)');
   });
 
+  it('„Zusätzliche Rechte“: one switch „Alle bestätigen“ (with the same confirmation) next to the per-key buttons', () => {
+    const src = stripComments(EDGE_JS);
+    // only with more than one optional right, below the list; the per-key buttons stay
+    assert.match(src, /opt\.length > 1 \? optionalAllRow\(g, d, p, opt\) : null/);
+    assert.match(src, /'\/optional\/' \+ \(approve \? 'approve' : 'revoke'\)\), \{ key: c\.key \}/);
+    // a switch of the page (st-switch), on when every right is confirmed
+    assert.match(src, /const all = opt\.every\(\(c\) => c\.approved\);/);
+    assert.match(src, /const sw = switchBtn\(all, label, 'opt-all:' \+ p\.id,/);
+    // switching on asks first like one key does (D.confirm, no browser dialog); off revokes all without asking
+    const i = src.indexOf("'gwe.opt.all_title'");
+    assert.ok(i > 0);
+    assert.match(src.slice(Math.max(0, i - 120), i), /if \(approve && !await D\.confirm\(/);
+    assert.match(src, /'\/optional\/' \+ \(approve \? 'approve-all' : 'revoke-all'\)\)\)/);
+    // the routes exist on the server
+    const routes = read('src/routes/api/edge.js');
+    assert.match(routes, /for \(const op of \['approve-all', 'revoke-all'\]\)/);
+    assert.match(routes, /edge\.approveAllOptional\(gatewayId\(req\), id, opts\) : edge\.revokeAllOptional\(gatewayId\(req\), id, opts\)/);
+    // the „Gateway zu alt“ note is untouched by it
+    assert.match(src, /tooOld,\s*h\('ul', \{ class: 'gwe-opt-list'/);
+    for (const k of ['all', 'all_label', 'all_count', 'all_title', 'all_msg', 'all_ok', 'all_approved_done', 'all_revoked_done']) {
+      assert.ok(de['gwe.opt.' + k] && en['gwe.opt.' + k], k);
+    }
+    assert.equal(de['gwe.opt.all_label'], 'Alle bestätigen');
+    assert.equal(en['gwe.opt.all_label'], 'Confirm all');
+    for (const L of [de, en]) assert.match(L['gwe.opt.all_msg'], /\{\{plugin\}\}.*\{\{gateway\}\}.*\{\{caps\}\}/);
+  });
+
   it('„Zusätzliche Rechte“ on a gateway without edge-optional-caps: „Gateway zu alt – bitte aktualisieren“ instead of a silent refusal', () => {
     const src = stripComments(EDGE_JS);
     assert.match(src, /sup\.optionalCaps === false \|\| old\.length\s*\? note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: minOld \|\| sup\.optionalCapsMinGateway/);

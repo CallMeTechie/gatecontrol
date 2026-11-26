@@ -10,7 +10,8 @@
 //                        an update that needs new capabilities leaves it off (update_pending)
 //                        until an administrator confirms again
 //   optional rights      edge.optionalCapabilities: confirmed or revoked one by one per gateway
-//                        (approveOptional / revokeOptional); a plugin asks for one with
+//                        (approveOptional / revokeOptional, all at once: approveAllOptional /
+//                        revokeAllOptional); a plugin asks for one with
 //                        gc.edge.requestCapability — one note in the activity log per key and day
 //   MQTT accounts        per gateway; the password is shown once, only its hash is kept
 
@@ -430,6 +431,58 @@ function revokeOptional(peerId, pluginId, { key, ip, user, lang } = {}) {
   return assignmentView(store.assignment(id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
 }
 
+/**
+ * „Alle bestätigen“: confirm every optional capability the installed version declares and that is not
+ * confirmed yet, in one write (all or nothing), one activity entry per key as with approveOptional,
+ * then the gateway gets its state once.
+ */
+function approveAllOptional(peerId, pluginId, { ip, user, lang } = {}) {
+  const g = needGateway(peerId);
+  const p = edgePlugin(pluginId);
+  const a = store.assignment(p.id, g.id);
+  if (!a) throw new EdgeAdminError('not_assigned', 'the plugin is not set up for this gateway');
+  const fresh = edgeManifest.optionalList(p.manifest.edge).filter((k) => !a.optCapsList.includes(k));
+  if (fresh.length) {
+    const req = { ...(a.optRequests || {}) };
+    for (const k of fresh) delete req[k];
+    store.setOptionalWithRequests(p.id, g.id, [...a.optCapsList, ...fresh], req);
+    for (const k of fresh) {
+      log('gateway_edge_optional_approved', `Optional capability of plugin "${p.name}" approved on gateway "${g.name}": ${k}`, {
+        source: 'admin', ipAddress: ip, severity: 'warning', details: { peer_id: g.id, plugin: p.id, version: p.version, capability: k, all: true, ...(user ? { user } : {}) },
+      });
+      store.addLog(g.id, p.id, 'system', 'info', `optional capability approved: ${k}`);
+    }
+    hub.refresh(g.id);
+  }
+  return assignmentView(store.assignment(p.id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
+}
+
+/**
+ * „Alle entziehen“: take back every confirmed optional capability the installed version declares (what the
+ * section shows). Other keys stay: one that a later version made a regular capability counts as approved
+ * through it (state.js evaluate) — dropping it would stop the plugin with update_pending.
+ */
+function revokeAllOptional(peerId, pluginId, { ip, user, lang } = {}) {
+  const g = needGateway(peerId);
+  const id = String(pluginId);
+  const a = store.assignment(id, g.id);
+  if (!a) throw new EdgeAdminError('not_assigned', 'the plugin is not set up for this gateway');
+  const p = registry().get(id);
+  const edge = p && p.manifest ? p.manifest.edge : null;
+  const gone = edge ? edgeManifest.approvedOptional(edge, a.optCapsList) : [];
+  if (gone.length) {
+    store.setOptional(id, g.id, a.optCapsList.filter((k) => !gone.includes(k)));
+    for (const k of gone) {
+      log('gateway_edge_optional_revoked', `Optional capability of plugin "${p ? p.name : id}" revoked on gateway "${g.name}": ${k}`, {
+        source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, plugin: id, capability: k, all: true, ...(user ? { user } : {}) },
+      });
+      store.addLog(g.id, id, 'system', 'info', `optional capability revoked: ${k}`);
+    }
+    hub.refresh(g.id);
+  }
+  return assignmentView(store.assignment(id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
+}
+
 function logs(peerId, opts = {}) {
   const g = needGateway(peerId);
   const pluginId = opts.plugin === undefined ? undefined : (opts.plugin === '' || opts.plugin === null ? null : String(opts.plugin));
@@ -708,7 +761,7 @@ function hostMqtt(plugin, op, args) {
 }
 
 module.exports = {
-  gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, approveOptional, revokeOptional, logs,
+  gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, approveOptional, revokeOptional, approveAllOptional, revokeAllOptional, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
   onPluginInstalled, onPluginRemoved, hostGateways, hostCapabilities, hostRequestCapability, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
   EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY, EDGE_OPTIONAL_MIN_GATEWAY, EDGE_OPTIONAL_LAN_MIN_GATEWAY, optionalCapsSupported, optionalLanSupported, optionalKeySupported,

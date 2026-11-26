@@ -62,6 +62,12 @@ plugin asks for such rights only when it needs them. From GateControl
 - At the plugin in the tab “Edge plugins” the section “Additional rights
   (optional)” lists each right as “confirmed”, “requested” or “not confirmed”,
   with “Confirm” or “Revoke”. A confirmed right applies to this gateway only.
+- If a plugin has several additional rights (e.g. Tuya: TCP into the home
+  network, UDP broadcast and the UDP ports 6666, 6667, 7000), the switch
+  “Confirm all” with “(x of y confirmed)” sits below the list. Switching it on
+  confirms every open right at once after one question; it is on as soon as
+  all are confirmed. Switching it off revokes all of them. The per-right
+  buttons stay – you can still revoke single ones afterwards.
 - “Revoke” takes the right out again with the next sync; the gateway then ends
   the plugin's subscriptions on those topics.
 
