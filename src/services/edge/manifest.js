@@ -7,18 +7,23 @@
 // anything — this is the server's half.
 //
 //   "edge": { "entry": "edge/index.js", "minGateway": "1.20.0", "memoryMb": 48,
-//     "capabilities": { "udp": { "ports": [5683], "multicast": ["224.0.1.187"] },
+//     "capabilities": { "udp": { "ports": [5683], "multicast": ["224.0.1.187"], "broadcast": false },
 //                       "mdns": { "services": ["_shelly._tcp"] },
 //                       "tcp": { "lan": true }, "http": { "lan": true },
 //                       "mqtt": { "topics": ["shellies/#"] }, "serial": ["zigbee"] },
-//     "optionalCapabilities": { "mqtt": { "topics": ["zigbee2mqtt/#"] } } }
+//     "optionalCapabilities": { "mqtt": { "topics": ["zigbee2mqtt/#"] },
+//                               "tcp": { "lan": true }, "udp": { "ports": [6666, 6667, 7000], "broadcast": true } } }
+//
+// udp.broadcast (key "udp.broadcast"): gc.lan.udp.send may also go to 255.255.255.255 or the broadcast
+// address of a LAN subnet of the gateway — only to the plugin's UDP ports (udp.ports). Needs udp.ports.
 //
 // optionalCapabilities (since 1.317.0): what the plugin may ask for later, per gateway, when it needs
 // it (gc.edge.requestCapability). Validated at install like capabilities, but never part of the
 // confirmation that switches the edge part on and never a reason for update_pending — an
-// administrator confirms each key on its own (Gateways › Gateway › Edge-Plugins). Only MQTT topics
-// for now: they are applied live on the gateway (subscriptions are checked again with every state);
-// ports, mDNS, LAN access and serial devices stay in capabilities.
+// administrator confirms each key on its own (Gateways › Gateway › Edge-Plugins). MQTT topics
+// (gateway feature edge-optional-caps) and, since 1.326.0, LAN access over TCP (tcp.lan), UDP ports
+// (udp.port:<n>) and UDP broadcast (udp.broadcast) (gateway feature edge-optional-lan): the gateway
+// applies them with the next state. Multicast groups, mDNS, HTTP and serial devices stay in capabilities.
 //
 // validate() pushes stable "edge…: problem" codes through `err` like the rest
 // of manifest.js and returns the normalised section (null when invalid).
@@ -39,7 +44,7 @@ const SERIAL_NAMES = Object.freeze(['zigbee']);
 const CAP_KEYS = Object.freeze(['udp', 'mdns', 'tcp', 'http', 'mqtt', 'serial']);
 const EDGE_KEYS = Object.freeze(['entry', 'minGateway', 'memoryMb', 'capabilities', 'optionalCapabilities']);
 // what edge.optionalCapabilities may hold (kept narrow on purpose, see above)
-const OPTIONAL_CAP_KEYS = Object.freeze(['mqtt']);
+const OPTIONAL_CAP_KEYS = Object.freeze(['mqtt', 'tcp', 'udp']);
 const MDNS_RE = /^_[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\._(?:tcp|udp)$/;
 const ENTRY_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$/;
 
@@ -102,10 +107,12 @@ function validateCaps(raw, err, where = 'edge.capabilities') {
 
   if (raw.udp != null) {
     const u = raw.udp;
-    if (!plainObject(u) || !onlyKeys(u, ['ports', 'multicast'])) bad(where + '.udp: invalid');
+    if (!plainObject(u) || !onlyKeys(u, ['ports', 'multicast', 'broadcast'])) bad(where + '.udp: invalid');
     else {
       const ports = u.ports == null ? [] : u.ports;
       const groups = u.multicast == null ? [] : u.multicast;
+      if (u.broadcast != null && typeof u.broadcast !== 'boolean') bad(where + '.udp.broadcast: invalid (true or false)');
+      const broadcast = u.broadcast === true;
       if (!Array.isArray(ports) || ports.length > UDP_PORTS_MAX || !ports.every((p) => Number.isInteger(p) && p >= 1 && p <= 65535)) {
         bad(where + '.udp.ports: invalid');
       } else if (ports.some((p) => p === 5353)) bad(where + '.udp.ports: 5353 only through capabilities.mdns');
@@ -114,8 +121,10 @@ function validateCaps(raw, err, where = 'edge.capabilities') {
       if (!Array.isArray(groups) || groups.length > MULTICAST_MAX || !groups.every(multicastOk)) {
         bad(where + '.udp.multicast: invalid (224.0.0.0/4 without 224.0.0.0/24, ≤ ' + MULTICAST_MAX + ')');
       } else if (new Set(groups).size !== groups.length) bad(where + '.udp.multicast: duplicate');
-      if (ok && !ports.length && !groups.length) bad(where + '.udp: empty');
-      if (ok) caps.udp = { ports: ports.slice().sort((x, y) => x - y), multicast: groups.slice() };
+      if (ok && !ports.length && !groups.length && !broadcast) bad(where + '.udp: empty');
+      // broadcast only goes to the plugin's own UDP ports (validateOptional allows ports from capabilities)
+      else if (ok && broadcast && !ports.length && where === 'edge.capabilities') bad(where + '.udp.broadcast: needs udp.ports');
+      if (ok) caps.udp = { ports: ports.slice().sort((x, y) => x - y), multicast: groups.slice(), ...(broadcast ? { broadcast: true } : {}) };
     }
   }
   if (raw.mdns != null) {
@@ -202,6 +211,17 @@ function validateOptional(raw, err, caps) {
   if (!ok) return null;
   const opt = validateCaps(raw, err, where);
   if (!opt) return null;
+  if (raw.tcp != null && !opt.tcp) { err(where + '.tcp: only { "lan": true } can be optional'); return null; }
+  if (opt.tcp && caps.tcp && caps.tcp.lan) { err(where + '.tcp: already in capabilities'); return null; }
+  if (opt.udp) {
+    const own = caps.udp ? caps.udp : { ports: [], multicast: [] };
+    // multicast groups stay in capabilities (joined when the socket is bound)
+    if (opt.udp.multicast.length) { err(where + '.udp.multicast: cannot be optional'); return null; }
+    if (opt.udp.ports.some((p) => own.ports.includes(p))) { err(where + '.udp.ports: already in capabilities'); return null; }
+    if (own.ports.length + opt.udp.ports.length > UDP_PORTS_MAX) { err(where + '.udp.ports: more than ' + UDP_PORTS_MAX + ' together with capabilities'); return null; }
+    if (opt.udp.broadcast && own.broadcast) { err(where + '.udp.broadcast: already in capabilities'); return null; }
+    if (opt.udp.broadcast && !own.ports.length && !opt.udp.ports.length) { err(where + '.udp.broadcast: needs udp.ports'); return null; }
+  }
   if (opt.mqtt) {
     const required = caps.mqtt ? caps.mqtt.topics : [];
     if (opt.mqtt.topics.some((t) => required.includes(t))) { err(where + '.mqtt.topics: already in capabilities'); return null; }
@@ -225,12 +245,33 @@ function approvedOptional(edge, approvedList) {
 /** capabilities plus the approved optional ones (keys of optionalList) — what a switched-on edge part may use. */
 function withOptional(caps, approvedKeys) {
   const out = { ...(plainObject(caps) ? caps : {}) };
-  const topics = (approvedKeys || []).filter((k) => k.startsWith('mqtt.topic:')).map((k) => k.slice('mqtt.topic:'.length));
+  const keys = Array.isArray(approvedKeys) ? approvedKeys : [];
+  const topics = keys.filter((k) => k.startsWith('mqtt.topic:')).map((k) => k.slice('mqtt.topic:'.length));
   if (topics.length) {
     const own = out.mqtt && Array.isArray(out.mqtt.topics) ? out.mqtt.topics : [];
     out.mqtt = { topics: [...own, ...topics.filter((t) => !own.includes(t))] };
   }
+  if (keys.includes('tcp.lan')) out.tcp = { lan: true };
+  const ports = keys.filter((k) => /^udp\.port:\d{1,5}$/.test(k)).map((k) => Number(k.slice('udp.port:'.length)));
+  const broadcast = keys.includes('udp.broadcast');
+  if (ports.length || broadcast) {
+    const u = plainObject(out.udp) ? out.udp : {};
+    const own = Array.isArray(u.ports) ? u.ports : [];
+    const all = [...own, ...ports.filter((p) => !own.includes(p))].sort((x, y) => x - y);
+    out.udp = { ports: all, multicast: Array.isArray(u.multicast) ? u.multicast.slice() : [],
+      ...(u.broadcast === true || broadcast ? { broadcast: true } : {}) };
+  }
   return out;
+}
+
+// the gateway feature (hello gw.features / telemetry.capabilities) that applies an optional key
+const OPTIONAL_FEATURE_MQTT = 'edge-optional-caps';
+const OPTIONAL_FEATURE_LAN = 'edge-optional-lan';
+
+/** Which gateway feature an optional key needs: edge-optional-caps (MQTT topics) or edge-optional-lan (tcp.lan, udp.port:<n>, udp.broadcast). */
+function optionalFeature(key) {
+  const k = String(key || '');
+  return k === 'tcp.lan' || k === 'udp.broadcast' || k.startsWith('udp.port:') ? OPTIONAL_FEATURE_LAN : OPTIONAL_FEATURE_MQTT;
 }
 
 /**
@@ -244,6 +285,7 @@ function capabilityList(caps) {
   if (c.udp) {
     for (const p of c.udp.ports || []) out.push('udp.port:' + p);
     for (const g of c.udp.multicast || []) out.push('udp.multicast:' + g);
+    if (c.udp.broadcast === true) out.push('udp.broadcast');
   }
   if (c.mdns) for (const s of c.mdns.services) out.push('mdns:' + s);
   if (c.tcp && c.tcp.lan) out.push('tcp.lan');
@@ -262,6 +304,7 @@ function newCapabilities(current, approvedList) {
 const TEXT = {
   'udp.port': { de: 'UDP-Port {v} im Heimnetz (senden/empfangen)', en: 'UDP port {v} in the home network (send/receive)' },
   'udp.multicast': { de: 'Multicast-Gruppe {v}', en: 'Multicast group {v}' },
+  'udp.broadcast': { de: 'UDP-Broadcast im Heimnetz (nur an die UDP-Ports des Plugins)', en: 'UDP broadcast in the home network (only to the plugin\'s UDP ports)' },
   mdns: { de: 'Geräte suchen per mDNS: {v}', en: 'Find devices via mDNS: {v}' },
   'tcp.lan': { de: 'TCP-Verbindungen zu Geräten im Heimnetz', en: 'TCP connections to devices in the home network' },
   'http.lan': { de: 'HTTP-Anfragen an Geräte im Heimnetz', en: 'HTTP requests to devices in the home network' },
@@ -303,6 +346,6 @@ function forState(caps) {
 
 module.exports = {
   validate, capabilityList, forState, newCapabilities, describe, topicFilterOk, filterCovers, multicastOk,
-  optionalList, approvedOptional, withOptional, OPTIONAL_CAP_KEYS,
+  optionalList, approvedOptional, withOptional, optionalFeature, OPTIONAL_CAP_KEYS, OPTIONAL_FEATURE_MQTT, OPTIONAL_FEATURE_LAN,
   MEMORY_MIN, MEMORY_MAX, MEMORY_DEFAULT, SERIAL_NAMES, MQTT_TOPICS_MAX,
 };

@@ -80,18 +80,24 @@ function assignmentView(a, settings, chan, lang) {
     reason: state === 'offline' ? chan.reason : null,
     approved: { capabilities: a.capsList, version: a.capsVersion, at: a.approvedAt ? new Date(a.approvedAt).toISOString() : null, by: a.approvedBy },
     newCapabilities: edge ? edgeManifest.describe(edge.capabilities, lang).filter((x) => !a.capsList.includes(x.key) && !(a.optCapsList || []).includes(x.key)) : [],
-    optional: edge ? optionalView(edge, a, lang) : [],
+    optional: edge ? optionalView(edge, a, lang, settings) : [],
     status: a.status || null,
   };
 }
 
-/** [{ key, text, approved, requestedAt }] — the plugin's optional capabilities on this gateway („Zusätzliche Rechte (optional)“). */
-function optionalView(edge, a, lang) {
+/**
+ * [{ key, text, approved, requestedAt, gatewaySupported, minGateway }] — the plugin's optional capabilities on this gateway
+ * („Zusätzliche Rechte (optional)“). gatewaySupported false: the gateway is too old to apply this key (minGateway or newer).
+ */
+function optionalView(edge, a, lang, settings) {
   const approved = new Set(edgeManifest.approvedOptional(edge, a.optCapsList));
   const req = a.optRequests && typeof a.optRequests === 'object' ? a.optRequests : {};
-  return edgeManifest.describe(edge.optionalCapabilities, lang).map((x) => ({
+  const list = edgeManifest.describe(edge.optionalCapabilities, lang);
+  const hb = list.length && a.peerId ? heartbeatOf(a.peerId) : { seenAt: null, telemetry: null };
+  return list.map((x) => ({
     ...x, approved: approved.has(x.key),
     requestedAt: !approved.has(x.key) && Number.isFinite(req[x.key]) ? new Date(req[x.key]).toISOString() : null,
+    gatewaySupported: optionalKeySupported(x.key, settings, hb), minGateway: optionalMinGateway(x.key),
   }));
 }
 
@@ -121,20 +127,52 @@ const EDGE_ISOLATED_MIN_GATEWAY = '1.23.0';
 // the first gateway release that reads edge.optionalCapabilities (feature `edge-optional-caps` in the hello's
 // gw.features and in telemetry.capabilities): older gateways run the edge part but refuse the confirmed
 // optional topics (`denied`) — the page says "Gateway zu alt – bitte aktualisieren" instead
-const EDGE_OPTIONAL_FEATURE = 'edge-optional-caps';
+const EDGE_OPTIONAL_FEATURE = edgeManifest.OPTIONAL_FEATURE_MQTT;
 const EDGE_OPTIONAL_MIN_GATEWAY = '1.46.0';
+// the first gateway release that also applies optional tcp.lan, udp.port:<n> and udp.broadcast (feature
+// `edge-optional-lan`, with UDP broadcast and 64 TCP connections per plugin): older ones refuse a package that
+// declares them — the page and gc.edge.capabilities say "Gateway zu alt" for these keys
+const EDGE_OPTIONAL_LAN_FEATURE = edgeManifest.OPTIONAL_FEATURE_LAN;
+const EDGE_OPTIONAL_LAN_MIN_GATEWAY = '1.49.0';
 
 /**
- * Does this gateway apply confirmed optional capabilities (edge.optionalCapabilities)? true when its hello
- * (gw.features) or its heartbeat (telemetry.capabilities) names `edge-optional-caps`; false when it reports
- * a hello or a capability list without it (an older gateway); null when nothing is known yet.
+ * Does this gateway name `feature` in its hello (gw.features) or its heartbeat (telemetry.capabilities)?
+ * true / false (it reports a hello or a capability list without it: an older gateway) / null (nothing known yet).
  * `s`: store.settings(), `hb`: heartbeatOf().
  */
-function optionalCapsSupported(s, hb) {
+function featureSupported(feature, s, hb) {
   const feats = s && s.hello && Array.isArray(s.hello.features) ? s.hello.features : null;
   const caps = hb && hb.telemetry && Array.isArray(hb.telemetry.capabilities) ? hb.telemetry.capabilities : null;
-  if ((feats && feats.includes(EDGE_OPTIONAL_FEATURE)) || (caps && caps.includes(EDGE_OPTIONAL_FEATURE))) return true;
+  if ((feats && feats.includes(feature)) || (caps && caps.includes(feature))) return true;
   return s && s.hello ? false : (caps ? false : null);
+}
+
+/** Does this gateway apply confirmed optional MQTT topics (`edge-optional-caps`)? See featureSupported. */
+function optionalCapsSupported(s, hb) { return featureSupported(EDGE_OPTIONAL_FEATURE, s, hb); }
+
+/** Does this gateway apply confirmed optional tcp.lan / udp.port / udp.broadcast (`edge-optional-lan`)? */
+function optionalLanSupported(s, hb) { return featureSupported(EDGE_OPTIONAL_LAN_FEATURE, s, hb); }
+
+/** Can this gateway apply the optional key? (true / false / null as featureSupported) */
+function optionalKeySupported(key, s, hb) { return featureSupported(edgeManifest.optionalFeature(key), s, hb); }
+
+function optionalMinGateway(key) {
+  return edgeManifest.optionalFeature(key) === EDGE_OPTIONAL_LAN_FEATURE ? EDGE_OPTIONAL_LAN_MIN_GATEWAY : EDGE_OPTIONAL_MIN_GATEWAY;
+}
+
+/**
+ * All of `keys` on this gateway: { supported: true/false/null, unsupported: [keys it is too old for] }.
+ * false as soon as one key is not supported; null when nothing is known for one and none is refused.
+ */
+function optionalKeysSupport(keys, s, hb) {
+  let supported = true;
+  const unsupported = [];
+  for (const k of keys) {
+    const v = optionalKeySupported(k, s, hb);
+    if (v === false) unsupported.push(k);
+    else if (v === null && supported === true) supported = null;
+  }
+  return { supported: unsupported.length ? false : supported, unsupported };
 }
 
 /** The gateway's last heartbeat: { seenAt, telemetry } (gateway_meta). */
@@ -182,7 +220,9 @@ function supportView(s, hb) {
   return { gatewayVersion: version, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY,
     edgeMode: mode || null, isolatedSupported, isolatedMinGateway: EDGE_ISOLATED_MIN_GATEWAY,
     // „Zusätzliche Rechte (optional)“: false → "Gateway zu alt – bitte aktualisieren" (null: not known yet)
-    optionalCaps: optionalCapsSupported(s, hb), optionalCapsMinGateway: EDGE_OPTIONAL_MIN_GATEWAY };
+    optionalCaps: optionalCapsSupported(s, hb), optionalCapsMinGateway: EDGE_OPTIONAL_MIN_GATEWAY,
+    // optional tcp.lan / udp.port / udp.broadcast (Tuya and others): false → "Gateway zu alt" for these keys
+    optionalLan: optionalLanSupported(s, hb), optionalLanMinGateway: EDGE_OPTIONAL_LAN_MIN_GATEWAY };
 }
 
 function settingsView(s) {
@@ -537,9 +577,10 @@ function hostGateways(plugin) {
 }
 
 /**
- * gc.edge.capabilities(gatewayId) → { gatewayId, optional, approved, requested, gatewaySupported } — the plugin's optional
- * capabilities (edge.optionalCapabilities) on that gateway: declared, confirmed by an administrator,
- * asked for and not confirmed yet. Keys as in capabilityList ("mqtt.topic:zigbee2mqtt/#").
+ * gc.edge.capabilities(gatewayId) → { gatewayId, optional, approved, requested, gatewaySupported, unsupported } — the plugin's
+ * optional capabilities (edge.optionalCapabilities) on that gateway: declared, confirmed by an administrator,
+ * asked for and not confirmed yet. Keys as in capabilityList ("mqtt.topic:zigbee2mqtt/#", "tcp.lan", "udp.port:6667",
+ * "udp.broadcast"). gatewaySupported: false when the gateway is too old for one of them (listed in `unsupported`).
  */
 function hostCapabilities(plugin, args) {
   needEdge(plugin);
@@ -551,9 +592,10 @@ function hostCapabilities(plugin, args) {
   const optional = edgeManifest.optionalList(edge);
   const approved = edgeManifest.approvedOptional(edge, a.optCapsList);
   const req = a.optRequests || {};
+  // false: the gateway is too old for (some of) the optional capabilities (refuses them), null: not known yet
+  const sup = optionalKeysSupport(optional, store.settings(peerId), heartbeatOf(peerId));
   return { gatewayId: peerId, optional, approved, requested: optional.filter((k) => !approved.includes(k) && Number.isFinite(req[k])),
-    // false: the gateway is too old for optional capabilities (refuses them as `denied`), null: not known yet
-    gatewaySupported: optionalCapsSupported(store.settings(peerId), heartbeatOf(peerId)) };
+    gatewaySupported: sup.supported, unsupported: sup.unsupported };
 }
 
 /**
@@ -572,7 +614,8 @@ function hostRequestCapability(plugin, args) {
   const g = store.gatewayPeer(peerId);
   const a = g ? store.assignment(plugin.id, peerId) : null;
   if (!a) throw hostError('not_enabled', 'the edge part is not set up for this gateway (not_assigned)');
-  const gatewaySupported = optionalCapsSupported(store.settings(peerId), heartbeatOf(peerId));
+  const gatewaySupported = optionalKeySupported(key, store.settings(peerId), heartbeatOf(peerId));
+  const minGateway = optionalMinGateway(key);
   if (edgeManifest.approvedOptional(edge, a.optCapsList).includes(key)) return { status: 'approved', notified: false, gatewaySupported };
   const now = Date.now();
   const req = { ...(a.optRequests || {}) };
@@ -583,11 +626,11 @@ function hostRequestCapability(plugin, args) {
   const link = '/gateways#gw/' + peerId + '/edge';
   // an older gateway would refuse the capability even once confirmed: say so instead of a silent `denied`
   const tooOld = gatewaySupported === false
-    ? ` — gateway too old for additional capabilities, update it (needs ${EDGE_OPTIONAL_MIN_GATEWAY} or newer)` : '';
+    ? ` — gateway too old for this capability, update it (needs ${minGateway} or newer)` : '';
   log('gateway_edge_capability_requested',
     `Plugin "${name}" asks for an additional capability on gateway "${g.name}": ${capText(edge, key, 'en')} — confirm under Gateways › ${g.name} › Edge-Plugins (${link})${tooOld}`, {
       source: 'system', severity: 'warning',
-      details: { peer_id: peerId, plugin: plugin.id, version: plugin.version, capability: key, link, ...(gatewaySupported === false ? { gateway_too_old: true, min_gateway: EDGE_OPTIONAL_MIN_GATEWAY } : {}) },
+      details: { peer_id: peerId, plugin: plugin.id, version: plugin.version, capability: key, link, ...(gatewaySupported === false ? { gateway_too_old: true, min_gateway: minGateway } : {}) },
     });
   store.addLog(peerId, plugin.id, 'system', 'warn', `asks for optional capability ${key} — confirm under Edge-Plugins${tooOld}`);
   return { status: 'requested', notified: true, gatewaySupported };
@@ -668,5 +711,5 @@ module.exports = {
   gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, approveOptional, revokeOptional, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
   onPluginInstalled, onPluginRemoved, hostGateways, hostCapabilities, hostRequestCapability, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
-  EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY, EDGE_OPTIONAL_MIN_GATEWAY, optionalCapsSupported,
+  EdgeAdminError, CONFIRM_WORDS, REQUEST_EVERY_MS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY, EDGE_OPTIONAL_MIN_GATEWAY, EDGE_OPTIONAL_LAN_MIN_GATEWAY, optionalCapsSupported, optionalLanSupported, optionalKeySupported,
 };

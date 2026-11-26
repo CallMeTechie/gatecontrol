@@ -417,7 +417,10 @@ describe('gateway-edge: texts and errors', () => {
 
   it('„Zusätzliche Rechte“ on a gateway without edge-optional-caps: „Gateway zu alt – bitte aktualisieren“ instead of a silent refusal', () => {
     const src = stripComments(EDGE_JS);
-    assert.match(src, /sup\.optionalCaps === false\s*\? note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: sup\.optionalCapsMinGateway/);
+    assert.match(src, /sup\.optionalCaps === false \|\| old\.length\s*\? note\('warn', \[h\('strong', \{ text: t\('gwe\.opt\.too_old'\) \}\), ' ', t\('gwe\.opt\.too_old_d', \{ min: minOld \|\| sup\.optionalCapsMinGateway/);
+    // per key (tcp.lan / udp.* need edge-optional-lan): the rows the gateway is too old for, the highest version they need
+    assert.match(src, /const old = opt\.filter\(\(c\) => c\.gatewaySupported === false\);/);
+    assert.match(read('src/services/edge/index.js'), /gatewaySupported: optionalKeySupported\(x\.key, settings, hb\), minGateway: optionalMinGateway\(x\.key\)/);
     // only false (an older gateway) shows it — null (nothing known yet) and true do not
     assert.doesNotMatch(src, /!sup\.optionalCaps/);
     assert.match(read('src/services/edge/index.js'), /optionalCaps: optionalCapsSupported\(s, hb\), optionalCapsMinGateway: EDGE_OPTIONAL_MIN_GATEWAY/);
