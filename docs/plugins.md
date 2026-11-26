@@ -6335,7 +6335,7 @@ example `tests/fixtures/plugins/edge-demo/`.
   * `udp.ports` 1024 … 65535, never 5353 (mDNS only through `mdns`), ≤ 16;
     `udp.multicast` IPv4 groups in 224.0.0.0/4 without 224.0.0.0/24 (except
     the mDNS group 224.0.0.251), ≤ 16; `udp.broadcast: true` (since 1.326.0,
-    key `udp.broadcast`, gateway 1.48.0 and newer) — `gc.lan.udp.send` may also
+    key `udp.broadcast`, gateway 1.49.0 and newer) — `gc.lan.udp.send` may also
     go to `255.255.255.255` (the gateway sends it to the broadcast address of
     each of its private LAN subnets) or to such a subnet broadcast address, but
     only to one of the plugin's `udp.ports`; needs `udp.ports`;
@@ -6438,12 +6438,12 @@ person uses Zigbee2MQTT:
   note of `gc.edge.requestCapability` says so, and `gc.edge.capabilities` /
   `requestCapability` answer `gatewaySupported: false`.
   The optional LAN keys (`tcp.lan`, `udp.port:<n>`, `udp.broadcast`) need the
-  feature **`edge-optional-lan`** (gateway 1.48.0 and newer, which also allows
-  64 instead of 32 TCP connections per plugin). Careful: gateways 1.46.0 and
-  1.47.0 refuse a **package** whose `optionalCapabilities` hold anything but
+  feature **`edge-optional-lan`** (gateway 1.49.0 and newer, which also allows
+  64 instead of 32 TCP connections per plugin). Careful: gateways 1.46.0 to
+  1.48.0 refuse a **package** whose `optionalCapabilities` hold anything but
   `mqtt` (the whole edge part stays off, `denied`), so a plugin that adds them
-  sets `edge.minGateway` to `1.48.0` (or ships them only once every gateway is
-  updated). Gateway 1.48.0 and newer ignore optional keys they do not know.
+  sets `edge.minGateway` to `1.49.0` (or ships them only once every gateway is
+  updated). Gateway 1.49.0 and newer ignore optional keys they do not know.
   Each optional row of the gateway page carries `gatewaySupported` and
   `minGateway`; the note „Gateway zu alt“ names the highest version needed.
 

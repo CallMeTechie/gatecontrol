@@ -133,7 +133,7 @@ const EDGE_OPTIONAL_MIN_GATEWAY = '1.46.0';
 // `edge-optional-lan`, with UDP broadcast and 64 TCP connections per plugin): older ones refuse a package that
 // declares them — the page and gc.edge.capabilities say "Gateway zu alt" for these keys
 const EDGE_OPTIONAL_LAN_FEATURE = edgeManifest.OPTIONAL_FEATURE_LAN;
-const EDGE_OPTIONAL_LAN_MIN_GATEWAY = '1.48.0';
+const EDGE_OPTIONAL_LAN_MIN_GATEWAY = '1.49.0';
 
 /**
  * Does this gateway name `feature` in its hello (gw.features) or its heartbeat (telemetry.capabilities)?
