@@ -258,11 +258,13 @@ module.exports = (ctx) => {
           && document.getElementById('gw-more-btn').getAttribute('aria-expanded') === 'true' && document.activeElement === document.querySelector('#gw-more-menu [role="menuitem"]')));
         // "Verwalten" (gateway-manage.js, docs/feature-peers-page.md): moved here from the Peers page, "Gateway entfernen" last
         // "Versionen" and "Handbuch" open in the page (#gw/<id>/versions, …/handbook — gateway-docs.js)
-        step('menu: compose, auto-update, location, pool, versions, manual, then "Verwalten" with "Gateway entfernen" last', await page.evaluate(() => {
+        step('menu: compose, auto-update, update.sh, location, pool, versions, manual, then "Verwalten" with "Gateway entfernen" last', await page.evaluate(() => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
           const v = document.querySelector('#gw-more-menu a[data-act="versions"]');
           const h = document.querySelector('#gw-more-menu a[data-act="handbook"]');
-          return acts.join() === 'compose,setup,location,pool-add,versions,handbook,gm-rename,gm-renew,gm-proxy,gm-disable,gm-delete'
+          const u = document.querySelector('#gw-more-menu a[data-act="update-sh"]');
+          return acts.join() === 'compose,setup,update-sh,location,pool-add,versions,handbook,gm-rename,gm-renew,gm-proxy,gm-disable,gm-delete'
+            && !!u && /^\/api\/v1\/gateways\/[^/]+\/update-sh$/.test(u.getAttribute('href')) && u.getAttribute('download') === 'update.sh'
             && !!v && /^#gw\/[^/]+\/versions$/.test(v.getAttribute('href')) && !v.target && !!h && /^#gw\/[^/]+\/handbook$/.test(h.getAttribute('href')) && !h.target;
         }));
         await page.keyboard.press('ArrowDown');
