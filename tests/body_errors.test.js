@@ -143,7 +143,7 @@ describe('server errors', () => {
   it('a real 5xx is still an "Unhandled error" with its error', () => {
     const error = mock.method(logger, 'error', () => {});
     const warn = mock.method(logger, 'warn', () => {});
-    const handler = app._router.stack.at(-1).handle;
+    const handler = app.router.stack.at(-1).handle;
     assert.equal(handler.length, 4, 'the error handler is the last layer');
     const err = new Error('database is locked');
     let status = null;

@@ -169,7 +169,7 @@ router.put('/:id/media/:mediaId/preview', async (req, res) => {
   } catch (e) { return previews.failure(res, e); }
 });
 
-router.all('/:id/api/*', (req, res, next) => {
+router.all('/:id/api/{*rest}', (req, res, next) => {
   if (!requireClientToken(req, res)) return undefined;
   res.set('Cache-Control', 'no-store');
   if (!appPlugins.pluginById(String(req.params.id || ''))) return res.status(404).json(UNAVAILABLE);
