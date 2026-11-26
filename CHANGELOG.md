@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.327.0] — 2026-11-26
+
+### Features
+- „Alle bestätigen“ für zusätzliche Edge-Rechte eines Plugins (#592)
+
+---
+
 ## [1.326.0] — 2026-11-26
 
 ### Features
