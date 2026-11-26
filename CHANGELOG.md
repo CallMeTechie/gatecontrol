@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.327.1] — 2026-11-26
+
+### Fixes
+- „Edge-Container veraltet“ statt „Gateway zu alt“, wenn nur der Edge-Container hinterherhinkt (#593)
+
+---
+
 ## [1.327.0] — 2026-11-26
 
 ### Features
