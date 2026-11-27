@@ -214,8 +214,8 @@ module.exports = (ctx) => {
           const g = document.querySelector('[data-fgroup="devices"]');
           if (!g) return false;
           const keys = [...g.querySelectorAll('[data-feature]')].map((x) => x.getAttribute('data-feature'));
-          // phase 3c, step 4: the row "Kameras" sits between printing and the local AI
-          const prev = keys.indexOf('cameras') >= 0 ? 'cameras' : 'print';
+          // phase 3c, step 4: the row "Kameras" sits between printing and the local AI, „Videos umwandeln“ after it
+          const prev = ['transcode', 'cameras', 'print'].find((k) => keys.indexOf(k) >= 0);
           return keys.indexOf('ai') === keys.indexOf(prev) + 1 && /Lokale KI/.test(g.textContent);
         }));
         step('ai: the row: on, the model (2 GB Download, ≈ 2,5 GB im Speicher), ≈ GB in blue, the way to the KI-Anbieter', await page.evaluate(() => {

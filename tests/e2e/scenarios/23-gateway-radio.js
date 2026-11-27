@@ -119,8 +119,8 @@ module.exports = (ctx) => {
           const g = document.querySelector('[data-fgroup="devices"]');
           if (!g) return false;
           const keys = [...g.querySelectorAll('[data-feature]')].map((x) => x.getAttribute('data-feature'));
-          // phase 3c, step 4: the row "Kameras" sits between printing and the local AI
-          const prev = keys.indexOf('cameras') >= 0 ? 'cameras' : 'print';
+          // phase 3c, step 4: the row "Kameras" sits between printing and the local AI, „Videos umwandeln“ after it
+          const prev = ['transcode', 'cameras', 'print'].find((k) => keys.indexOf(k) >= 0);
           return keys.indexOf('radio') === keys.indexOf('ai') + 1 && keys.indexOf('ai') === keys.indexOf(prev) + 1 && /Funk \(Zigbee, Bluetooth, Thread\)/.test(g.textContent)
             && !document.querySelector('[data-fgroup="ext"] [data-feature="zigbee"]');
         }));
