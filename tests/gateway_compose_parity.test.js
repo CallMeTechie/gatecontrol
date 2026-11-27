@@ -4,7 +4,8 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway fix/mqtt-key-0600, 2026-11-21: the mqtt watcher copies certificate and key into its tmpfs /run/gc-mqtt-tls (0600); before that feat/gateway-einrichtungsseite, 2026-11-11: setup page — ./config writable, GC_SETUP_PORT, /dev/net/tun unchanged in `devices`; before that feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
+// gatecontrol-gateway main e847cfb, 2026-11-27 / v1.50.0: service umwandeln in the profile umwandeln, volume umw-ctl, the
+// gateway mounts /gc-umw; before that gatecontrol-gateway fix/mqtt-key-0600, 2026-11-21: the mqtt watcher copies certificate and key into its tmpfs /run/gc-mqtt-tls (0600); before that feat/gateway-einrichtungsseite, 2026-11-11: setup page — ./config writable, GC_SETUP_PORT, /dev/net/tun unchanged in `devices`; before that feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -74,8 +75,12 @@ const EXPECTED_DIFF = {
 };
 
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
-  it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, zigbee2mqtt, otbr, ki, kameras, office; NET_RAW/SETGID/SETUID)', () => {
-    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'zigbee2mqtt', 'otbr', 'ki', 'kameras', 'office']);
+  it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, zigbee2mqtt, otbr, ki, kameras, office, umwandeln; NET_RAW/SETGID/SETUID)', () => {
+    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'zigbee2mqtt', 'otbr', 'ki', 'kameras', 'office', 'umwandeln']);
+    // gateway >= 1.50.0: Videos umwandeln only in the profile umwandeln, no network; the gateway mounts umw-ctl
+    assert.equal(ex.services.umwandeln.profiles, 'profiles: ["umwandeln"]');
+    assert.equal(ex.services.umwandeln.network_mode, 'network_mode: none');
+    assert.match(exGw.volumes, /source: umw-ctl/);
     // after 1.30.0: zigbee2mqtt and the Thread border router only in their profiles
     assert.equal(ex.services.zigbee2mqtt.profiles, 'profiles: ["zigbee2mqtt"]');
     assert.equal(ex.services.otbr.profiles, 'profiles: ["thread"]');
@@ -119,7 +124,7 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       const gw = got.services.gateway;
 
       it('same services (deconz only with zigbee, ki only with ai) and top-level volumes', () => {
-        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services).filter((k) => !['deconz', 'zigbee2mqtt', 'otbr', 'ki', 'kameras', 'office'].includes(k)));
+        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services).filter((k) => !['deconz', 'zigbee2mqtt', 'otbr', 'ki', 'kameras', 'office', 'umwandeln'].includes(k)));
         assert.equal(got.volumes, ex.volumes);
       });
       it('zigbee: the deconz service exactly as in the example, without the profile', () => {
@@ -168,7 +173,7 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
         assert.deepEqual(c.services.kameras, want);
         assert.equal(c.volumes, ex.volumes);
         assert.deepEqual(c.services.gateway, got.services.gateway);
-        const all = parse(kit.buildCompose({ platform, network: 'host', ai: true, zigbee: true, zigbee2mqtt: true, thread: true, cameras: true, office: true }));
+        const all = parse(kit.buildCompose({ platform, network: 'host', ai: true, zigbee: true, zigbee2mqtt: true, thread: true, cameras: true, office: true, transcode: { roots: ['/volume2/mediathek'] } }));
         assert.deepEqual(Object.keys(all.services).sort(), Object.keys(ex.services).sort());
       });
       it('zigbee2mqtt and thread: the services exactly as in the example, without the profile', () => {
@@ -190,6 +195,32 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
         assert.deepEqual(o.services.office, want);
         assert.equal(o.volumes, ex.volumes);
         assert.deepEqual(o.services.gateway, got.services.gateway);
+      });
+      it('transcode: the service umwandeln as in the example, without the profile, with folders, user and the group of the device', () => {
+        const o = parse(kit.buildCompose({ platform, network: 'host', transcode: { roots: ['/volume2/mediathek', '/volume1/Filme (alt)'], uid: 1034, gid: 100, renderGid: 937 } }));
+        assert.deepEqual(Object.keys(o.services), ['gateway', 'edge', 'mqtt', 'umwandeln']);
+        const { profiles, ...want } = ex.services.umwandeln;
+        assert.ok(profiles);
+        const u = o.services.umwandeln;
+        // deliberate: what GateControl knows goes in as values (contract §2.1) instead of the example's variables
+        const OWN = ['user', 'group_add', 'volumes', 'environment'];
+        assert.deepEqual(Object.keys(u), Object.keys(want));
+        for (const k of Object.keys(want).filter((x) => !OWN.includes(x))) assert.equal(u[k], want[k], 'umwandeln.' + k);
+        assert.equal(u.user, 'user: "1034:100"');
+        assert.deepEqual(listOf(u.group_add), ['"61002"', '"937"']);
+        assert.deepEqual(listOf(u.volumes).slice(-2), ['"/volume2/mediathek:/volume2/mediathek"', '"/volume1/Filme (alt):/volume1/Filme (alt)"']);
+        // the volume umw-ctl exactly as in the example
+        assert.match(u.volumes, /source: umw-ctl\n\s+target: \/gc-umw\n\s+volume: \{ nocopy: true \}/);
+        const env = listOf(want.environment).filter((e) => !e.startsWith('GC_UMW_ROOTS='));
+        assert.deepEqual(listOf(u.environment), ['"GC_UMW_ROOTS=/volume2/mediathek:/volume1/Filme (alt)"', ...env]);
+        assert.equal(o.volumes, ex.volumes);
+        assert.deepEqual(o.services.gateway, got.services.gateway);
+        // no device on the host: no `devices:`; no user chosen: the example's fallback (nobody); a bad folder never gets in
+        const n = parse(kit.buildCompose({ platform, network: 'host', transcode: { roots: ['/x/../etc', '/a:b', '/ok'], device: false } })).services.umwandeln;
+        assert.equal(n.devices, undefined);
+        assert.equal(n.user, 'user: "${GC_UMW_UID:-65534}:${GC_UMW_GID:-65534}"');
+        assert.deepEqual(listOf(n.group_add), ['"61002"', '"44"']);
+        assert.deepEqual(listOf(n.environment)[0], '"GC_UMW_ROOTS=/ok"');
       });
       it('edge and mqtt exactly as in the example', () => {
         assert.deepEqual(got.services.edge, ex.services.edge);
@@ -218,7 +249,7 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
 
   for (const platform of ['synology', 'linux']) {
     it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge, no deconz, no ki, no kameras`, () => {
-      const got = parse(kit.buildCompose({ platform, network: 'bridge', zigbee: true, zigbee2mqtt: true, thread: true, ai: true, cameras: true, office: true }));
+      const got = parse(kit.buildCompose({ platform, network: 'bridge', zigbee: true, zigbee2mqtt: true, thread: true, ai: true, cameras: true, office: true, transcode: { roots: ['/volume2/mediathek'] } }));
       const gw = got.services.gateway;
       assert.deepEqual(Object.keys(got.services), ['gateway']);
       assert.equal(got.volumes, null);

@@ -9927,6 +9927,9 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwn-print-acts{display:flex; flex-wrap:wrap; gap:2px 16px; align-items:center}
 .gwn-print-add{display:flex; gap:8px; align-items:center}
 .gwn-print-add .form-input{flex:1 1 auto; min-width:0}
+/* „Videos umwandeln“ › Ordner und Benutzer: UID and GID side by side, each with its small label */
+.gwn-umw-ids{align-items:flex-end}
+.gwn-umw-id{display:flex; flex-direction:column; gap:4px; flex:1 1 0; min-width:0}
 .gwn-mem{padding-top:10px}
 /* narrow screens: the device table becomes one card per device (labels from data-label) */
 @media (max-width:640px){

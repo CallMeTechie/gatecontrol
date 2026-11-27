@@ -370,7 +370,8 @@
     // phase 3c: printers and scanners, radio (Zigbee, Bluetooth, Thread; later also cameras)
     // phase 3c, step 3: the local AI between printing and radio (as in the design)
     // phase 3c, step 4: the cameras right after printing (as in the design)
-    { key: 'devices', features: ['print', 'cameras', 'ai', 'radio', 'zigbee'] },
+    // „Videos umwandeln“ (the service umwandeln on a NAS) right after the cameras
+    { key: 'devices', features: ['print', 'cameras', 'transcode', 'ai', 'radio', 'zigbee'] },
     // vpnnames: "VPN-Namen im Heimnetz auflösen" — one switch for every gateway of the home network, like the DNS filter
     { key: 'wide', features: ['dns', 'vpnnames', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
@@ -401,6 +402,8 @@
     if (d.cache) add('cache', d.cache.enabled);
     if (d.print) add('print', d.print.enabled);
     if (d.cameras) add('cameras', d.cameras.enabled);
+    // not on the Raspberry Pi image (no service umwandeln there) unless it was switched on
+    if (d.transcode && (d.transcode.platform !== 'rpi' || d.transcode.enabled)) add('transcode', d.transcode.enabled);
     if (d.ai) add('ai', d.ai.enabled);
     if (d.edge) { add('edge', d.edge.enabled); add('mqtt', d.edge.enabled && d.edge.mqtt); }
     if (d.radio) add('radio', d.radio.enabled);
@@ -413,7 +416,7 @@
 
   // The functions a fleet card names (services/gatewayFeatures.js CHIP_KEYS —
   // the server sends them in this order: switched on deliberately first).
-  const CHIP_KEYS = ['print', 'cameras', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
+  const CHIP_KEYS = ['print', 'cameras', 'transcode', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
   const CHIP_LIMIT = 3; // with the German names that is one row of a card
 
   /**

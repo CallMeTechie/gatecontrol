@@ -67,9 +67,11 @@ function composePlatformOf(platform) {
   return null;
 }
 /** → the compose text, or null when platform/network is not one of the profiles. */
-function buildCompose(platform, network, { zigbee = false, zigbee2mqtt = false, thread = false, ai = false, aiGpu = null, cameras = false, cameraDir = null, office = false } = {}) {
+// transcode: null (no service umwandeln) or { roots, uid, gid, renderGid, device } (services/homeTranscode.js composeOptions)
+function buildCompose(platform, network, { zigbee = false, zigbee2mqtt = false, thread = false, ai = false, aiGpu = null, cameras = false, cameraDir = null, office = false, transcode = null } = {}) {
   if (COMPOSE_PLATFORMS.indexOf(platform) < 0 || COMPOSE_NETWORKS.indexOf(network) < 0) return null;
-  return kit.buildCompose({ platform, network, zigbee: zigbee === true, zigbee2mqtt: zigbee2mqtt === true, thread: thread === true, ai: ai === true, aiGpu: typeof aiGpu === 'string' ? aiGpu : null, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null, office: office === true });
+  return kit.buildCompose({ platform, network, zigbee: zigbee === true, zigbee2mqtt: zigbee2mqtt === true, thread: thread === true, ai: ai === true, aiGpu: typeof aiGpu === 'string' ? aiGpu : null, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null, office: office === true,
+    transcode: transcode && typeof transcode === 'object' ? transcode : null });
 }
 
 module.exports = {

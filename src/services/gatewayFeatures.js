@@ -22,6 +22,7 @@
 //     radio    { zigbee, ble, stack, thread, sticks } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi, lanPin, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
+//     transcode { enabled, roots, software, trashDays, quality, … }  „Videos umwandeln“ (services/homeTranscode.js)
 //     internal_dns { server, domains, primary, resolve } | null   "Namen im VPN" (services/vpnNames.js): the zones
 //              of the device names and whether the gateway resolves them for its home network (the switch
 //              "VPN-Namen im Heimnetz auflösen", off by default; one value for every gateway of a home network,
@@ -49,6 +50,8 @@ const MIN_GATEWAY_RADIO = '1.25.0';
 const MIN_GATEWAY_AI = '1.26.0';
 // phase 3c, step 4 (Kameras): only by the capability `cameras`
 const MIN_GATEWAY_CAMERAS = '1.28.0';
+// „Videos umwandeln“ (gateway docs/transcode.md): only by the capability `transcode` — the version is the hint
+const MIN_GATEWAY_TRANSCODE = require('./homeTranscode').MIN_GATEWAY;
 // Statusseite per HTTPS aus dem VPN (gateway docs/setup-page.md „Aus dem VPN per HTTPS“): only by the
 // capability `setup-page-vpn` — the version is the hint
 const MIN_GATEWAY_SETUP_PAGE_VPN = '1.42.0';
@@ -77,6 +80,8 @@ const DEFAULTS = Object.freeze({
   radio: { zigbee: null, ble: false, stack: 'deconz', thread: false, sticks: [] },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', lanPin: null, gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
+  // „Videos umwandeln“: the folders, the DSM user of the service, „ohne Grafik“; trashDays/quality from the plugin
+  transcode: { enabled: false, roots: [], uid: null, gid: null, software: false, trashDays: 14, quality: 23 },
   // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md);
   // the setup itself and "Zugang ungültig" stay reachable there either way
   setupPage: { status: true },
@@ -145,6 +150,7 @@ function normalize(raw) {
     radio: require('./homeRadio').normalizeSettings(r.radio),
     ai: require('./ai/local').normalizeSettings(r.ai),
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
+    transcode: require('./homeTranscode').normalizeSettings(r.transcode),
     setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
     setupPageVpn: { enabled: bool((r.setupPageVpn || {}).enabled, DEFAULTS.setupPageVpn.enabled) },
     mqttVpnCert: mqttVpnCertSettings(r.mqttVpnCert),
@@ -188,7 +194,7 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], setupPageVpn: ['enabled'], mqttVpnCert: ['enabled', 'fingerprintPort'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], transcode: ['enabled', 'roots', 'uid', 'gid', 'software', 'trashDays', 'quality'], setupPage: ['status'], setupPageVpn: ['enabled'], mqttVpnCert: ['enabled', 'fingerprintPort'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -202,6 +208,9 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
       } else if (k === 'cameras') {
         // Kameras: the switch and extra private networks the gateway may reach (services/homeCameras.js)
         try { out.cameras[f] = require('./homeCameras').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
+      } else if (k === 'transcode') {
+        // „Videos umwandeln“: switch, media folders, the DSM user, „ohne Grafik“ (services/homeTranscode.js)
+        try { out.transcode[f] = require('./homeTranscode').patchField(f, val); } catch (e) { throw new FeatureError('invalid', e.message); }
       } else if (k === 'ai') {
         // Lokale KI: the LAN server only as a private address or a name and a port, the GPU kind (services/ai/local.js)
         try { out.ai[f] = require('./ai/local').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
@@ -270,7 +279,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage', 'setupPageVpn', 'mqttVpnCert']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'transcode', 'setupPage', 'setupPageVpn', 'mqttVpnCert']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   // the name mqtt-<gateway>.<device area> exists in the VPN only while the switch is on
   if (changed.includes('mqttVpnCert')) {
     try { require('./dns').rebuildNow(); } catch (e) { logger.warn({ err: e.message }, 'hosts file not rebuilt after the MQTT device certificate switch'); }
@@ -324,6 +333,8 @@ function configPayload(peerId) {
     ai: part(peerId, 'ai', () => require('./ai/local').configPayload(peerId)),
     // phase 3c, step 4: Kameras (an older gateway ignores it; never a password — the gateway fetches those)
     cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
+    // „Videos umwandeln“ (capability `transcode`; an older gateway ignores it)
+    transcode: part(peerId, 'transcode', () => require('./homeTranscode').configPayload(peerId)),
     // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it);
     // switched on, also over HTTPS from the VPN (capability `setup-page-vpn`): vpn_https and vpn_name — absent
     // while off, so no other gateway's hash changes
@@ -516,6 +527,8 @@ function support(tel) {
     radio: !!(caps && caps.includes('radio')),
     ai: !!(caps && caps.includes('ai')),
     cameras: !!(caps && caps.includes('cameras')),
+    // „Videos umwandeln“ (gateway docs/transcode.md)
+    transcode: !!(caps && caps.includes('transcode')),
     // PDF für Drucker ohne PDF umwandeln (gateway docs/print.md „Umwandeln“, Gateway ab MIN_GATEWAY_PRINT_CONVERT)
     printConvert: !!(caps && caps.includes('print-convert')),
     // setup and status page in the home network (gateway docs/setup-page.md): the switch only works there
@@ -531,7 +544,7 @@ function support(tel) {
     // port 8884 with the self-made certificate next to the device certificate
     mqttFingerprintPort: !!(caps && caps.includes('mqtt-fingerprint-port')),
     minGatewayMqttFingerprintPort: MIN_GATEWAY_MQTT_FP_PORT,
-    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
+    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS, minGatewayTranscode: MIN_GATEWAY_TRANSCODE,
   };
 }
 
@@ -637,7 +650,7 @@ function memoryEstimate(peerId, s, tel) {
 // The functions a fleet card names as chips (public/js/gateway-pool-kit.js
 // featureChips), the ones somebody switched on deliberately first — the three
 // that are on from the start come last.
-const CHIP_KEYS = ['print', 'cameras', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
+const CHIP_KEYS = ['print', 'cameras', 'transcode', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
 
 /**
  * Which functions are switched on for a gateway — the keys of CHIP_KEYS, in
@@ -654,6 +667,7 @@ function enabledKeys(peerId, tel) {
   const part = (key, fn) => { try { if (fn()) on.add(key); } catch (e) { logger.debug({ err: e.message, peerId }, `feature ${key} unreadable`); } };
   part('print', () => s.print.enabled);
   part('cameras', () => s.cameras.enabled);
+  part('transcode', () => s.transcode.enabled);
   part('radio', () => { const hr = require('./homeRadio'); return hr.enabledOf(s.radio, hr.telemetryRadio(tel || {})); });
   part('ai', () => s.ai.enabled);
   part('cache', () => require('./homeCache').get(peerId).enabled);
@@ -677,6 +691,10 @@ function aiPart(peerId) {
 
 function camerasPart(peerId) {
   try { return require('./homeCameras').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'cameras overview unavailable'); return null; }
+}
+
+function transcodePart(peerId) {
+  try { return require('./homeTranscode').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'transcode overview unavailable'); return null; }
 }
 
 function printPart(peerId) {
@@ -813,6 +831,7 @@ function overview(peerId) {
     radio: radioPart(g.id),
     ai: aiPart(g.id),
     cameras: camerasPart(g.id),
+    transcode: transcodePart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
     vpnNames: vpnNamesPart(g),
     setupPageVpn: setupPageVpnPart(g, tel, s),
@@ -899,7 +918,7 @@ function mqttVpnCertPart(peerId) {
 
 module.exports = {
   mqttVpnName, mqttVpnRecords, mqttVpnCertPart, MIN_GATEWAY_MQTT_VPN_CERT, MIN_GATEWAY_MQTT_FP_PORT, MQTT_FP_PORT,
-  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, MIN_GATEWAY_SETUP_PAGE_VPN, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, MIN_GATEWAY_TRANSCODE, MIN_GATEWAY_SETUP_PAGE_VPN, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, vpnNamesProblem, publicIpv4,
 };

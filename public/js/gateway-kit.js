@@ -219,6 +219,13 @@
     '      type: tmpfs',
     '      device: tmpfs',
     '      o: "size=160m,uid=0,gid=0,mode=0700"',
+    '  # tmpfs shared: jobs of the gateway for the service umwandeln and its state; owned by root, besides the',
+    '  # gateway only group 61002 (extra group of the service) gets in — the service writes only to state/',
+    '  umw-ctl:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=4m,uid=0,gid=61002,mode=2750"',
   ];
 
   // The local AI (phase 3c, step 3 — gateway >= 1.26.0, docs/local-ai.md of the gateway): Ollama,
@@ -430,6 +437,101 @@
     '        max-size: "10m"',
     '        max-file: "3"',
   ];
+
+  // „Videos umwandeln“ (gateway >= 1.50.0, docs/transcode.md of the gateway): ffmpeg with the graphics hardware
+  // (VAAPI), one video at a time into H.264 8 bit — only when switched on for this gateway. As in the gateway's
+  // example, without the profile and with what GateControl knows (contract §2.1): the media folders (inside the
+  // same path as outside, one bind mount each and GC_UMW_ROOTS), the DSM user of the service, the group of
+  // /dev/dri/renderD128 the gateway reported (44 while unknown) and no `devices:` when the host has no such device.
+  // The folders were checked by the server (services/homeTranscode.js rootPath); umwRoot checks them again,
+  // nothing else gets into the YAML.
+  const UMW_SEG_RE = /^[\p{L}\p{N}._@+()&,'! -]{1,120}$/u;
+  function umwRoot(p) {
+    if (typeof p !== 'string' || p.length < 2 || p.length > 200 || p[0] !== '/' || p.endsWith('/')) return null;
+    const segs = p.split('/').slice(1);
+    if (segs.length > 16) return null;
+    for (const x of segs) {
+      if (x === '.' || x === '..' || x === '.gc-papierkorb' || x === '.gc-umwandeln' || x !== x.trim() || !UMW_SEG_RE.test(x)) return null;
+    }
+    return p;
+  }
+  function umwId(v) { return Number.isInteger(v) && v >= 1 && v <= 2147483647 ? v : null; }
+  function umwandelnService(o) {
+    const u = o && typeof o === 'object' ? o : {};
+    const roots = [];
+    (Array.isArray(u.roots) ? u.roots : []).forEach((r) => {
+      const p = umwRoot(r);
+      if (p && roots.length < 8 && !roots.some((x) => x === p || p.startsWith(x + '/') || x.startsWith(p + '/'))) roots.push(p);
+    });
+    const uid = umwId(u.uid);
+    const gid = umwId(u.gid);
+    const render = umwId(u.renderGid) || 44;
+    // without a user chosen in GateControl the example's fallback (nobody — it cannot write; the row says so)
+    const user = uid && gid ? uid + ':' + gid : '${GC_UMW_UID:-65534}:${GC_UMW_GID:-65534}';
+    const lines = [
+      '',
+      '  # Videos umwandeln (gateway >= 1.50.0, docs/transcode.md of the gateway) — ffmpeg with the graphics hardware',
+      '  # (VAAPI), one video at a time into H.264 8 bit. No network, no capabilities, not root; it can only write to the',
+      '  # media folders mounted below (inside the same path as outside, so the paths of Jellyfin fit). The entry waits',
+      '  # for /gc-umw/umwandeln.sh, which the gateway writes, and runs it. Only amd64.',
+      '  umwandeln:',
+      '    image: ${GC_UMW_IMAGE:-ghcr.io/callmetechie/gatecontrol-gateway:umwandeln}   # another image (e.g. built yourself): GC_UMW_IMAGE',
+      '    restart: unless-stopped',
+      '    network_mode: none        # jobs come through the volume, nothing goes to the network',
+      '    user: "' + user + '"       # the own user of the service (write access only to the media folders)',
+      '    group_add:',
+      '      - "61002"                         # group of the volume umw-ctl (fixed number, like 61001 of the edge container)',
+      '      - "' + render + '"                # group of /dev/dri/renderD128 (reported by the gateway)',
+      '    cap_drop:',
+      '      - ALL',
+      '    security_opt:',
+      '      - no-new-privileges:true',
+      '    read_only: true',
+      '    tmpfs:',
+      '      - /tmp:size=64m',
+    ];
+    if (u.device !== false) {
+      lines.push(
+        '    devices:',
+        '      - ${GC_UMW_RENDER:-/dev/dri/renderD128}:/dev/dri/renderD128   # only the render device, not card0'
+      );
+    }
+    lines.push(
+      '    # the gateway and playback go first: the smallest CPU share (plus nice 19 in the watcher), ffmpeg goes first',
+      '    # when memory runs out',
+      '    cpu_shares: 128',
+      '    oom_score_adj: 800',
+      '    mem_limit: 2g',
+      '    pids_limit: 256',
+      '    depends_on:',
+      '      - gateway               # creates umw-ctl and writes umwandeln.sh',
+      '    volumes:',
+      '      - type: volume            # jobs from the gateway (read only), the state back (state/)',
+      '        source: umw-ctl',
+      '        target: /gc-umw',
+      '        volume: { nocopy: true }',
+      '      # media folders chosen in GateControl: inside the same path as outside (the folders must exist)'
+    );
+    roots.forEach((p) => lines.push('      - "' + p + ':' + p + '"'));
+    lines.push(
+      '    environment:',
+      '      - "GC_UMW_ROOTS=' + roots.join(':') + '"',
+      '      - LIBVA_DRIVER_NAME=${GC_UMW_VA_DRIVER:-iHD}',
+      '      - TZ=${TZ:-Etc/UTC}',
+      '    healthcheck:',
+      '      test: ["CMD-SHELL", "[ ! -s /gc-umw/umwandeln.sh ] || [ $$(( $$(date +%s) - $$(cut -d\' \' -f2 /gc-umw/state/umwandeln.state 2>/dev/null || echo 0) )) -lt 120 ]"]',
+      '      interval: 60s',
+      '      timeout: 10s',
+      '      retries: 3',
+      '      start_period: 120s',
+      '    logging:',
+      '      driver: json-file',
+      '      options:',
+      '        max-size: "10m"',
+      '        max-file: "3"'
+    );
+    return lines;
+  }
 
   const DECONZ_SERVICE = [
     '',
@@ -824,6 +926,11 @@
         '        source: office-ctl',
         '        target: /gc-office',
         '        volume: { nocopy: true }',
+        // Videos umwandeln (gateway >= 1.50.0): jobs for the service umwandeln, its state back; harmless without it
+        '      - type: volume            # Videos umwandeln: jobs for the service umwandeln, its state back',
+        '        source: umw-ctl',
+        '        target: /gc-umw',
+        '        volume: { nocopy: true }',
         recordingsLine(o.cameraDir)
       );
     }
@@ -864,6 +971,9 @@
       // office files (Drucken & Scannen): only when „Office-Dateien drucken“ is on (the gateway's example keeps it
       // in the profile "office")
       if (o.office === true) lines.push(...OFFICE_SERVICE);
+      // Videos umwandeln: only when switched on for this gateway (the gateway's example keeps it in the profile
+      // "umwandeln"), with the folders, the user and the group of the graphics device
+      if (o.transcode && typeof o.transcode === 'object') lines.push(...umwandelnService(o.transcode));
       lines.push(...VOLUMES);
     }
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';

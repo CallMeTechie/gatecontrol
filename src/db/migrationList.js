@@ -4438,6 +4438,21 @@ const migrations = [
     detect: (db) => hasColumn(db, 'peers', 'license_disabled') && hasColumn(db, 'routes', 'license_disabled')
       && hasColumn(db, 'gateway_pools', 'license_disabled'),
   },
+  {
+    version: 163,
+    name: 'gateway_transcode',
+    // „Videos umwandeln“ (services/homeTranscode.js, the gateway's docs/transcode.md): the last report of the
+    // service umwandeln per gateway (POST /api/v1/gateway/transcode/report) — the state without the trash in
+    // `report`, the trash on its own (a report leaves it out while it did not change).
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_transcode (
+        peer_id      INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        report       TEXT NOT NULL DEFAULT '{}',
+        trash        TEXT,
+        reported_at  INTEGER NOT NULL
+      );`,
+    detect: (db) => tableExists(db, 'gateway_transcode'),
+  },
 ];
 
 module.exports = { migrations };

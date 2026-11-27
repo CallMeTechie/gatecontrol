@@ -194,6 +194,8 @@
     // phase 3c, step 2: the Bluetooth sensors the administrator took over on the gateways
     if (perm.radio) rows.push({ label: t('plugins.perm.radio'), value: t('plugins.perm.radio_on') });
     if (perm.cameras) rows.push({ label: t('plugins.perm.cameras'), value: t('plugins.perm.cameras_on') });
+    // „Videos umwandeln“: the gateways replace videos in their media folders (the original goes to the trash)
+    if (perm.transcode) rows.push({ label: t('plugins.perm.transcode'), value: t('plugins.perm.transcode_on') });
     // "Meine Orte" of the user profile (gc.places)
     if (perm.places) rows.push({ label: t('plugins.perm.places'), value: t('plugins.perm.places_on') });
     // remote access (gc.remote): sessions to devices, the key vault, ports through the gateways — sensitive, named first
@@ -508,6 +510,8 @@
     const out = [];
     if (perm.vpnDns) out.push('plugins.perm.vpn_dns');
     if (perm.bridges) out.push('plugins.perm.bridges');
+    // „Videos umwandeln“: replaces files in the media folders of the gateways
+    if (perm.transcode) out.push('plugins.perm.transcode');
     if ((n.homeTargets || []).length || n.discovery) out.push('plugins.perm.lan');
     if (n.assignTargets) out.push('plugins.perm.assign_targets');
     if ((n.internet || []).length) out.push('plugins.perm.internet');

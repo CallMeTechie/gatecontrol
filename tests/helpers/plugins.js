@@ -86,6 +86,15 @@ function handbookPackage(o = {}) {
   return packDir(HANDBOOK_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
+// a plugin with permissions.transcode (gc.transcode, tests/home_transcode.test.js)
+const TRANSCODE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'transcode-demo');
+
+/** The conversion test plugin, like helloPackage. */
+function transcodePackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(TRANSCODE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
 // a plugin with permissions.vpnDns (gc.vpnDns, tests/vpn_dns.test.js)
 const DNS_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'dns-demo');
 
@@ -95,4 +104,4 @@ function dnsPackage(o = {}) {
   return packDir(DNS_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { REMOTE_DEMO, remotePackage, DNS_DEMO, dnsPackage, HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
+module.exports = { TRANSCODE_DEMO, transcodePackage, REMOTE_DEMO, remotePackage, DNS_DEMO, dnsPackage, HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };

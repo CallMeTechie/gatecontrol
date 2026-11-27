@@ -47,6 +47,7 @@
     'feat.radio': { de: '05-funktionen.md#funk-zigbee-bluetooth-thread', en: '05-features.md#radio-zigbee-bluetooth-thread' },
     'feat.ai': { de: '05-funktionen.md#lokale-ki', en: '05-features.md#local-ai' },
     'feat.cameras': { de: '05-funktionen.md#kameras', en: '05-features.md#cameras' },
+    'feat.transcode': { de: '05-funktionen.md#videos-umwandeln', en: '05-features.md#convert-videos' },
     'feat.setuppage': { de: '05-funktionen.md#statusseite-im-heimnetz', en: '05-features.md#status-page-in-the-home-network' },
     'feat.setuppagevpn': { de: '05-funktionen.md#statusseite-im-vpn', en: '05-features.md#status-page-in-the-vpn' },
     'feat.edge': { de: '04-edge-und-smart-home.md', en: '04-edge-and-smart-home.md' },

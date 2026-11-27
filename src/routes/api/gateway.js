@@ -403,6 +403,20 @@ router.post('/cameras/events', express.json({ limit: '64kb' }), (req, res) => {
   try { res.json({ ok: true, ...cams().ingestEvents(req.gateway.peer_id, req.body || {}) }); } catch (err) { camFail(res, err, req.gateway.peer_id); }
 });
 
+// ─── „Videos umwandeln“ (the gateway's docs/transcode.md §2, services/homeTranscode.js) ──
+
+/**
+ * POST /api/v1/gateway/transcode/report — the state of the service umwandeln (the answer of /api/transcode/status;
+ * `trash` only when it changed) → 200 {}. Stored per gateway, handed to the plugins (hook transcodeChanged).
+ */
+router.post('/transcode/report', express.json({ limit: '1mb' }), (req, res) => {
+  try { return res.json(require('../../services/homeTranscode').ingestReport(req.gateway.peer_id, req.body)); } catch (err) {
+    if (err && err.code === 'invalid') return res.status(400).json({ ok: false, error: 'invalid' });
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway transcode report failed');
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
 /** GET /api/v1/gateway/print/jobs — the open jobs of this gateway (ETag) */
 router.get('/print/jobs', (req, res) => {
   try {

@@ -559,9 +559,14 @@ router.post('/:id/compose', (req, res) => {
   const cameraDir = require('../../services/homeCameras').composeStoragePath(row.id);
   // the service office (Drucken & Scannen) when „Office-Dateien drucken“ is on for this gateway; { office: true|false } by hand
   const office = typeof b.office === 'boolean' ? b.office : require('../../services/homePrint').composeWantsOffice(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, cameraDir, office });
+  // the service umwandeln („Videos umwandeln“) when switched on for this gateway — with its folders, the DSM user
+  // and the group of the graphics device the gateway reported; { transcode: true|false } by hand
+  const ht = require('../../services/homeTranscode');
+  const transcodeOn = typeof b.transcode === 'boolean' ? b.transcode : ht.composeWantsTranscode(row.id);
+  const transcode = transcodeOn ? ht.composeOptions(row.id) : null;
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, cameraDir, office, transcode });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, office }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, office, transcode: transcodeOn }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');

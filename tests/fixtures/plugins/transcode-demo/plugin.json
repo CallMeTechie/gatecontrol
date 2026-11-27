@@ -1,0 +1,10 @@
+{
+  "id": "transcode-demo",
+  "name": { "de": "Umwandeln-Demo", "en": "Convert demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.transcode (Tests).", "en": "Plugin with gc.transcode (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "transcode": true, "storage": true }
+}

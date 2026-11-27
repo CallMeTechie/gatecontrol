@@ -1087,6 +1087,174 @@
     return featRow(t('gwn.feat.cameras'), parts.join(' '), sw, extra, 'cameras');
   }
 
+  // „Videos umwandeln“: the ways the gateway tested (telemetry encoders vaapi_icq, vaapi_qvbr) → „VAAPI (ICQ, QVBR)“
+  function umwModes(list) {
+    const va = (list || []).filter((x) => /^vaapi_[a-z0-9]{1,12}$/.test(x)).map((x) => x.slice(6).toUpperCase());
+    return va.length ? 'VAAPI (' + va.join(', ') + ')' : null;
+  }
+
+  /**
+   * The row "Videos umwandeln": the switch (features.transcode), the media folders and the user of the service,
+   * what the gateway found (graphics, driver, ways, group of the device, free space), what it is doing, and hints
+   * instead of bans (the group is missing, no graphics, a folder not mounted, the compose file without the service,
+   * "Gateway zu alt"). Which videos and when is the plugin „Medien“'s.
+   */
+  function transcodeRow(id, g, d) {
+    const c = d.transcode;
+    const sup = d.support || {};
+    const old = c.supported === false;
+    const name = t('gwn.feat.transcode');
+    const sw = U.switchBtn(!!c.enabled, name, 'gwn-f-transcode', () => toggle(sw, id, (v) => ({ transcode: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name })), old && !c.enabled);
+    const extra = [];
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-transcode-old': '' }, [U.icon('info', 14), t('gwn.feat.transcode_old', { min: c.minGateway || sup.minGatewayTranscode || '1.50.0', version: sup.version || '—' })]));
+    const hints = c.hints || [];
+    if (c.enabled && !old) {
+      // the folders and the user chosen here
+      extra.push(h('span', { class: 'gwe-d', 'data-transcode-roots': String((c.roots || []).length) },
+        (c.roots || []).length ? t('gwn.feat.transcode_roots', { list: c.roots.join(', ') }) : t('gwn.feat.transcode_roots_none')));
+      if (c.uid && c.gid) extra.push(h('span', { class: 'gwe-d', 'data-transcode-user': '' }, t('gwn.feat.transcode_user', { uid: c.uid, gid: c.gid })));
+      if (c.software) extra.push(h('span', { class: 'gwe-d', 'data-transcode-software': '' }, t('gwn.feat.transcode_software_on')));
+      // what the gateway found: graphics, ways, group of the device, free space
+      const found = [];
+      if (c.driver) found.push(c.driver);
+      if (c.device === 'ok' || c.device === 'denied') found.push(t('gwn.feat.transcode_device', { gid: c.deviceGid != null ? c.deviceGid : '—' }));
+      const modes = umwModes(c.encoders);
+      if (modes) found.push(t('gwn.feat.transcode_modes', { list: modes }));
+      const free = (c.rootStates || []).filter((r) => r && r.free != null);
+      if (free.length) found.push(t('gwn.feat.transcode_free', { free: bytesLabel(Math.min.apply(null, free.map((r) => r.free))) }));
+      if (found.length) extra.push(h('span', { class: 'gwe-d', 'data-transcode-found': '' }, t('gwn.feat.transcode_found', { list: found.join(' · ') })));
+      // what it is doing
+      if (c.service === 'managed') {
+        const parts = [];
+        if (c.current && c.current.state === 'running') parts.push(t('gwn.feat.transcode_running', { pct: nf(Math.round(c.current.percent || 0)) }));
+        else if (c.state === 'paused') parts.push(t('gwn.feat.transcode_paused'));
+        else if (c.state === 'ready') parts.push(t('gwn.feat.transcode_ready'));
+        const j = c.jobs || {};
+        if (j.queued || j.done || j.failed) parts.push(t('gwn.feat.transcode_jobs', { queued: nf(j.queued || 0), done: nf(j.done || 0), failed: nf(j.failed || 0) }));
+        if (c.trash && c.trash.count) parts.push(t('gwn.feat.transcode_trash', { n: nf(c.trash.count), size: bytesLabel(c.trash.bytes || 0) }));
+        if (parts.length) extra.push(h('span', { class: 'gwe-d', role: 'status', 'data-transcode-state': c.state || '' }, parts.join(' · ')));
+      }
+      // hints (at most three; the compose hint below says "compose")
+      hints.slice(0, 3).forEach((k) => {
+        const warn = ['device_denied', 'no_device', 'no_encoder', 'readonly', 'missing', 'arch'].indexOf(k) >= 0;
+        extra.push(h('span', { class: 'gwn-hint', 'data-transcode-hint': k }, [U.icon(warn ? 'warn' : 'info', 14),
+          t('gwn.feat.transcode_hint_' + k, { gid: c.renderGid != null ? c.renderGid : '—' })]));
+      });
+      const set = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-transcode-settings', 'aria-haspopup': 'dialog', text: t('gwn.feat.transcode_settings') });
+      set.addEventListener('click', () => transcodeDialog(id, c));
+      const acts = [set];
+      const guideLink = U.guide('feat.transcode', 'gwn-linkbtn');
+      if (guideLink) { guideLink.textContent = t('gwn.feat.transcode_guide'); acts.push(guideLink); }
+      extra.push(h('span', { class: 'gwn-print-acts' }, acts));
+    }
+    if (c.compose === 'compose' && window.GCGatewayCompose) {
+      const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-transcode-compose', text: t('gwn.feat.ai_compose_btn') });
+      dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-transcode-compose'));
+      const key = c.service === 'managed' ? 'gwn.feat.transcode_compose_update' : 'gwn.feat.transcode_compose';
+      extra.push(h('span', { class: 'gwn-hint', 'data-transcode-compose': c.service === 'managed' ? 'update' : '' }, [U.icon('info', 14), t(key), ' ', dl]));
+    }
+    const plug = c.plugin || {};
+    if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-medien', class: 'gwn-link', 'data-transcode-link': 'plugin', text: t('gwn.feat.transcode_to_plugin') }));
+    else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-medien', class: 'gwn-link', 'data-transcode-link': 'catalog', text: t('gwn.feat.transcode_install') }));
+    return featRow(name, t('gwn.feat.transcode_d'), sw, extra, 'transcode');
+  }
+
+  // the same check as the server (services/homeTranscode.js rootPath): an absolute folder of plain names
+  const UMW_SEG_RE = /^[\p{L}\p{N}._@+()&,'! -]{1,120}$/u;
+  function umwRootOk(v) {
+    const p = v.length > 1 ? v.replace(/\/$/, '') : v;
+    if (!p || p.length > 200 || p[0] !== '/' || p === '/') return null;
+    const segs = p.split('/').slice(1);
+    if (segs.length > 16) return null;
+    return segs.every((x) => x && x !== '.' && x !== '..' && x !== '.gc-papierkorb' && x !== '.gc-umwandeln' && x === x.trim() && UMW_SEG_RE.test(x)) ? p : null;
+  }
+
+  /**
+   * Gateway › Funktionen › Videos umwandeln › "Ordner und Benutzer": the media folders the service may write to
+   * (into the compose file the page downloads — inside the same path as outside), the DSM user of the service and
+   * „Ohne Grafik erlauben (langsam)“. Checked again by the server.
+   */
+  function transcodeDialog(id, c) {
+    const max = 8;
+    const list = (c.roots || []).slice();
+    const dlg = U.openDialog({ title: t('gwn.umw.dlg_title'), wide: false, cls: 'gwn-printdlg' });
+    const err = U.errorBox();
+    const rows = h('div', { class: 'gwn-rows', 'data-transcode-root-list': '' });
+    const input = h('input', { type: 'text', id: 'gwn-umw-root', class: 'form-input gwe-mono', autocomplete: 'off', spellcheck: 'false', placeholder: '/volume2/mediathek', 'aria-describedby': 'gwn-umw-root-hint' });
+    const addBtn = h('button', { type: 'button', class: 'btn btn-ghost', 'data-fk': 'gwn-umw-root-add', text: t('gwn.print.add') });
+    const draw = () => {
+      rows.textContent = '';
+      if (!list.length) rows.appendChild(h('p', { class: 'gwe-empty', text: t('gwn.umw.roots_none') }));
+      list.forEach((n, i) => {
+        const rm = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwn-umw-root-rm:' + n, 'aria-label': t('gwn.print.remove_aria', { ip: n }), text: t('gwn.print.remove') });
+        rm.addEventListener('click', () => { list.splice(i, 1); draw(); input.focus(); });
+        rows.appendChild(h('div', { class: 'gwn-row', 'data-transcode-root': n }, [h('span', { class: 'gwn-row-m' }, [h('strong', { class: 'gwe-mono', text: n })]), rm]));
+      });
+      addBtn.disabled = list.length >= max;
+      input.disabled = list.length >= max;
+    };
+    const add = (raw) => {
+      const v = umwRootOk(String(raw || '').trim());
+      U.showErr(err, '');
+      input.removeAttribute('aria-invalid');
+      if (!v) { U.showErr(err, t('gwn.umw.root_invalid')); input.setAttribute('aria-invalid', 'true'); input.focus(); return false; }
+      if (list.includes(v)) { U.showErr(err, t('gwn.print.dup', { ip: v })); input.focus(); return false; }
+      if (list.some((x) => v.startsWith(x + '/') || x.startsWith(v + '/'))) { U.showErr(err, t('gwn.umw.root_nested')); input.focus(); return false; }
+      if (list.length >= max) { U.showErr(err, t('gwn.print.max', { n: max })); return false; }
+      list.push(v);
+      input.value = '';
+      draw();
+      input.focus();
+      return true;
+    };
+    addBtn.addEventListener('click', () => add(input.value));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(input.value); } });
+    const num = (fid, val, label) => {
+      const n = h('input', { type: 'text', id: fid, class: 'form-input gwe-mono', inputmode: 'numeric', autocomplete: 'off', spellcheck: 'false', 'aria-describedby': 'gwn-umw-user-hint', 'aria-label': label });
+      n.value = val ? String(val) : '';
+      return n;
+    };
+    const uid = num('gwn-umw-uid', c.uid, t('gwn.umw.uid'));
+    const gid = num('gwn-umw-gid', c.gid, t('gwn.umw.gid'));
+    uid.placeholder = '1034';
+    gid.placeholder = '100';
+    const soft = h('input', { type: 'checkbox', id: 'gwn-umw-software', 'data-fk': 'gwn-umw-software' });
+    soft.checked = !!c.software;
+    dlg.body.append(
+      h('p', { class: 'gwe-intro', text: t('gwn.umw.dlg_intro') }),
+      h('div', { class: 'gwe-field' }, [h('span', { class: 'form-label', text: t('gwn.umw.roots') }), rows,
+        h('label', { class: 'sr-only', for: 'gwn-umw-root', text: t('gwn.umw.root') }),
+        h('div', { class: 'gwn-print-add' }, [input, addBtn]),
+        h('span', { class: 'form-hint', id: 'gwn-umw-root-hint', text: t('gwn.umw.roots_hint', { n: max }) })]),
+      h('div', { class: 'gwe-field' }, [h('span', { class: 'form-label', text: t('gwn.umw.user') }),
+        h('div', { class: 'gwn-print-add gwn-umw-ids' }, [
+          h('label', { class: 'gwn-umw-id', for: 'gwn-umw-uid' }, [h('span', { class: 'gwe-d', text: t('gwn.umw.uid') }), uid]),
+          h('label', { class: 'gwn-umw-id', for: 'gwn-umw-gid' }, [h('span', { class: 'gwe-d', text: t('gwn.umw.gid') }), gid])]),
+        h('span', { class: 'form-hint', id: 'gwn-umw-user-hint', text: t('gwn.umw.user_hint') })]),
+      h('div', { class: 'gwe-field' }, [h('label', { class: 'gwn-sub', for: 'gwn-umw-software' }, [soft, h('span', { text: t('gwn.umw.software') })]),
+        h('span', { class: 'form-hint', text: t('gwn.umw.software_hint') })]),
+      err);
+    draw();
+    const cancel = h('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => dlg.close(null) } });
+    const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwn-umw-save', text: t('gwn.print.save') });
+    dlg.foot.append(cancel, ok);
+    ok.addEventListener('click', () => {
+      // a typed but not added folder counts as well
+      if (input.value.trim() && !add(input.value)) return;
+      const ids = [uid, gid].map((n) => n.value.trim());
+      [uid, gid].forEach((n) => n.removeAttribute('aria-invalid'));
+      const bad = ids.findIndex((v) => v !== '' && !(/^\d{1,10}$/.test(v) && Number(v) >= 1 && Number(v) <= 2147483647));
+      if (bad >= 0) { U.showErr(err, t('gwn.umw.id_invalid')); const n = [uid, gid][bad]; n.setAttribute('aria-invalid', 'true'); n.focus(); return; }
+      ok.disabled = true;
+      const patch = { roots: list, uid: ids[0] ? Number(ids[0]) : null, gid: ids[1] ? Number(ids[1]) : null, software: soft.checked };
+      const composeChange = JSON.stringify([list, patch.uid, patch.gid]) !== JSON.stringify([c.roots || [], c.uid || null, c.gid || null]);
+      putFeatures(id, { transcode: patch }, t(composeChange ? 'gwn.umw.saved_compose' : 'gwn.umw.saved'))
+        .then(() => dlg.close(true))
+        .catch((e) => { ok.disabled = false; U.showErr(err, errText(e)); });
+    });
+    input.focus();
+  }
+
   // the same check as the server (services/homeCameras.js storagePath): an absolute, plain folder of the host
   const STORAGE_RE = /^\/[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+){0,15}\/?$/;
   const storageOk = (v) => v.length <= 200 && STORAGE_RE.test(v) && v.split('/').every((x) => x !== '.' && x !== '..');
@@ -1336,6 +1504,9 @@
     if (d.print) rows.set('print', printRow(id, d, g));
     // Kameras (phase 3c, step 4): the switch here, the cameras themselves in the plugin "Tür & Kamera"
     if (d.cameras) rows.set('cameras', camerasRow(id, g, d));
+    // Videos umwandeln: the switch, folders and user here, which videos and when in the plugin „Medien“ — not on the
+    // Raspberry Pi image (no service there; shown once switched on, so it can be switched off again)
+    if (d.transcode && (d.transcode.platform !== 'rpi' || d.transcode.enabled)) rows.set('transcode', transcodeRow(id, g, d));
     // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter
     if (d.ai) rows.set('ai', aiRow(id, g, d));
     // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md) — a

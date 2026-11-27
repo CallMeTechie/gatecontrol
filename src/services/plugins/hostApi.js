@@ -2048,6 +2048,43 @@ async function camerasCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Videos umwandeln (permissions.transcode) ─────────────────────────
+//
+// gc.transcode.available() / report() / status() / probe() / submit() / cancel() /
+// pause() / resume() / ack() / restore() / purge() / settings() —
+// services/homeTranscode.js, docs/plugins.md "Video conversion" and the
+// gateway's docs/transcode.md. The plugin decides which files, when and in
+// which order; the host checks the gateway (capability, switch, online), the
+// job id and that a path lies under a media folder of that gateway. Errors
+// carry the gateway's own code as `reason` (bad_path, queue_full, no_space …).
+
+async function transcodeCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.transcode === true, 'ERR_TRANSCODE_DENIED', 'this plugin has no transcode permission');
+  const ht = require('../homeTranscode');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    switch (op) {
+      case 'available': return ht.available();
+      case 'report': return ht.report(a.gatewayId);
+      case 'status': return await ht.status(a.gatewayId);
+      case 'probe': return await ht.probe(a.gatewayId, a.path);
+      case 'submit': return await ht.submit(plugin, a.opts);
+      case 'cancel': return await ht.cancel(a.gatewayId, a.id);
+      case 'pause': return await ht.pause(a.gatewayId, a.opts);
+      case 'resume': return await ht.resume(a.gatewayId, a.opts);
+      case 'ack': return await ht.ack(a.gatewayId, a.ids);
+      case 'restore': return await ht.restore(plugin, a.gatewayId, a.id);
+      case 'purge': return await ht.purge(plugin, a.gatewayId, a.opts);
+      case 'settings': return ht.setSettings(plugin, a.gatewayId, a.opts);
+      default: break;
+    }
+  } catch (e) {
+    if (e instanceof ht.TranscodeError) throw new HostApiError(ht.HOST_CODES[e.code] || 'ERR_TRANSCODE_FAILED', e.message, e.reason);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 9) ───
 //
 // gc.remote.session() / end() / sessions() / vault.put|remove|info|list() /
@@ -2768,6 +2805,11 @@ async function handle(plugin, api, args, ctx) {
     case 'cameras.available': case 'cameras.list': case 'cameras.discover': case 'cameras.test': case 'cameras.add': case 'cameras.update':
     case 'cameras.remove': case 'cameras.snapshot': case 'cameras.snapshotUrl': case 'cameras.live': case 'cameras.events': case 'cameras.deleteEvent':
       return camerasCall(plugin, api.slice('cameras.'.length), args);
+    // Videos umwandeln (permissions.transcode, homeTranscode.js)
+    case 'transcode.available': case 'transcode.report': case 'transcode.status': case 'transcode.probe': case 'transcode.submit':
+    case 'transcode.cancel': case 'transcode.pause': case 'transcode.resume': case 'transcode.ack': case 'transcode.restore':
+    case 'transcode.purge': case 'transcode.settings':
+      return transcodeCall(plugin, api.slice('transcode.'.length), args);
     // Fernzugriff (permissions.remote, services/remote — gc.remote version 1)
     case 'remote.session': case 'remote.end': case 'remote.sessions':
     case 'remote.vault.put': case 'remote.vault.remove': case 'remote.vault.info': case 'remote.vault.list':

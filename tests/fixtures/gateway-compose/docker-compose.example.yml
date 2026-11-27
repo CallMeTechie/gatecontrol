@@ -23,6 +23,7 @@
 #   Router nur 127.0.0.1:8081/8089 und mDNS (UDP 5353) im LAN
 # Kameras (docs/cameras.md) öffnen keinen Port; das Gateway sucht sie per
 # WS-Discovery (UDP 3702, Multicast im LAN) und spricht sie selbst an.
+# Videos umwandeln (docs/transcode.md): kein Port, der Dienst hat kein Netz.
 
 services:
   gateway:
@@ -99,6 +100,10 @@ services:
       - type: volume            # Drucken (docs/print.md): Office-Dateien für den Dienst office, PDF zurück
         source: office-ctl
         target: /gc-office
+        volume: { nocopy: true }
+      - type: volume            # Videos umwandeln (docs/transcode.md): Aufträge für den Dienst umwandeln, Zustand zurück
+        source: umw-ctl
+        target: /gc-umw
         volume: { nocopy: true }
       # Kameras: Clips und Vorschaubilder. Standard ist ein benanntes Volume; auf der
       # Synology z. B. GC_CAMERA_DIR=/volume1/kameras in .env für einen Ordner der NAS.
@@ -684,6 +689,80 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Videos umwandeln (docs/transcode.md) – Profil "umwandeln": startet nur mit
+  # `docker compose --profile umwandeln up -d` (oder COMPOSE_PROFILES=umwandeln
+  # in .env). Die Datei aus GateControl („docker-compose.yml herunterladen“)
+  # enthält den Dienst ohne Profil, sobald „Videos umwandeln“ für das Gateway an
+  # ist – mit den gewählten Ordnern und der Gruppe der Grafik. Nur amd64.
+  # Image ≈ 130 MB (Debian + jellyfin-ffmpeg; Variante debian ≈ 215 MB).
+  # Der Einstieg wartet auf /gc-umw/umwandeln.sh, das das Gateway schreibt, und
+  # führt es aus: ein Video zur Zeit per Grafik-Hardware (VAAPI) in H.264 8 Bit.
+  # Kein Netz, keine Rechte, nicht root; schreiben kann der Dienst nur in die
+  # hier eingehängten Medienordner.
+  #
+  # In .env (Beispiel Synology, docs/deployment/synology.md „Videos umwandeln“):
+  #   GC_UMW_UID / GC_UMW_GID   Benutzer, dem der Dienst gehört (eigener Benutzer mit
+  #                             Schreibrecht nur auf die Medienordner): id -u / id -g
+  #   GC_UMW_RENDER_GID         Gruppe von /dev/dri/renderD128: stat -c %g /dev/dri/renderD128
+  #                             (Synology DSM 7: videodriver; das Gateway meldet die Zahl
+  #                             als features.transcode.deviceGid)
+  #   GC_UMW_MEDIA              Medienordner, innen wie außen derselbe Pfad
+  #                             (/volume2/mediathek) – so passen die Pfade aus Jellyfin
+  #   GC_UMW_ROOTS              nur bei mehreren Ordnern: alle mit „:“ getrennt, und je
+  #                             Ordner eine Zeile unter volumes:
+  #   GC_UMW_IMAGE              nur, wenn ein anderes Image gelten soll (z. B. auf der NAS
+  #                             selbst gebaut: docker build --target umwandeln -t … .)
+  # Ohne Intel-Grafik (kein /dev/dri/renderD128): die Zeilen devices: entfernen –
+  # umgewandelt wird dann nur, wenn „ohne Grafik (langsam)“ in GateControl erlaubt ist.
+  umwandeln:
+    profiles: ["umwandeln"]
+    image: ${GC_UMW_IMAGE:-ghcr.io/callmetechie/gatecontrol-gateway:umwandeln}   # anderes Image (z. B. selbst gebaut): GC_UMW_IMAGE
+    restart: unless-stopped
+    network_mode: none        # Aufträge kommen über das Volume, nichts geht ins Netz
+    user: "${GC_UMW_UID:-65534}:${GC_UMW_GID:-65534}"
+    group_add:
+      - "61002"                         # Gruppe des Volumes umw-ctl (feste Zahl, wie 61001 beim Edge-Container)
+      - "${GC_UMW_RENDER_GID:-44}"      # Gruppe des Grafik-Geräts (Debian: video = 44; Synology: videodriver)
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    devices:
+      - ${GC_UMW_RENDER:-/dev/dri/renderD128}:/dev/dri/renderD128   # nur das Render-Gerät, nicht card0
+    # Vorrang haben Gateway und Wiedergabe: kleinster CPU-Anteil (dazu nice 19 im Wächter),
+    # bei Speichermangel trifft es zuerst ffmpeg
+    cpu_shares: 128
+    oom_score_adj: 800
+    mem_limit: 2g
+    pids_limit: 256
+    depends_on:
+      - gateway               # legt umw-ctl an und schreibt umwandeln.sh
+    volumes:
+      - type: volume            # Aufträge vom Gateway (nur lesen), Zustand zurück (state/)
+        source: umw-ctl
+        target: /gc-umw
+        volume: { nocopy: true }
+      # Medienordner: innen derselbe Pfad wie außen. Nur diese Ordner kann der Dienst beschreiben.
+      - ${GC_UMW_MEDIA:-./umwandeln-medien}:${GC_UMW_MEDIA:-/medien}
+    environment:
+      - GC_UMW_ROOTS=${GC_UMW_ROOTS:-${GC_UMW_MEDIA:-/medien}}
+      - LIBVA_DRIVER_NAME=${GC_UMW_VA_DRIVER:-iHD}
+      - TZ=${TZ:-Etc/UTC}
+    healthcheck:
+      test: ["CMD-SHELL", "[ ! -s /gc-umw/umwandeln.sh ] || [ $$(( $$(date +%s) - $$(cut -d' ' -f2 /gc-umw/state/umwandeln.state 2>/dev/null || echo 0) )) -lt 120 ]"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   # tmpfs, geteilt: der Gateway-Container (root) legt den Socket an, das
   # setgid-Bit gibt ihm die Gruppe 61001 → der Edge-Container kann ihn
@@ -741,3 +820,11 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=160m,uid=0,gid=0,mode=0700"
+  # tmpfs, geteilt: Aufträge des Gateways für den Dienst umwandeln und dessen Zustand. Der Ordner
+  # gehört root, hinein kommt außer dem Gateway nur die Gruppe 61002 (Zusatzgruppe des Dienstes);
+  # schreiben kann der Dienst nur in state/.
+  umw-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=4m,uid=0,gid=61002,mode=2750"
