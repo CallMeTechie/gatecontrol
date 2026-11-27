@@ -651,6 +651,84 @@ conversations is only allowed with everybody's consent. Who may see which camera
 the plugin under “Permissions” (column “sieht”): only these people see it in the portal and
 in the app, get the push and find the clips.
 
+## Convert videos
+
+**What for:** Some videos do not play on every device – above all H.264 with
+10 bit (“High 10”): phones, Fire TV and Windows cannot play them themselves, and a
+NAS like the DS918+ cannot convert them smoothly while they play. With “Convert
+videos” the NAS converts such files **at night** with its Intel graphics into H.264
+with 8 bit. Sound, subtitles, chapters and fonts stay as they are, the file stays
+MKV. Which videos and when is decided by the plugin “Media” (page “Convert”).
+
+**How it works:** The new file replaces the original under **the same name** –
+Jellyfin keeps “watched” and the progress. The original stays in the folder
+`.gc-papierkorb` of the same share until its time is up (14 days by default, set in
+the plugin) and can be restored in the plugin with one click. Before the swap the
+service checks the new file (tracks, chapters, duration, 8 bit) and plays it through
+once; if anything goes wrong, the original stays where it is. While somebody watches
+through Jellyfin, the plugin pauses the conversion.
+
+**Requirements:**
+
+- Gateway 1.50.0+ on a device with an Intel or AMD processor (64 bit) and Docker,
+  e.g. a Synology DS918+. With an older gateway the row says “Gateway too old – from
+  1.50.0”. The Raspberry Pi has no such service.
+- For fast conversion Intel graphics (`/dev/dri/renderD128`). Without them it only
+  works when you switch on “Allow without graphics (slow)” – an episode then takes
+  hours instead of minutes.
+- The plugin “Media” (Settings › Plugins › Catalog) in the version with the page
+  “Convert”. When installing it GateControl asks for the permission **“Convert
+  videos”** – it may replace files in the chosen media folders and is marked as a
+  sensitive permission.
+
+**Setting it up (Synology):**
+
+1. **Create an own user:** DSM › Control Panel › User & Group › “Create”, e.g.
+   `gc-umwandeln`, without access to applications. Under “Assign shared folders
+   permissions” give **read/write only** to the media share(s), “No access” to all
+   others.
+2. **Look up the numbers** (SSH or task scheduler): `id gc-umwandeln` shows e.g.
+   `uid=1034 … gid=100`.
+3. **Switch it on:** Gateway › tab “Features” › “Devices at home” ›
+   “Convert videos”. Under **“Folders and user”** enter the media folders – exactly
+   the path Jellyfin knows as well, e.g. `/volume2/mediathek` (at most 8, none inside
+   another) – and the UID and GID from step 2.
+4. **Download docker-compose.yml** (button in the row) and rebuild the project in
+   the Container Manager ([chapter 6](06-updating-a-gateway.md#63-synology-renewing-the-compose-file)).
+   The file contains the service `umwandeln` with your folders (inside the same path
+   as outside), the user and the group of the graphics device the gateway reported
+   (on DSM 7 usually the group `videodriver`). Do not change the permissions of
+   `/dev/dri/renderD128` – no `chmod 666`.
+
+**What the row shows:** the media folders and the user, what the gateway found
+(“Found: Intel iHD … · graphics device (group 937) · methods VAAPI (ICQ, QVBR) · 1.8 TB
+free”), whether a video is being converted, how many jobs wait and how much lies in
+the trash. Hints instead of bans:
+
+- **“The service lacks the group of the graphics device”:** The gateway reports the
+  right group – the new docker-compose.yml adds it.
+- **“A media folder is not mounted in the service yet”:** You added a folder; it takes
+  effect with the new docker-compose.yml.
+- **“A media folder is read-only”:** The user from step 1 has no write access to the
+  share.
+- **“No usable graphics found”:** Without `/dev/dri/renderD128` the docker-compose.yml
+  leaves out the lines `devices:`; videos are only converted with “Allow without
+  graphics”.
+
+**Space:** Before each job the service checks the free space (size of the original
+× 1.2 + 2 GB, after that at least 20 GB and 5 % stay free). If it is not enough, the
+plugin shows “not enough space” and tries again in a later night. With Btrfs
+snapshots the space of an original is only freed when the snapshots expire as well.
+
+**Gateway update:** An update of the gateway at night restarts the running
+conversion – the file starts from the beginning, a swap that already happened counts
+as done.
+
+**Security:** The service has no network, no privileges, never runs as root and can
+only write to the mounted media folders. It sees no API key; only the plugin on the
+server talks to Jellyfin. Server, gateway and service each check the paths (no
+symbolic link, only below the chosen folders).
+
 ## Radio (Zigbee, Bluetooth, Thread)
 
 **What for:** Zigbee lights, plugs and sensors (IKEA, Philips Hue, Aqara …) through a

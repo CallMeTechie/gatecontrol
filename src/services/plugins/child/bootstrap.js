@@ -671,6 +671,56 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
+// gc.transcode (permissions.transcode, docs/plugins.md "Video conversion", the gateway's docs/transcode.md):
+// jobs for the service umwandeln on the gateways — the plugin decides which files, when and in which order
+const transcodeHandlers = [];
+
+function makeTranscode() {
+  const o = (x) => (x && typeof x === 'object' ? x : {});
+  return Object.freeze({
+    /** available() → { available, gateways: [{ id, name, online, supported, minGateway, enabled, service, state, caps, roots, settings, jobs, current, trash, reportedAt }] } */
+    available: () => hostCall('transcode.available', {}),
+    /** report(gatewayId) → the last stored report { at, enabled, service, state, caps, roots, settings, pause, jobs, trash, reportedAt } | null — no gateway call */
+    report: (gatewayId) => hostCall('transcode.report', { gatewayId }),
+    /** status(gatewayId) → the state, live from the gateway (same fields as report, trash always present) */
+    status: (gatewayId) => hostCall('transcode.status', { gatewayId }, 20000),
+    /** probe(gatewayId, path) → { path, source, freeKb } — ffprobe of one file (also MP4, AVI …; up to 30 s) */
+    probe: (gatewayId, path) => hostCall('transcode.probe', { gatewayId, path }, 45000),
+    /** submit({ gatewayId, id, path, software?: false, quality? }) → { job } — the same id with the same path again is no error */
+    submit: (opts) => hostCall('transcode.submit', { opts: o(opts) }, 20000),
+    /** cancel(gatewayId, id) → { job } */
+    cancel: (gatewayId, id) => hostCall('transcode.cancel', { gatewayId, id }, 20000),
+    /** pause(gatewayId, { id } | { ttlSec? }) → { pause: { all, until } } — without id: everything for ttlSec (10…86400, default 900) */
+    pause: (gatewayId, opts) => hostCall('transcode.pause', { gatewayId, opts: o(opts) }, 20000),
+    /** resume(gatewayId, { id }?) → { pause } */
+    resume: (gatewayId, opts) => hostCall('transcode.resume', { gatewayId, opts: o(opts) }, 20000),
+    /** ack(gatewayId, ids) → { removed } — finished jobs the plugin has stored */
+    ack: (gatewayId, ids) => hostCall('transcode.ack', { gatewayId, ids }, 20000),
+    /** restore(gatewayId, id) → { id, restored } — the original back from the trash */
+    restore: (gatewayId, id) => hostCall('transcode.restore', { gatewayId, id }, 45000),
+    /** purge(gatewayId, { id } | { all: true }) → { purged: true } — delete originals in the trash now */
+    purge: (gatewayId, opts) => hostCall('transcode.purge', { gatewayId, opts: o(opts) }, 45000),
+    /** settings(gatewayId, { trashDays?, quality? }) → { trashDays, quality } — the plugin's settings for that gateway */
+    settings: (gatewayId, opts) => hostCall('transcode.settings', { gatewayId, opts: o(opts) }),
+    /** on(handler({ gatewayId, status })) → off() — a report of the gateway came in (hook transcodeChanged) */
+    on: (handler) => {
+      if (typeof handler !== 'function') throw new TypeError('gc.transcode.on(handler)');
+      transcodeHandlers.push(handler);
+      return () => { const i = transcodeHandlers.indexOf(handler); if (i >= 0) transcodeHandlers.splice(i, 1); };
+    },
+  });
+}
+
+async function deliverTranscode(ev) {
+  const arg = Object.freeze({ ...(ev && typeof ev === 'object' ? ev : {}) });
+  for (const fn of transcodeHandlers.slice()) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: 'gc.transcode.on handler failed: ' + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: transcodeHandlers.length };
+}
+
 // gc.remote (permissions.remote, version 9, docs/plugins.md "Remote access"): sessions to devices on a page of
 // the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
 // L4 listeners through the gateways, the SSH terminal of the core with tmux and pinned host keys, recordings,
@@ -875,6 +925,7 @@ function makeGc(info) {
     ...(features.print ? { print: makePrint() } : {}),
     ...(features.radio ? { radio: makeRadio() } : {}),
     ...(features.cameras ? { cameras: makeCameras() } : {}),
+    ...(features.transcode ? { transcode: makeTranscode() } : {}),
     ...(features.vpnDns ? { vpnDns: makeVpnDns() } : {}),
     ...(features.bridges ? { bridges: makeBridges() } : {}),
     ...(features.remote ? { remote: makeRemote() } : {}),
@@ -1338,6 +1389,9 @@ async function handleCall(method, payload) {
     case 'cameraEvent':
       // an event of a camera in the home network (gc.cameras.on) — answer ignored
       return deliverCameraEvent(payload);
+    case 'transcodeChanged':
+      // a report of the service umwandeln on a gateway (gc.transcode.on) — answer ignored
+      return deliverTranscode(payload);
     case 'vpnDns':
       // the DNS protection fell back / answers again / was suspended / switched on again (gc.vpnDns.on) — answer ignored
       return deliverVpnDns(payload);

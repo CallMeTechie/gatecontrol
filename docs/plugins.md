@@ -3072,6 +3072,43 @@ No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an
 the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
 
+## Video conversion (`permissions.transcode`)
+
+"Videos umwandeln" (gateway 1.50.0+ with the capability `transcode`, the gateway's `docs/transcode.md`). A home
+gateway on a NAS with **Videos umwandeln** switched on (Gateways › Funktionen › „Geräte im Heimnetz“: media
+folders, the DSM user of the service, „Ohne Grafik erlauben“) runs the compose service `umwandeln`: ffmpeg with
+the graphics hardware turns one video at a time into H.264 8 bit, checks it and swaps it in place; the original
+stays in `.gc-papierkorb` until its time is up. The plugin decides which files, when and in which order — the
+plugin „Medien“ (`gatecontrol-medien`) is built on it. Code: `src/services/homeTranscode.js`, host API
+`transcodeCall` in `src/services/plugins/hostApi.js`.
+
+```json
+"permissions": { "transcode": true }
+```
+
+The install dialog shows it as "Videos umwandeln", marked as sensitive (files in the media folders are
+replaced). Without it `gc.transcode` does not exist and the host answers `ERR_TRANSCODE_DENIED`; an older
+GateControl ignores the permission and `gc.transcode` is missing — check for it.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.transcode.available()` | `{ available, gateways: [{ id, name, online, supported, minGateway, enabled, service, state, caps, roots, settings: { roots, software, trashDays, quality }, jobs, current, trash, reportedAt }] }` — no gateway call; gateways with the capability or the switch |
+| `gc.transcode.report(gatewayId)` | the last stored report (as `status`, with `reportedAt` and the last known `trash`) or `null` — no gateway call |
+| `gc.transcode.status(gatewayId)` | live: `{ at, enabled, service, state, caps, roots, settings, pause, jobs, trash }` (fields: gateway `docs/transcode.md` §3) |
+| `gc.transcode.probe(gatewayId, path)` | `{ path, source, freeKb }` — ffprobe of one file (also MP4, AVI …; up to 30 s) |
+| `gc.transcode.submit({ gatewayId, id, path, software?, quality? })` | `{ job }` — `id` `[A-Za-z0-9_-]{8,64}`, new per file and attempt; `path` under a media folder of that gateway (else `ERR_INVALID`, reason `outside_roots`); `software: false` forbids the software way for this job |
+| `gc.transcode.cancel(gatewayId, id)` / `ack(gatewayId, ids)` | `{ job }` / `{ removed }` |
+| `gc.transcode.pause(gatewayId, { ttlSec } \| { id })` / `resume(gatewayId, { id }?)` | `{ pause: { all, until } }` — without `id` everything for `ttlSec` (10…86400, default 900; renew while somebody watches) |
+| `gc.transcode.restore(gatewayId, id)` / `purge(gatewayId, { id } \| { all: true })` | `{ id, restored }` / `{ purged: true }` — the original back / deleted now (both in the activity log) |
+| `gc.transcode.settings(gatewayId, { trashDays?, quality? })` | `{ trashDays, quality }` — the plugin's settings for that gateway (1…365 days, quality 16…32); switch, folders, user and „Ohne Grafik“ stay with the administrator |
+| `gc.transcode.on(handler)` | hook `transcodeChanged`: `{ gatewayId, status }` on every report of the gateway (`status` as `report()`) |
+
+Errors: `err.code` `ERR_INVALID` / `ERR_NOT_FOUND` / `ERR_TRANSCODE_UNSUPPORTED` (gateway too old or the function
+off) / `ERR_TRANSCODE_OFFLINE` / `ERR_TRANSCODE_SERVICE` (the service is missing or stopped) /
+`ERR_TRANSCODE_CONFLICT` (409) / `ERR_TRANSCODE_BUSY` (429) / `ERR_TRANSCODE_FAILED` (422, a code of the
+service's watcher) / `ERR_TRANSCODE_TIMEOUT`; `err.reason` carries the gateway's own code (`bad_path`,
+`queue_full`, `duplicate_id`, `not_in_trash`, `gateway_update`, `feature_disabled` …).
+
 ## Remote access (`permissions.remote`)
 
 Since GateControl with stage 0 of the plugin "Fernzugriff" (`gatecontrol-remote`, a shop

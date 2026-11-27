@@ -225,6 +225,10 @@ services:
         source: office-ctl
         target: /gc-office
         volume: { nocopy: true }
+      - type: volume            # Videos umwandeln: jobs for the service umwandeln, its state back
+        source: umw-ctl
+        target: /gc-umw
+        volume: { nocopy: true }
       - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)
     environment:
       - LOG_LEVEL=info
@@ -416,6 +420,13 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=160m,uid=0,gid=0,mode=0700"
+  # tmpfs shared: jobs of the gateway for the service umwandeln and its state; owned by root, besides the
+  # gateway only group 61002 (extra group of the service) gets in — the service writes only to state/
+  umw-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=4m,uid=0,gid=61002,mode=2750"
 ```
 <!-- /compose -->
 

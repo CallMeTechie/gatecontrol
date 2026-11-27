@@ -676,6 +676,87 @@ Wer welche Kamera sehen darf, legst du im Plugin unter „Berechtigungen“ fest
 (Spalte „sieht“): nur diese Personen sehen sie im Portal und in der App, bekommen
 den Push und finden die Clips.
 
+## Videos umwandeln
+
+**Wofür:** Manche Videos laufen nicht auf jedem Gerät – vor allem H.264 mit
+10 Bit („High 10“): Handy, Fire TV und Windows können das nicht selbst abspielen,
+und eine NAS wie die DS918+ schafft das Umwandeln beim Abspielen nicht flüssig.
+Mit „Videos umwandeln“ wandelt die NAS solche Dateien **nachts** mit ihrer
+Intel-Grafik in H.264 mit 8 Bit um. Ton, Untertitel, Kapitel und Schriften bleiben
+unverändert, die Datei bleibt MKV. Welche Videos und wann, entscheidet das Plugin
+„Medien“ (Seite „Umwandeln“).
+
+**So funktioniert es:** Die neue Datei ersetzt das Original unter **demselben
+Namen** – Jellyfin behält „gesehen“ und den Fortschritt. Das Original liegt bis
+zum Ablauf der Frist (Standard 14 Tage, im Plugin einstellbar) im Ordner
+`.gc-papierkorb` derselben Freigabe und lässt sich im Plugin mit einem Klick
+zurückholen. Bevor getauscht wird, prüft der Dienst die neue Datei (Spuren,
+Kapitel, Dauer, 8 Bit) und spielt sie einmal ganz durch; geht etwas schief, bleibt
+das Original, wo es ist. Schaut gerade jemand über Jellyfin, hält das Plugin die
+Umwandlung an.
+
+**Voraussetzungen:**
+
+- Gateway 1.50.0+ auf einem Gerät mit Intel- oder AMD-Prozessor (64 Bit) und Docker,
+  z. B. Synology DS918+. Ist das Gateway älter, steht in der Zeile „Gateway zu alt –
+  ab 1.50.0“. Auf dem Raspberry Pi gibt es den Dienst nicht.
+- Für schnelles Umwandeln eine Intel-Grafik (`/dev/dri/renderD128`). Ohne sie geht
+  es nur, wenn du „Ohne Grafik erlauben (langsam)“ einschaltest – eine Folge dauert
+  dann Stunden statt Minuten.
+- Das Plugin „Medien“ (Einstellungen › Plugins › Katalog) in der Fassung mit der Seite
+  „Umwandeln“. Bei der Installation fragt GateControl nach dem Recht **„Videos
+  umwandeln“** – es darf Dateien in den gewählten Medienordnern ersetzen und ist
+  deshalb als heikles Recht markiert.
+
+**Einrichten (Synology):**
+
+1. **Eigenen Benutzer anlegen:** DSM › Systemsteuerung › Benutzer & Gruppe ›
+   „Erstellen“, z. B. `gc-umwandeln`, ohne Zugriff auf Anwendungen. Bei
+   „Berechtigungen für gemeinsame Ordner“ **Lesen/Schreiben nur** für die
+   Medien-Freigabe(n), alle anderen „Kein Zugriff“.
+2. **Zahlen nachsehen** (SSH oder Aufgabenplaner): `id gc-umwandeln` zeigt z. B.
+   `uid=1034 … gid=100`.
+3. **Einschalten:** Gateway › Reiter „Funktionen“ › „Geräte im Heimnetz“ ›
+   „Videos umwandeln“. Unter **„Ordner und Benutzer“** die Medienordner eintragen –
+   genau den Pfad, den auch Jellyfin kennt, z. B. `/volume2/mediathek` (höchstens 8,
+   keiner in einem anderen) – und UID und GID aus Schritt 2.
+4. **docker-compose.yml herunterladen** (Knopf in der Zeile) und das Projekt im
+   Container Manager neu erstellen ([Kapitel 6](06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern)).
+   Die Datei enthält den Dienst `umwandeln` mit deinen Ordnern (innen derselbe Pfad
+   wie außen), dem Benutzer und der Gruppe des Grafik-Geräts, die das Gateway
+   gemeldet hat (auf DSM 7 meist die Gruppe `videodriver`). Die Rechte von
+   `/dev/dri/renderD128` nicht ändern – kein `chmod 666`.
+
+**Was die Zeile zeigt:** die Medienordner und den Benutzer, was das Gateway gefunden
+hat („Gefunden: Intel iHD … · Grafik-Gerät (Gruppe 937) · Verfahren VAAPI (ICQ, QVBR) ·
+frei 1,8 TB“), ob gerade umgewandelt wird, wie viele Aufträge warten und wie viel im
+Papierkorb liegt. Hinweise statt Verbote:
+
+- **„Dem Dienst fehlt die Gruppe des Grafik-Geräts“:** Das Gateway meldet die richtige
+  Gruppe – die neue docker-compose.yml trägt sie ein.
+- **„Ein Medienordner ist im Dienst noch nicht eingehängt“:** Du hast einen Ordner
+  hinzugefügt; er gilt erst mit der neuen docker-compose.yml.
+- **„Ein Medienordner ist schreibgeschützt“:** Dem Benutzer aus Schritt 1 fehlt das
+  Schreibrecht auf die Freigabe.
+- **„Keine nutzbare Grafik gefunden“:** Ohne `/dev/dri/renderD128` lässt die
+  docker-compose.yml die Zeilen `devices:` weg; umgewandelt wird nur mit „Ohne Grafik
+  erlauben“.
+
+**Platz:** Vor jedem Auftrag prüft der Dienst den freien Platz (Größe des Originals
+× 1,2 + 2 GB, danach bleiben mindestens 20 GB und 5 % frei). Reicht er nicht, zeigt
+das Plugin „zu wenig Platz“ und versucht es in einer späteren Nacht. Bei
+Btrfs-Schnappschüssen wird der Platz eines Originals erst frei, wenn auch die
+Schnappschüsse ablaufen.
+
+**Gateway-Update:** Ein Update des Gateways in der Nacht startet die laufende
+Umwandlung neu – die Datei beginnt von vorn, ein schon geschehener Tausch gilt als
+fertig.
+
+**Sicherheit:** Der Dienst hat kein Netz, keine Rechte, läuft nie als root und kann
+nur in die eingehängten Medienordner schreiben. Er sieht keinen API-Schlüssel; mit
+Jellyfin spricht nur das Plugin auf dem Server. Pfade prüfen Server, Gateway und
+Dienst je einmal (kein symbolischer Link, nur unter den gewählten Ordnern).
+
 ## Funk (Zigbee, Bluetooth, Thread)
 
 **Wofür:** Zigbee-Lampen, -Steckdosen und -Sensoren (IKEA, Philips Hue, Aqara …)

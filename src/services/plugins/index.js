@@ -170,6 +170,8 @@ function permissionSummary(m, lang) {
     radio: !!p.radio,
     // phase 3c, step 4: the cameras in the home networks of the gateways (gc.cameras)
     cameras: !!p.cameras,
+    // „Videos umwandeln“: replace videos in the media folders of the gateways (gc.transcode)
+    transcode: !!p.transcode,
     // remote access (gc.remote): sessions to devices, the key vault, listeners through the gateways — sensitive
     remote: !!p.remote,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null

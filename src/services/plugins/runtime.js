@@ -181,6 +181,8 @@ class PluginProcess {
       radio: perms.radio === true,
       // gc.cameras: permissions.cameras (phase 3c, step 4)
       cameras: perms.cameras === true,
+      // gc.transcode: permissions.transcode („Videos umwandeln“)
+      transcode: perms.transcode === true,
       // gc.vpnDns: permissions.vpnDns (DNS protection of the VPN devices)
       vpnDns: perms.vpnDns === true,
       // gc.bridges: permissions.bridges (messenger bridges)
