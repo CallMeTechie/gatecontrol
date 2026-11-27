@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.328.0] — 2026-11-27
+
+### Features
+- Videos umwandeln – Gateway-Funktion, Bericht und Host-API (#594)
+
+---
+
 ## [1.327.1] — 2026-11-26
 
 ### Fixes
