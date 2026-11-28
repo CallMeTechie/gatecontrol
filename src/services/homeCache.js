@@ -648,11 +648,96 @@ async function previewSha(pluginId, mediaId, size) {
 function withdraw(pluginId, mediaId, { preview = null } = {}) {
   if (typeof mediaId !== 'string') throw new CacheError('ERR_INVALID', 'mediaId expected');
   if (preview != null && !PREVIEW_SIZES.includes(preview)) throw new CacheError('ERR_INVALID', 'preview: small or large');
-  const n = preview == null
-    ? db().prepare("DELETE FROM home_cache_blobs WHERE source = 'plugin' AND plugin_id = ? AND media_id = ?").run(pluginId, mediaId).changes
-    : db().prepare("DELETE FROM home_cache_blobs WHERE source = 'preview' AND plugin_id = ? AND media_id = ? AND label = ?").run(pluginId, mediaId, preview).changes;
-  if (n) stockChanged();
-  return { removed: n > 0 };
+  const gone = preview == null
+    ? db().prepare("DELETE FROM home_cache_blobs WHERE source = 'plugin' AND plugin_id = ? AND media_id = ? RETURNING sha256").all(pluginId, mediaId)
+    : db().prepare("DELETE FROM home_cache_blobs WHERE source = 'preview' AND plugin_id = ? AND media_id = ? AND label = ? RETURNING sha256").all(pluginId, mediaId, preview);
+  if (gone.length) { stockChanged(); nudgeHolders(gone.map((r) => r.sha256)); }
+  return { removed: gone.length > 0 };
+}
+
+// ─── Nudge after a withdrawal ──────────────────────────────────────────
+//
+// A gateway that names the capability `cache-withdraw` (gateway docs/dns-cache.md) deletes blobs the server
+// withdrew as soon as it matches its stock, and takes POST /api/cache/sync during a run as well. So a
+// withdrawal (a vault file the user took back, …) does not wait for the next interval: the blobs withdrawn
+// are gathered for NUDGE_DELAY_MS, then every gateway that holds one of them (home_cache_have) and names
+// the capability is asked once to match now — never a call per blob, a gateway at most once per
+// NUDGE_GAP_MS (one asked again within that gap waits for its turn). A gateway without the capability is
+// left alone (its interval removes them). A failed call is only logged: the interval stays the fallback.
+
+const NUDGE_CAPABILITY = 'cache-withdraw';
+const NUDGE_DELAY_MS = 10 * 1000;
+const NUDGE_GAP_MS = 60 * 1000;
+const NUDGE_PARALLEL = 4;
+const NUDGE_SHA_CHUNK = 500;
+const nudge = { shas: new Set(), peers: new Set(), last: new Map(), timer: null, delayMs: NUDGE_DELAY_MS, gapMs: NUDGE_GAP_MS };
+
+function nudgeHolders(shas) {
+  for (const s of shas) if (typeof s === 'string') nudge.shas.add(s);
+  if (nudge.shas.size) nudgeLater(nudge.delayMs);
+}
+
+function nudgeLater(ms) {
+  if (nudge.timer) return;
+  nudge.timer = setTimeout(() => {
+    nudge.timer = null;
+    flushNudges().catch((e) => logger.warn({ err: e.message }, 'home cache: gateways not asked to match their stock'));
+  }, Math.max(0, ms));
+  if (nudge.timer.unref) nudge.timer.unref();
+}
+
+/** Gateways (peer ids) that hold one of these blobs. */
+function holdersOf(shas) {
+  const out = new Set();
+  for (let i = 0; i < shas.length; i += NUDGE_SHA_CHUNK) {
+    const part = shas.slice(i, i + NUDGE_SHA_CHUNK);
+    const rows = db().prepare(`SELECT DISTINCT peer_id FROM home_cache_have WHERE sha256 IN (${part.map(() => '?').join(',')})`).all(...part);
+    for (const r of rows) out.add(r.peer_id);
+  }
+  return out;
+}
+
+function canWithdraw(peerId) {
+  if (!get(peerId).enabled) return false;
+  return require('./gatewayUdp').peerHasCapability(peerId, NUDGE_CAPABILITY);
+}
+
+async function nudgeOne(peerId) {
+  let r = null;
+  try { r = await require('./gateways').mgmtCall(peerId, '/api/cache/sync', {}); } catch (e) { r = null; logger.info({ err: e.message, peerId }, 'home cache: sync call failed'); }
+  if (!r) logger.info({ peerId }, 'home cache: gateway not reached for the sync after a withdrawal — its interval removes the blobs');
+  else if (r.status < 200 || r.status >= 300) logger.info({ peerId, status: r.status }, 'home cache: gateway did not take the sync after a withdrawal — its interval removes the blobs');
+  return r;
+}
+
+/** The nudge itself (timer; tests call it directly) → peer ids asked now. */
+async function flushNudges(now = Date.now()) {
+  const shas = [...nudge.shas];
+  nudge.shas.clear();
+  for (const id of holdersOf(shas)) nudge.peers.add(id);
+  const due = [];
+  let wait = null;
+  for (const id of nudge.peers) {
+    if (!canWithdraw(id)) { nudge.peers.delete(id); continue; }
+    const last = nudge.last.get(id);
+    const left = last == null ? 0 : last + nudge.gapMs - now;
+    if (left > 0) { wait = wait == null ? left : Math.min(wait, left); continue; }
+    nudge.peers.delete(id);
+    nudge.last.set(id, now);
+    due.push(id);
+  }
+  // forget gateways whose gap is over (the map stays as small as the gateways asked lately)
+  for (const [id, at] of nudge.last) if (at + nudge.gapMs <= now) nudge.last.delete(id);
+  if (wait != null) nudgeLater(wait);
+  for (let i = 0; i < due.length; i += NUDGE_PARALLEL) await Promise.all(due.slice(i, i + NUDGE_PARALLEL).map(nudgeOne));
+  return due;
+}
+
+function _setNudgeTimingForTest({ delayMs = NUDGE_DELAY_MS, gapMs = NUDGE_GAP_MS } = {}) { nudge.delayMs = delayMs; nudge.gapMs = gapMs; }
+function resetNudges() {
+  if (nudge.timer) clearTimeout(nudge.timer);
+  nudge.timer = null; nudge.shas.clear(); nudge.peers.clear(); nudge.last.clear();
+  nudge.delayMs = NUDGE_DELAY_MS; nudge.gapMs = NUDGE_GAP_MS;
 }
 
 const SWEEP_STEP = 2000;
@@ -669,11 +754,12 @@ function maxBlobRowid() { return db().prepare('SELECT COALESCE(MAX(rowid), 0) AS
  */
 async function dropStaleOffers() {
   const del = db().prepare(`DELETE FROM home_cache_blobs WHERE rowid > ? AND rowid <= ? AND source IN ('plugin', 'preview')
-    AND NOT EXISTS (SELECT 1 FROM plugin_media pm WHERE pm.id = home_cache_blobs.media_id AND pm.plugin = home_cache_blobs.plugin_id)`);
-  let n = 0;
-  await walkRowids(maxBlobRowid(), SWEEP_STEP, (lo, hi) => [del.run(lo, hi).changes], (r) => { n += r[0]; });
-  if (n) stockChanged();
-  return n;
+    AND NOT EXISTS (SELECT 1 FROM plugin_media pm WHERE pm.id = home_cache_blobs.media_id AND pm.plugin = home_cache_blobs.plugin_id)
+    RETURNING sha256`);
+  const gone = [];
+  await walkRowids(maxBlobRowid(), SWEEP_STEP, (lo, hi) => del.all(lo, hi), (rows) => { for (const r of rows) gone.push(r.sha256); });
+  if (gone.length) { stockChanged(); nudgeHolders(gone); }
+  return gone.length;
 }
 
 /** The stored preview file of an offer as "<size>:<mtime>" (stamp column), or null. */
@@ -1004,11 +1090,11 @@ function retention(now = Date.now()) {
   return db().prepare('DELETE FROM cache_stats_day WHERE day < ?').run(old).changes;
 }
 
-function _resetForTest() { inflight.clear(); refreshing = null; stockMemo.clear(); previewShaMemo.clear(); }
+function _resetForTest() { inflight.clear(); refreshing = null; stockMemo.clear(); previewShaMemo.clear(); resetNudges(); }
 
 module.exports = {
   CacheError, KINDS, DEFAULTS, CACHE_PATH, STATES, GB, SIZES_GB, HINT_TTL_S, HINTS_MAX, MIN_BYTES, MAX_BYTES, PREVIEW_SIZES, WANT_MAX,
   normalize, get, set, secretOf, configPayload, want, stockOf, sendBlob, report, telemetryCache, signature, hintFor, lanFor, lanForMany, localOf,
   offer, withdraw, previewSha, dropStaleOffers, refreshPreviewOffers, refreshUpdates, lanForUpdate, view, clear, retention, updatesDir, _resetForTest,
-  _downloadWithFallback: downloadWithFallback,
+  _downloadWithFallback: downloadWithFallback, NUDGE_CAPABILITY, _flushNudges: flushNudges, _setNudgeTimingForTest,
 };
