@@ -145,7 +145,8 @@
       rows.push({ tone: 'warn', title: t('st.scan.att_update', { v: s.version, latest: s.latest.engine }),
         sub: data.config.engine === 'clamav_local' ? t('st.scan.att_update_local') : t('st.scan.att_update_net', { where: data.config.address }), pill: t('st.scan.att_update_pill') });
     }
-    if (s.signaturesOld) rows.push({ tone: 'warn', title: t('st.scan.att_old'), sub: t('st.scan.att_old_sub', { when: when(s.dailyAt) }), pill: t('st.scan.att_old_pill') });
+    if (s.signaturesOld && s.signaturesUnverified) rows.push({ tone: 'warn', title: t('st.scan.att_unverified'), sub: t('st.scan.att_unverified_sub', { when: when(s.dailyAt) }), pill: t('st.scan.att_old_pill') });
+    else if (s.signaturesOld) rows.push({ tone: 'warn', title: t('st.scan.att_old'), sub: t('st.scan.att_old_sub', { when: when(s.dailyAt), daily: s.daily, latest: s.latest ? s.latest.daily : '–' }), pill: t('st.scan.att_old_pill') });
     if (data.hashlist.keySet && data.hashlist.error) rows.push({ tone: 'warn', title: t('st.scan.att_list'), sub: data.hashlist.error, pill: t('st.scan.att_list_pill') });
     return rows;
   }
@@ -179,6 +180,8 @@
     const s = data.scanner;
     if (s.engine === 'clamav_local' || s.engine === 'clamav_net') {
       box.appendChild(kv(t('st.scan.sig_daily'), s.daily ? `${s.daily} · ${when(s.dailyAt)}` : '–', true));
+      if (s.noNewSince) box.appendChild(kv(t('st.scan.sig_state'), t('st.scan.no_new_since', { when: when(s.noNewSince) })));
+      box.appendChild(kv(t('st.scan.sig_checked'), when(data.checkedAt)));
       if (s.latest) {
         box.appendChild(kv(t('st.scan.sig_published'), `daily ${s.latest.daily || '–'} · main ${s.latest.main || '–'} · bytecode ${s.latest.bytecode || '–'}`, true));
       }
@@ -333,12 +336,19 @@
     if (!r.ok) { message(errText(r), 'crit'); return; }
     const x = r.result;
     const parts = [];
-    if (x.reload) parts.push(t('st.scan.refresh_reload'));
+    // GateControl cannot fetch signatures itself: clamd reloads what freshclam
+    // put on disk; x.scanner is what it reports right after the reload
+    const sc = x.scanner;
+    let tone = x.error ? 'warn' : 'good';
+    if (x.reload && sc && sc.signaturesOld) { parts.push(t(sc.signaturesUnverified ? 'st.scan.refresh_unverified' : 'st.scan.refresh_still_old', { when: when(sc.dailyAt) })); tone = 'warn'; }
+    else if (x.reload && sc && sc.noNewSince) parts.push(t('st.scan.refresh_current_quiet', { when: when(sc.noNewSince) }));
+    else if (x.reload && sc && sc.dailyAt) parts.push(t('st.scan.refresh_reload_now', { when: when(sc.dailyAt) }));
+    else if (x.reload) parts.push(t('st.scan.refresh_reload'));
     else if (x.error) parts.push(t('st.scan.refresh_unreachable'));
     if (x.hashlist && x.hashlist.ok) parts.push(t('st.scan.refresh_list', { n: num(x.hashlist.total || 0) }));
     else if (x.hashlist && x.hashlist.error && x.hashlist.error !== 'no_key') parts.push(t('st.scan.refresh_list_failed'));
-    message(parts.join(' ') || t('st.scan.refresh_nothing'), x.error ? 'warn' : 'good');
-    setTimeout(reload, 2500);
+    message(parts.join(' ') || t('st.scan.refresh_nothing'), tone);
+    reload();
   });
   $('scan-test').addEventListener('click', async (e) => {
     const b = e.currentTarget;
