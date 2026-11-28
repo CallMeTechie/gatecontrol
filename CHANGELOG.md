@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.328.1] — 2026-11-28
+
+### Fixes
+- Gateways nach einem Rückzug sofort abgleichen lassen (#595)
+
+---
+
 ## [1.328.0] — 2026-11-27
 
 ### Features
