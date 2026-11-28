@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.328.2] — 2026-11-28
+
+### Fixes
+- Virensignaturen nur als veraltet melden, wenn ClamAV Neueres veröffentlicht hat (#596)
+
+---
+
 ## [1.328.1] — 2026-11-28
 
 ### Fixes
