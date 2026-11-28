@@ -51,7 +51,13 @@ const QUARANTINE_DAYS = 30;
 const BUDGET_MS = 15000;
 const RETRY_MS = 5 * 60e3;
 const CONCURRENCY = 2;
+// Signatures count as outdated only when ClamAV has published a newer daily
+// (DNS TXT current.cvd.clamav.net) and the loaded one is older than
+// STALE_DAYS — ClamAV sometimes publishes no daily for days, an install on
+// the current daily is up to date however old it is. Without the published
+// state (DNS answers nothing) only after UNVERIFIED_DAYS, said as such.
 const STALE_DAYS = 2;
+const UNVERIFIED_DAYS = 7;
 const LOCAL_ADDRESS = '127.0.0.1:3310';
 const PLUGIN_SOURCES = { 'gatecontrol-drive': 'drive', 'gatecontrol-gatedrop': 'gatedrop', 'gatecontrol-mail': 'mail', 'gatecontrol-messenger': 'messenger' };
 
@@ -172,7 +178,8 @@ function isExternal(source, kind) { return EXTERNAL.has(source) || (source === '
 
 // ─── The scan ──────────────────────────────────────────
 
-const _state = { queue: [], running: 0, inflight: new Map(), down: null, timers: [], lastSig: null, testMode: process.env.NODE_ENV === 'test' };
+const _state = { queue: [], running: 0, inflight: new Map(), down: null, timers: [], lastSig: null, testMode: process.env.NODE_ENV === 'test',
+  reloadWait: process.env.NODE_ENV === 'test' ? { firstMs: 5, pollMs: 5, maxMs: 60 } : { firstMs: 1500, pollMs: 1500, maxMs: 9000 } };
 
 function readerOf(row) {
   const M = media();
@@ -516,7 +523,7 @@ function setScanState(patch) { settings.set(K_STATE, JSON.stringify({ ...scanSta
 /** Ask the scanner (version, signatures), the published versions. Never throws. */
 async function scannerInfo(cfg = getConfig(), { latest = true } = {}) {
   const engine = engineOf(cfg);
-  const out = { engine, configured: cfg.engine, licensed: licensed(), reachable: null, error: null, version: null, daily: null, dailyAt: null, latest: null, updateAvailable: false, signaturesOld: false };
+  const out = { engine, configured: cfg.engine, licensed: licensed(), reachable: null, error: null, version: null, daily: null, dailyAt: null, latest: null, updateAvailable: false, signaturesOld: false, signaturesUnverified: false, noNewSince: null };
   if (engine === 'none') return out;
   let addr;
   try { addr = scannerAddress(cfg); } catch (e) { out.reachable = false; out.error = e.code || 'address_invalid'; return out; }
@@ -534,7 +541,7 @@ async function scannerInfo(cfg = getConfig(), { latest = true } = {}) {
         out.latest = await clamd.latest();
         if (out.latest && v.engine && clamd.older(v.engine, out.latest.engine)) out.updateAvailable = true;
       }
-      out.signaturesOld = !!(v.dailyAt && Date.now() - Date.parse(v.dailyAt) > STALE_DAYS * 86400e3);
+      Object.assign(out, signatureAge(v, out.latest));
     }
     noteUp();
   } catch (e) {
@@ -545,15 +552,78 @@ async function scannerInfo(cfg = getConfig(), { latest = true } = {}) {
   return out;
 }
 
-/** "Signaturen jetzt aktualisieren": clamd reloads what freshclam fetched; the malware list is fetched. */
+/**
+ * The loaded daily against the published one → { signaturesOld, signaturesUnverified, noNewSince }.
+ *  - published known, loaded behind and older than STALE_DAYS: outdated
+ *  - published known, loaded is the current one: up to date; when it is older
+ *    than STALE_DAYS, noNewSince (ClamAV has published nothing since then)
+ *  - published unknown: outdated (unverified) only after UNVERIFIED_DAYS
+ */
+function signatureAge(v, latest, now = Date.now()) {
+  const res = { signaturesOld: false, signaturesUnverified: false, noNewSince: null };
+  const at = v && v.dailyAt ? Date.parse(v.dailyAt) : NaN;
+  if (!Number.isFinite(at) || !v.daily) return res;
+  const age = now - at;
+  if (latest && latest.daily) {
+    if (v.daily < latest.daily) res.signaturesOld = age > STALE_DAYS * 86400e3;
+    else if (age > STALE_DAYS * 86400e3) res.noNewSince = v.dailyAt;
+  } else if (age > UNVERIFIED_DAYS * 86400e3) {
+    res.signaturesOld = true;
+    res.signaturesUnverified = true;
+  }
+  return res;
+}
+
+/**
+ * "Signaturen jetzt aktualisieren": clamd reloads what freshclam has put on
+ * disk (GateControl cannot run freshclam itself — it fetches new signatures
+ * on its own schedule), the malware list is fetched. Right after the reload
+ * the scanner is asked again, so the page and the "Achtung" list of the
+ * dashboard show the loaded state at once instead of after the next check.
+ * → { hashlist, reload, error?, scanner?: { reachable, daily, dailyAt, signaturesOld, checkedAt } }
+ */
 async function refreshSignatures() {
   const cfg = getConfig();
   const out = { hashlist: await hashlist.refresh({ force: true }), reload: null };
   if (['clamav_local', 'clamav_net'].includes(engineOf(cfg))) {
+    const before = _state.lastSig && _state.lastSig.info ? _state.lastSig.info.daily : null;
     try { out.reload = (await clamd.reload(scannerAddress(cfg))) || 'RELOADING'; } catch (e) { out.reload = null; out.error = e.code || 'unreachable'; }
+    if (out.reload) {
+      const info = await askAfterReload(cfg, before);
+      if (info) {
+        out.scanner = { reachable: info.reachable, daily: info.daily, dailyAt: info.dailyAt, signaturesOld: info.signaturesOld, signaturesUnverified: info.signaturesUnverified, noNewSince: info.noNewSince, latestDaily: info.latest ? info.latest.daily : null, checkedAt: new Date(_state.lastSig.at).toISOString() };
+      }
+    }
   }
   setScanState({ refreshed_at: Date.now() });
   return out;
+}
+
+/**
+ * After RELOAD: clamd answers RELOADING and loads in the background (with
+ * ConcurrentDatabaseReload no it answers nothing while it does). Ask until it
+ * reports a newer daily than `before` or the wait is over; the last answer
+ * counts. While it answers nothing the cached state stays (null back).
+ */
+async function askAfterReload(cfg, before) {
+  const w = _state.reloadWait;
+  const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); if (t.unref) t.unref(); });
+  const end = Date.now() + w.maxMs;
+  let seenVersion = false;
+  await sleep(w.firstMs);
+  for (;;) {
+    try {
+      const v = await clamd.version(scannerAddress(cfg));
+      seenVersion = true;
+      if (before == null || (v.daily && v.daily > before)) break;
+    } catch { /* still loading */ }
+    if (Date.now() + w.pollMs > end) break;
+    await sleep(w.pollMs);
+  }
+  if (!seenVersion) return null;
+  const info = await scannerInfo(cfg);
+  if (info.reachable) setScanState({ sig_checked_at: Date.now() });
+  return info;
 }
 
 /** Periodic: scanner state (every sig_check_h hours), stale warning once a day. */
@@ -561,15 +631,21 @@ async function signatureCheck() {
   const cfg = getConfig();
   const st = scanState();
   if (st.sig_checked_at && Date.now() - st.sig_checked_at < cfg.sig_check_h * 3600e3) return null;
-  const info = await scannerInfo(cfg);
+  let info = await scannerInfo(cfg);
   setScanState({ sig_checked_at: Date.now() });
   // a newer daily published than the scanner has: let clamd pick up what freshclam fetched
+  // and ask again, so the warning below and the dashboard go by what is loaded now
   if (info.reachable && info.latest && info.daily && info.latest.daily > info.daily && ['clamav_local', 'clamav_net'].includes(info.engine)) {
-    try { await clamd.reload(scannerAddress(cfg)); } catch { /* next time */ }
+    let reloaded = false;
+    try { await clamd.reload(scannerAddress(cfg)); reloaded = true; } catch { /* next time */ }
+    if (reloaded) info = (await askAfterReload(cfg, info.daily)) || info;
   }
   if (info.signaturesOld && (!st.stale_warned_at || Date.now() - st.stale_warned_at > 86400e3)) {
     setScanState({ stale_warned_at: Date.now() });
-    activity('malware_signatures_old', `Virus signatures are older than ${STALE_DAYS} days`, { dailyAt: info.dailyAt, code: 'signatures_old' });
+    const msg = info.signaturesUnverified
+      ? `Virus signatures are older than ${UNVERIFIED_DAYS} days; the published state could not be checked`
+      : `Virus signatures are outdated: daily ${info.daily} loaded, ClamAV has published ${info.latest && info.latest.daily}`;
+    activity('malware_signatures_old', msg, { dailyAt: info.dailyAt, daily: info.daily, latestDaily: info.latest ? info.latest.daily : null, unverified: !!info.signaturesUnverified, code: 'signatures_old' });
   }
   await hashlist.refresh().catch(() => {});
   return info;
@@ -675,6 +751,7 @@ async function view({ ask = true } = {}) {
     quarantine: quarantine(),
     lastRescan: st.last_rescan ? new Date(st.last_rescan).toISOString() : null,
     refreshedAt: st.refreshed_at ? new Date(st.refreshed_at).toISOString() : null,
+    checkedAt: _state.lastSig ? new Date(_state.lastSig.at).toISOString() : null,
     localAddress: LOCAL_ADDRESS,
     local: cfg.engine === 'clamav_local' ? localStatus() : null,
   };
@@ -735,7 +812,7 @@ function _resetForTest() {
 }
 
 module.exports = {
-  SOURCES, ENGINES, ACTIONS, QUARANTINE_DAYS, BUDGET_MS, LOCAL_ADDRESS, ScanError,
+  SOURCES, ENGINES, ACTIONS, QUARANTINE_DAYS, BUDGET_MS, LOCAL_ADDRESS, STALE_DAYS, UNVERIFIED_DAYS, ScanError, signatureAge,
   getConfig, setConfig, engineOf, sourceOf, isExternal,
   afterStore, check, gate, infoOf, rescanOne, retryPending, nightly, nightlyDue,
   quarantine, history, recheck, deleteFinding, release, expire,

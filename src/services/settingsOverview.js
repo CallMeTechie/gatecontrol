@@ -176,7 +176,7 @@ function scanInfo() {
   return {
     engine: scan.engineOf(cfg), quarantined: st.quarantined, pending: st.pending,
     down: !!scan._state.down, updateAvailable: !!(last && last.updateAvailable), version: last ? last.version : null,
-    latest: last && last.latest ? last.latest.engine : null, local: cfg.engine === 'clamav_local', signaturesOld: !!(last && last.signaturesOld),
+    latest: last && last.latest ? last.latest.engine : null, local: cfg.engine === 'clamav_local', signaturesOld: !!(last && last.signaturesOld), signaturesUnverified: !!(last && last.signaturesUnverified),
   };
 }
 
@@ -288,7 +288,7 @@ function attention(src) {
   if (sc) {
     if (sc.quarantined) add('scan_quarantine', 'crit', 'virenscan', '/settings/virenscan', { n: sc.quarantined });
     if (sc.down) add('scan_down', 'crit', 'virenscan', '/settings/virenscan');
-    if (sc.signaturesOld) add('scan_signatures_old', 'warn', 'virenscan', '/settings/virenscan');
+    if (sc.signaturesOld) add(sc.signaturesUnverified ? 'scan_signatures_unverified' : 'scan_signatures_old', 'warn', 'virenscan', '/settings/virenscan');
     if (sc.updateAvailable) add(sc.local ? 'scan_update_local' : 'scan_update', 'warn', 'virenscan', '/settings/virenscan', { version: sc.version || '', latest: sc.latest || '' });
   }
 
